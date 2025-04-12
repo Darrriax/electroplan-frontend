@@ -1,0 +1,354 @@
+:root {
+    color-scheme: light;
+
+    /* ==== Кольори тіла та контенту ==== */
+    --body-bg-color: #EAE1E4;
+    --alt-body-bg-color: #D9BDB7;
+    --card-bg-color: #ffffff;
+    --input-bg-color: rgba(255, 255, 255, 0.6);
+
+    /* ==== Текст ==== */
+    --text-color-white: #ffffff;
+    --text-color-primary: #000000;
+    --text-color-secondary: #9a9a9a;
+    --text-color-error: #D57362;
+
+    /* ==== Кнопки ==== */
+    --button-bg-primary: #4D5368;
+    --button-bg-secondary: #363847;
+    --button-text-color: #ffffff;
+
+    /* ==== Інше ==== */
+    --control-error-color: #D57362;
+    --second-color: #ffc7ba;
+    --tap-color: #ffa48e;
+    --highlight-color: #D57362;
+
+    --font-size-xs: 0.65rem;
+    --font-size-sm: 0.875rem;
+    --font-size-base: 1rem;
+    --font-size-md: 1.125rem;
+    --font-size-lg: 1.25rem;
+    --font-size-xl: 1.7rem;
+    font-family: 'Arial', sans-serif;
+}
+
+:root.dark {
+    color-scheme: dark;
+
+    /* ==== Кольори тіла та контенту ==== */
+    --body-bg-color: #363847;
+    --alt-body-bg-color: #4D5368;
+    --card-bg-color: #4D5368;
+    --input-bg-color: rgba(54, 56, 71, 0.6);
+
+    /* ==== Текст ==== */
+    --text-color-primary: #EAE1E4;
+    --text-color-secondary: #D9BDB7;
+    --text-color-error: #D57362;
+
+    /* ==== Кнопки ==== */
+    --button-bg-primary: #D9BDB7;
+    --button-bg-secondary: #D57362;
+    --button-text-color: #363847;
+
+    /* ==== Інше ==== */
+    --control-error-color: #D57362;
+    --second-color: #4D5368;
+    --tap-color: #343746;
+    --highlight-color: #D9BDB7;
+}
+
+*:disabled {
+    cursor: not-allowed;
+}
+
+input[type='checkbox'] {
+    cursor: pointer;
+}
+
+label {
+    cursor: pointer;
+}
+
+#app {
+    font-size: 1rem;
+}
+
+
+/*____________________________________INPUTS____________________________________*/
+.input-wrapper {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.input-container {
+    display: flex;
+    align-items: center;
+    background-color: var(--input-bg-color);
+    border-radius: 9999px;
+    padding: 0.4rem 0.4rem;
+    transition: border 0.2s ease;
+    border: 1px solid transparent;
+    width: 100%;
+}
+
+.input-container.has-error {
+    border: 1px solid var(--control-error-color);
+}
+
+.icon {
+    width: 35px;
+    height: 35px;
+    border-radius: 50%;
+    background: var(--bs-body-bg);
+    color: var(--text-color-primary);
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 0.5rem;
+    flex-shrink: 0;
+}
+
+.input-field {
+    flex: 1;
+    border: none;
+    background: transparent;
+    outline: none;
+    font-size: var(--font-size-base);
+    padding: 0 0.5rem;
+    color: var(--text-color-primary);
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Плейсхолдер */
+.input-field::placeholder {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 100%;
+}
+
+.input-field::placeholder {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.error-message {
+    margin-top: 0.25rem;
+    font-size: var(--font-size-sm);
+    color: var(--control-error-color);
+}
+
+
+/*____________________________________BUTTONS____________________________________*/
+.set-min-width {
+    min-width: 250px;
+}
+
+.app-background {
+    background-color: var(--card-bg-color);
+}
+
+button {
+    position: relative;
+    display: inline-block;
+    cursor: pointer;
+    outline: none;
+    border: 0;
+    vertical-align: middle;
+    text-decoration: none;
+    font-family: inherit;
+    font-size: 15px;
+}
+
+.create-new {
+    font-weight: 600;
+    color: var(--button-bg-secondary);
+    text-transform: uppercase;
+    padding: 1.25em 2em;
+    background: var(--second-color);
+    border: 2px solid var(--button-bg-secondary);
+    border-radius: 0.75em;
+    -webkit-transform-style: preserve-3d;
+    transform-style: preserve-3d;
+    -webkit-transition: background 150ms cubic-bezier(0, 0, 0.58, 1), -webkit-transform 150ms cubic-bezier(0, 0, 0.58, 1);
+    transition: transform 150ms cubic-bezier(0, 0, 0.58, 1), background 150ms cubic-bezier(0, 0, 0.58, 1), -webkit-transform 150ms cubic-bezier(0, 0, 0.58, 1);
+}
+
+.create-new::before {
+    position: absolute;
+    content: '';
+    width: calc(100% + 2px);
+    height: 100%;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--highlight-color);
+    border: 2px solid var(--button-bg-secondary);
+    border-radius: inherit;
+    -webkit-transform: translate3d(0, 0.75em, -1em);
+    transform: translate3d(0, 0.75em, -1em);
+    transition: transform 150ms cubic-bezier(0, 0, 0.58, 1), box-shadow 150ms cubic-bezier(0, 0, 0.58, 1), -webkit-transform 150ms cubic-bezier(0, 0, 0.58, 1), -webkit-box-shadow 150ms cubic-bezier(0, 0, 0.58, 1);
+}
+
+.create-new:hover {
+    background: var(--tap-color);
+    -webkit-transform: translate(0, 0.25em);
+    transform: translate(0, 0.25em);
+}
+
+.create-new:hover::before {
+    -webkit-transform: translate3d(0, 0.5em, -1em);
+    transform: translate3d(0, 0.5em, -1em);
+}
+
+/*____________________________________SETTINGS____________________________________*/
+
+.app-theme::after {
+    background: /*linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2)),*/ url("/public/images/background.png") no-repeat center/cover;
+    background-blend-mode: darken;
+    position: absolute;
+    top: 0;
+    left: 0;
+    content: '';
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+}
+
+.app-theme {
+    position: relative;
+}
+
+.app-container {
+    display: flex;
+    min-height: 100vh;
+    flex-direction: column;
+    margin: 0;
+}
+
+.w100 {
+    width: 100%;
+}
+
+button a {
+    color: black;
+    text-decoration: none;
+}
+a:hover {
+    color: white;
+    text-decoration: none;
+}
+
+/*__________________________________CARD____________________________________*/
+.card-box {
+    background: rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+
+    border: none;
+    border-radius: 20px;
+    word-wrap: break-word;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    margin: 8px 0;
+    align-items: stretch;
+    padding: 0 30px 30px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1), 0 15px 25px rgba(0, 0, 0, 0.15);
+}
+
+/*__________________________________NAVIGATION____________________________________*/
+.nav-container {
+    padding: 5px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+}
+
+.nav-box {
+    background: rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+
+    padding: 10px 60px;
+    display: flex;
+    justify-content: space-between;
+    border: none;
+    border-radius: 10px;
+    word-wrap: break-word;
+    position: relative;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1), 0 15px 25px rgba(0, 0, 0, 0.15);
+}
+
+.navbar-left .logo {
+    font-size: 24px;
+    font-weight: bold;
+}
+
+.navbar-right {
+    display: flex;
+    gap: 10px;
+}
+
+/*__________________________________TEXT__________________________________*/
+.secondary-text {
+    color: var(--text-color-secondary);
+}
+
+.primary-text {
+    color: var(--text-color-primary);
+}
+
+.primary-white-text {
+    color: var(--text-color-white);
+}
+
+.title-text {
+    font-size: var(--font-size-xl);
+}
+
+.card-title-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.small-text {
+    font-size: var(--font-size-xs);
+}
+
+
+/*__________________________________HOME_PAGE__________________________________*/
+.home {
+    background: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.7)),
+    url("/public/images/background.png") no-repeat center/cover;
+    background-blend-mode: darken;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    height: 30%;
+    position: relative;
+}
+
+.profile {
+    background: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2)),
+    url("/public/images/background.png") no-repeat center/cover;
+    /*background-color: white;*/
+    background-blend-mode: darken;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    height: 100vh;
+    position: relative;
+}
