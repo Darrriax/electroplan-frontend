@@ -13,7 +13,7 @@ const routes = [
             requiresAuth: false,
             title: 'Home',
         },
-        // redirect: '/profile',
+        // redirect: '/home',
     },
     {
         path: '/profile',

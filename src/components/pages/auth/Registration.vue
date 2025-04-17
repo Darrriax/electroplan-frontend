@@ -17,40 +17,46 @@
         <!-- Форма -->
         <div class="row row-cols-md-2 row-cols-1 gap-md-0 gap-2">
           <div class="col-md">
-            <!--                v-model="name"-->
-            <!--                :error="error['name']"-->
             <text-field
-                placeholder="Your name..." icon="fa-solid fa-user"/>
+                placeholder="Your name..."
+                icon="fa-solid fa-user"
+                v-model="name"
+                :error="error['name']"/>
           </div>
           <div class="col-md">
-            <!--            v-model="surname"-->
-            <!--            :error="error['surname']"-->
             <text-field
-                placeholder="Your surname..." icon="fa-solid fa-user"/>
+                placeholder="Your surname..."
+                icon="fa-solid fa-user"
+                v-model="surname"
+                :error="error['surname']"/>
           </div>
         </div>
         <div class="row row-cols-md-2 row-cols-1 mt-2 gap-md-0 gap-2">
           <div class="col-md">
-            <!--            v-model="phoneNumber"-->
-            <!--            :error="error['phoneNumber']"-->
             <phone-field
                 id="phoneNumber"
-                label="Phone"
+                v-model="phoneNumber"
+                :error="error['phoneNumber']"
             />
           </div>
           <div class="col-md">
-            <text-field placeholder="E-mail address" icon="fa-solid fa-at"/>
+            <text-field
+                placeholder="E-mail address"
+                icon="fa-solid fa-at"
+                v-model="email"
+                :error="error['email']"/>
           </div>
         </div>
         <div class="row mt-2 gap-2">
-          <!--            v-model="password"-->
-          <!--            :error="error['password']"-->
           <password-field
-              placeholder="Enter password..."/>
-          <!--            v-model="password"-->
-          <!--            :error="error['password']"-->
+              placeholder="Enter password..."
+              v-model="password"
+              :error="error['password']"/>
+
           <password-field
-              placeholder="Repeat password..."/>
+              placeholder="Repeat password..."
+              v-model="passwordConfirmation"
+              :error="error['passwordConfirmation']"/>
         </div>
         <button-simple label="Continue" class="set-min-width mt-4"/>
       </form>
@@ -67,6 +73,7 @@ import PhoneField from "../../UI/inputs/PhoneField.vue";
 import ButtonSimple from "../../UI/buttons/ButtonSimple.vue";
 import errorShow from "../../../mixins/errorShow";
 import AuthLayout from "../../UI/layouts/AuthLayout.vue";
+import {mapActions, mapGetters} from "vuex";
 
 export default {
   name: "registration",
@@ -82,6 +89,9 @@ export default {
     errorShow,
   ],
   computed: {
+    ...mapGetters('reports', {
+      message: 'getMessage',
+    }),
     max() {
       return new Date().toISOString().split('T')[0];
     },
@@ -91,38 +101,36 @@ export default {
       name: '',
       surname: '',
       email: '',
-      phone: '',
+      phoneNumber: '',
       gender: '',
       birthday: '',
       password: '',
-      password_confirmation: '',
+      passwordConfirmation: '',
       // fields with verification
-      fields: ['name', 'surname', 'email', 'phone', 'gender', 'password', 'password_confirmation'],
+      fields: ['name', 'surname', 'phoneNumber', 'email', 'password', 'passwordConfirmation'],
     }
   },
-  // methods: {
-  // ...mapActions('auth', {
-  //   onRegister: 'onRegister',
-  //   onSanctum: 'onSanctum',
-  // }),
-  // submit() {
-  //     if (!this.isLoggedIn) {
-  //       this.onRegister({
-  //         name: this.name,
-  //         surname: this.surname,
-  //         email: this.email,
-  //         phone: this.phone,
-  //         gender: this.gender,
-  //         birthday: this.birthday,
-  //         password: this.password,
-  //         password_confirmation: this.password_confirmation,
-  //       }
-  //       );
-  //     }
-  //   },
-  // },
-  // created() {
-  //   this.onSanctum();
-  // }
+  methods: {
+    ...mapActions('auth', {
+      onRegister: 'onRegister',
+      onSanctum: 'onSanctum',
+    }),
+    submit() {
+      if (!this.isLoggedIn) {
+        this.onRegister({
+              name: this.name,
+              surname: this.surname,
+              phoneNumber: this.phoneNumber,
+              email: this.email,
+              password: this.password,
+              passwordConfirmation: this.passwordConfirmation,
+            }
+        );
+      }
+    },
+  },
+  created() {
+    this.onSanctum();
+  }
 }
 </script>

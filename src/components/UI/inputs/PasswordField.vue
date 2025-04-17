@@ -15,12 +15,6 @@
           @change="$emit('change', $event.target.value)"
           @keydown.enter="submitValue($event, modelValue)"
       />
-      <small
-          v-show="error"
-          class="text-danger error font-xs-400"
-      >
-        <sup>*</sup>{{ error }}
-      </small>
     </div>
     <p v-if="error" class="error-message">{{ error }}</p>
   </div>

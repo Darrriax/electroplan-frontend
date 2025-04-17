@@ -19,7 +19,7 @@
     --button-text-color: #ffffff;
 
     /* ==== Інше ==== */
-    --control-error-color: #D57362;
+    --control-error-color: #c74d3c;
     --second-color: #ffc7ba;
     --tap-color: #ffa48e;
     --highlight-color: #D57362;
@@ -53,7 +53,7 @@
     --button-text-color: #363847;
 
     /* ==== Інше ==== */
-    --control-error-color: #D57362;
+    --control-error-color: #c74d3c;
     --second-color: #4D5368;
     --tap-color: #343746;
     --highlight-color: #D9BDB7;
@@ -80,6 +80,8 @@ label {
 .input-wrapper {
     display: flex;
     flex-direction: column;
+    margin-bottom: 10px;
+    position: relative;
     width: 100%;
 }
 
@@ -141,8 +143,11 @@ label {
 }
 
 .error-message {
-    margin-top: 0.25rem;
-    font-size: var(--font-size-sm);
+    position: absolute;
+    bottom: -30px;
+    padding-left: 20px;
+    /*margin-top: 0.25rem;*/
+    font-size: var(--font-size-xs);
     color: var(--control-error-color);
 }
 
@@ -352,3 +357,41 @@ a:hover {
     height: 100vh;
     position: relative;
 }
+
+/*__________________________________MESSAGE__________________________________*/
+.message-wrapper {
+    position: absolute;
+    z-index: 1000;
+}
+
+.message-card {
+    background-color: rgba(13, 110, 253, 0.85);
+    box-shadow: var(--body-bg-color) 0 0 3px;
+    position: fixed;
+    color: var(--text-color-white);
+    width: 440px;
+    border-radius: 10px;
+    padding: 10px;
+    text-align: center;
+    transition: bottom 0.3s ease;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.show-message {
+    bottom: 10px;
+}
+
+.hide-message {
+    bottom: -100px;
+}
+
+.message-error {
+    background-color: var(--control-error-color);
+}
+
+.message-text {
+    vertical-align: middle;
+}
+
+/*__________________________________f________________________________*/

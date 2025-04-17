@@ -12,7 +12,7 @@
         <button class="btn btn-outline-secondary">Lang</button>
         <button class="btn btn-outline-dark" @click="goToHome">Projects</button>
         <button class="btn btn-outline-dark" @click="goToProfile">Profile</button>
-        <button class="btn btn-dark" @click="">Logout</button>
+        <button class="btn btn-dark" @click="logoutBtn">Logout</button>
       </div>
     </div>
   </div>
@@ -20,14 +20,21 @@
 
 <script>
 import router from "../../../router/index.js";
+import {mapActions} from "vuex";
 
 export default {
   methods: {
+    ...mapActions('auth', {
+      onLogout: 'onLogout',
+    }),
     goToProfile() {
       router.push('/profile');
     },
     goToHome() {
       router.push('/home');
+    },
+    logoutBtn() {
+      this.onLogout();
     },
   }
 }

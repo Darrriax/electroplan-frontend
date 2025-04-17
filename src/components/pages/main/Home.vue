@@ -2,7 +2,7 @@
   <layout>
     <div class="home d-flex justify-content-center align-items-start flex-column p-5">
       <div class="mt-5 ms-5">
-        <div class="title-text primary-white-text">Hi there, name+surname</div>
+        <div class="title-text primary-white-text">Hi there, {{ getUserFullName }}</div>
         <button-action label="Create new project" icon="fa-solid fa-plus" class="set-min-width mt-3"/>
       </div>
     </div>
@@ -22,8 +22,23 @@
     </div>
   </layout>
 </template>
-<script setup>
+<script>
 import Layout from "../../UI/layouts/Layout.vue";
 import ButtonAction from "../../UI/buttons/ButtonAction.vue";
 import ItemCard from "../../UI/elements/ItemCard.vue";
+import {mapGetters} from "vuex";
+
+export default {
+  name: "Profile",
+  components: {
+    Layout,
+    ButtonAction,
+    ItemCard,
+  },
+  computed: {
+    ...mapGetters('user', {
+      getUserFullName: 'getUserFullName',
+    }),
+  }
+}
 </script>

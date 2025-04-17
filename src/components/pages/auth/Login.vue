@@ -17,14 +17,16 @@
         <!-- Форма -->
         <div class="row mt-2 gap-2">
           <div class="col-md">
-            <text-field placeholder="E-mail address" icon="fa-solid fa-at"/>
+            <text-field
+                placeholder="E-mail address"
+                icon="fa-solid fa-at"
+                v-model="email"
+                :error="error['email']"/>
           </div>
-          <!--            v-model="password"-->
-          <!--            :error="error['password']"-->
           <password-field
-              placeholder="Enter password..."/>
-          <!--            v-model="password"-->
-          <!--            :error="error['password']"-->
+              placeholder="Enter password..."
+              v-model="password"
+              :error="error['password']"/>
         </div>
         <button-simple label="Continue" class="set-min-width mt-4"/>
       </form>
@@ -32,10 +34,49 @@
     <message :label="message"/>
   </auth-layout>
 </template>
-<script setup>
+<script>
+import AuthLayout from "../../UI/layouts/AuthLayout.vue";
+import Message from "../../UI/elements/Message.vue";
+import TextField from "../../UI/inputs/TextField.vue";
 import PasswordField from "../../UI/inputs/PasswordField.vue";
 import ButtonSimple from "../../UI/buttons/ButtonSimple.vue";
-import TextField from "../../UI/inputs/TextField.vue";
-import Message from "../../UI/elements/Message.vue";
-import AuthLayout from "../../UI/layouts/AuthLayout.vue";
+import {mapActions, mapGetters} from "vuex";
+import errorShow from "../../../mixins/errorShow.js";
+
+export default {
+  name: "registration",
+  components: {
+    AuthLayout,
+    Message,
+    TextField,
+    PasswordField,
+    ButtonSimple,
+  },
+  mixins: [
+    errorShow,
+  ],
+  computed: {
+    ...mapGetters('reports', {
+      message: 'getMessage',
+    }),
+  },
+  data() {
+    return {
+      email: '',
+      password: '',
+      fields: ['email', 'password'],
+    }
+  },
+  methods: {
+    ...mapActions('auth', {
+      onLogin: 'onLogin',
+    }),
+    submit() {
+      this.onLogin({
+        email: this.email,
+        password: this.password,
+      });
+    },
+  },
+}
 </script>
