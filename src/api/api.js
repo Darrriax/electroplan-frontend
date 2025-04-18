@@ -1,6 +1,7 @@
 import axios from "axios";
+import {decryptData} from "../mixins/encryption.js";
 
-const tokenData = localStorage.getItem('token');
+const tokenData = decryptData(localStorage.getItem('token'));
 
 let token = '';
 
@@ -13,6 +14,10 @@ const urls = {
         register: 'auth/register',
         login: 'auth/login',
         logout: 'auth/logout',
+    },
+    user: {
+        profile: 'users/profile',
+        password: 'users/password',
     },
 }
 
@@ -75,29 +80,17 @@ export const AuthApi = {
 
 export const AccountApi = {
     getAccountData() {
-        const url = urls.account.profile;
+        const url = urls.user.profile;
         return DefaultApiInstance.get(url);
     },
-    updateAvatar(avatar) {
-        const url = urls.account.avatar;
-        return FormDataApiInstance.post(url, avatar);
-    },
-    loadFiles(files) {
-        const url = urls.account.files;
-        return FormDataApiInstance.post(url, files);
-    },
-    updateData(name, surname, patronymic, email, phone, gender, birthday) {
-        const url = urls.account.update;
-        const data = {name, surname, patronymic, email, phone, gender, birthday};
+    updateData(name, surname, phoneNumber, email) {
+        const url = urls.user.profile;
+        const data = {name, surname, phoneNumber, email};
         return DefaultApiInstance.put(url, data);
     },
     updatePassword(current_password, password, password_confirmation) {
-        const url = urls.account.password;
+        const url = urls.user.password;
         const data = {current_password, password, password_confirmation};
         return DefaultApiInstance.put(url, data);
-    },
-    sendMessageForm(message) {
-        const url = urls.account.forms;
-        return FormDataApiInstance.post(url, message);
     },
 };

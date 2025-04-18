@@ -113,7 +113,6 @@ export default {
   methods: {
     ...mapActions('auth', {
       onRegister: 'onRegister',
-      onSanctum: 'onSanctum',
     }),
     submit() {
       if (!this.isLoggedIn) {
@@ -129,8 +128,5 @@ export default {
       }
     },
   },
-  created() {
-    this.onSanctum();
-  }
 }
 </script>

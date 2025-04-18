@@ -122,7 +122,6 @@ export default {
       onGetUser: 'onGetUser',
       onUpdateUser: 'onUpdateUser',
       onUpdatePassword: 'onUpdatePassword',
-      onUpdateDefaultAvatar: 'onUpdateDefaultAvatar',
     }),
     updateUser() {
       this.onUpdateUser(this.user);
@@ -135,23 +134,6 @@ export default {
       }).then(() => {
         event.target.reset()
       });
-    },
-    clickAvatar() {
-      this.$refs.fileInput.click();
-    },
-    changeAvatar(event) {
-      const file = event.target.files[0];
-      const formData = new FormData();
-      formData.append('avatar', file);
-      this.onUpdateAvatar(formData);
-    },
-    updateAvatarBasedOnGender(newGender) {
-      this.onUpdateDefaultAvatar({
-        gender: newGender,
-      });
-    },
-    notifyVerification() {
-      this.onNotify();
     },
   },
   created() {

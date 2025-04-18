@@ -39,10 +39,9 @@ export const auth = {
             AuthApi
                 .login(email, password)
                 .then(async (res) => {
-                    console.log(res)
                     await this.dispatch('auth/setToken', res.data.token);
                     await this.dispatch('user/setUser', res.data.user);
-                    setToken(res.data.token);
+
                     await this.dispatch('reports/showSuccess', res);
                 })
                 .then(async () => {

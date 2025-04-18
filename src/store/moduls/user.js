@@ -1,5 +1,7 @@
-import {AccountApi, setToken} from "../../api/api";
+import {AccountApi} from "../../api/api";
 import {decryptData, encryptData} from "../../mixins/encryption.js";
+import * as state from "./user.js";
+import router from "../../router/index.js";
 
 const userData = decryptData(localStorage.getItem('user')) || {};
 
@@ -13,14 +15,12 @@ export const user = {
             surname: userData.surname || undefined,
             phoneNumber: userData.phoneNumber || undefined,
             email: userData.email || undefined,
-            password: userData.password || undefined,
             userProjects: {}
         }
     },
     getters: {
         isLoggedIn: state => state.user.id !== undefined,
         getUserFullName: (state) => state.user.surname + " " + state.user.name,
-        getPhone: (state) => state.user.phoneNumber,
     },
     mutations: {
         setUserData(state, user) {
@@ -32,28 +32,15 @@ export const user = {
                 localStorage.setItem('user', encryptData(user));
             }
         },
-        setPhoneNumber(state, phone) {
-            if (!phone) {
-                state.phone = {};
-                localStorage.removeItem('phone');
-            } else {
-                state.phone = phone;
-                localStorage.setItem('phone', encryptData(phone));
-            }
-        },
     },
     actions: {
         setUser({commit}, user) {
             commit('user/setUserData', user, {root: true});
         },
-        setPhone({commit}, phone) {
-            commit('user/setPhoneNumber', phone, {root: true});
-        },
         async onGetUser() {
             await this.dispatch('loading/setLoading', true);
             AccountApi.getAccountData()
                 .then(async (res) => {
-                    console.log(res)
                     await this.dispatch('user/setUser', res.data);
                 })
                 .catch(async (err) => {
@@ -63,43 +50,15 @@ export const user = {
                     await this.dispatch('loading/setLoading', false);
                 });
         },
-        async onGetPhoneNumber({commit}, {userId}) {
-            await this.dispatch('loading/setLoading', true);
-            AccountApi.getPhone({userId})
-                .then(async (res) => {
-                    await this.dispatch('user/setPhone', res.data.phoneNumber);
-                })
-                .catch(async (err) => {
-                    await this.dispatch('reports/showErrors', err);
-                })
-                .finally(async () => {
-                    await this.dispatch('loading/setLoading', false);
-                });
-        },
-        async onUpdateUser({commit}, {name, surname, fatherName, password, phoneNumber, age, gender, additionalInfo}) {
+        async onUpdateUser({commit, dispatch}, {name, surname, phoneNumber, email}) {
             await this.dispatch('loading/setLoading', true);
             AccountApi
-                .updateData(name, surname, fatherName, password, phoneNumber, age, gender, additionalInfo)
+                .updateData(name, surname, phoneNumber, email)
                 .then(async (res) => {
-                    await this.dispatch('user/setUser', res.data);
                     await this.dispatch('reports/showSuccess', res);
-                })
-                .catch(async (err) => {
-                    await this.dispatch('reports/showErrors', err);
-                })
-                .finally(async () => {
-                    await this.dispatch('loading/setLoading', false);
-                });
-        },
-        async onUpdateEmail({commit}, {newEmail}) {
-            await this.dispatch('loading/setLoading', true);
-            console.log(newEmail)
-            AccountApi
-                .updateEmail(newEmail)
-                .then(async (res) => {
-                    await this.dispatch('auth/setToken', res.data.token);
-                    setToken(res.data.token);
-                    await this.dispatch('reports/showSuccess', res);
+                    if (res.data.message !== null) {
+                        await router.push('/login');
+                    }
                 })
                 .catch(async (err) => {
                     await this.dispatch('reports/showErrors', err);
@@ -121,15 +80,6 @@ export const user = {
                 .finally(async () => {
                     await this.dispatch('loading/setLoading', false);
                 });
-        },
-
-        async onUpdateDefaultAvatar({commit}, gender) {
-            if (gender.gender === 'Female') {
-                await this.dispatch('user/setAvatar', DEFAULT_PROFILE_WOMAN_IMG);
-            } else {
-                await this.dispatch('user/setAvatar', DEFAULT_PROFILE_IMG);
-            }
-
         },
     },
 };

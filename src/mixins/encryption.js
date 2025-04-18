@@ -15,8 +15,5 @@ export const decryptData = (data) => {
     } catch (e) {
         // this.location.reload();
     }
-    // if (data) {
-    //     return JSON.parse(Crypto.AES.decrypt(data, secretKey).toString(Crypto.enc.Utf8));
-    // }
     return null;
 };
