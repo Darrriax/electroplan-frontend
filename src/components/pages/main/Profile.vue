@@ -48,15 +48,16 @@
             <div class="row row-cols-md-1 row-cols-1 gap-2">
               <password-field
                   placeholder="Enter current password..."
-                  v-model="current_password"
-                  :error="error['current_password']"/>
+                  v-model="oldPassword"
+                  :error="error['oldPassword']"/>
               <password-field
                   placeholder="Enter new password..."
                   v-model="password"
                   :error="error['password']"/>
               <password-field
                   placeholder="Repeat new password..."
-                  v-model="password_confirmation"/>
+                  v-model="passwordConfirmation"
+                  :error="error['passwordConfirmation']"/>
             </div>
             <div class="mt-auto pt-3">
               <button-simple
@@ -111,10 +112,10 @@ export default {
   data() {
     return {
       password: '',
-      current_password: '',
-      password_confirmation: '',
+      oldPassword: '',
+      passwordConfirmation: '',
       // fields with verification
-      fields: ['name', 'surname', 'phoneNumber', 'email', 'password', 'passwordConfirmation'],
+      fields: ['name', 'surname', 'phoneNumber', 'email', 'password', 'passwordConfirmation', 'oldPassword'],
     }
   },
   methods: {
@@ -128,9 +129,9 @@ export default {
     },
     changePassword() {
       this.onUpdatePassword({
-        current_password: this.current_password,
+        oldPassword: this.oldPassword,
         password: this.password,
-        password_confirmation: this.password_confirmation,
+        passwordConfirmation: this.passwordConfirmation,
       }).then(() => {
         event.target.reset()
       });

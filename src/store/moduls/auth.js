@@ -41,6 +41,7 @@ export const auth = {
                 .then(async (res) => {
                     await this.dispatch('auth/setToken', res.data.token);
                     await this.dispatch('user/setUser', res.data.user);
+                    setToken(res.data.token);
 
                     await this.dispatch('reports/showSuccess', res);
                 })

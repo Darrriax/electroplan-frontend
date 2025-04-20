@@ -47,10 +47,15 @@ export const reports = {
                 await this.dispatch('reports/showMessage', "Дані успішно оновлено");
             }
         },
+        // Todo: Change this method. Include language change in error messages
         async showErrors({commit}, error) {
             await this.dispatch('reports/hideFieldError');
+
+            // Перевірка статусу помилки
             if (error.response?.status === 422 || error.response?.status === 400) {
-                await this.dispatch('reports/showMessage', error.response?.data?.message || "Помилка при виконанні");
+                // Додаємо префікс "Помилка: " до повідомлення
+                await this.dispatch('reports/showMessage', "Помилка: " + (error.response?.data?.message || "Неможливо виконати"));
+
                 const err = error.response.data;
                 if (err) {
                     for (const field of Object.keys(err)) {
@@ -59,23 +64,28 @@ export const reports = {
                     }
                 }
             } else if (error.response?.status === 401) {
-                await this.dispatch('reports/showMessage', error.response?.data?.detail || "Помилка при авторизації");
+                // Додаємо префікс "Помилка: " до повідомлення
+                await this.dispatch('reports/showMessage', "Помилка: " + (error.response?.data?.detail || "Помилка при авторизації"));
                 if (this.getters['user/isLoggedIn']) {
                     await this.dispatch('auth/onLogout')
                 }
             } else if (error.response?.status === 403) {
-                await this.dispatch('reports/showMessage', error.response?.data?.message || error.response?.message || "Доступ заборонено");
+                // Додаємо префікс "Помилка: " до повідомлення
+                await this.dispatch('reports/showMessage', "Помилка: " + (error.response?.data?.message || error.response?.message || "Доступ заборонено"));
             } else if (error.response?.status === 409) {
-                await this.dispatch('reports/showMessage', error.response?.data?.detail || "Помилка при авторизації");
+                // Додаємо префікс "Помилка: " до повідомлення
+                await this.dispatch('reports/showMessage', "Помилка: " + (error.response?.data?.detail || "Помилка при авторизації"));
                 if (this.getters['user/isLoggedIn']) {
                     await this.dispatch('auth/onLogout')
                 }
             } else if (error.response?.status === 500) {
-                await this.dispatch('reports/showMessage', "Помилка сервера. Спробуйте перезавантажити сторінку"); //error.response?.data?.message
+                // Додаємо префікс "Помилка: " до повідомлення
+                await this.dispatch('reports/showMessage', "Помилка сервера. Спробуйте перезавантажити сторінку");
             } else {
-                await this.dispatch('reports/showMessage', error.response?.data?.message || error.response?.message || "Помилка");
+                // Додаємо префікс "Помилка: " до повідомлення
+                await this.dispatch('reports/showMessage', "Помилка: " + (error.response?.data?.message || error.response?.message || "Помилка"));
             }
-        },
+        }
     },
 };
 

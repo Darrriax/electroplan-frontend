@@ -17,7 +17,7 @@ const urls = {
     },
     user: {
         profile: 'users/profile',
-        password: 'users/password',
+        password: 'users/change-password',
     },
 }
 
@@ -88,9 +88,9 @@ export const AccountApi = {
         const data = {name, surname, phoneNumber, email};
         return DefaultApiInstance.put(url, data);
     },
-    updatePassword(current_password, password, password_confirmation) {
+    updatePassword(oldPassword, password, passwordConfirmation) {
         const url = urls.user.password;
-        const data = {current_password, password, password_confirmation};
+        const data = {oldPassword, password, passwordConfirmation};
         return DefaultApiInstance.put(url, data);
     },
 };

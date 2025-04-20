@@ -56,7 +56,7 @@ export const user = {
                 .updateData(name, surname, phoneNumber, email)
                 .then(async (res) => {
                     await this.dispatch('reports/showSuccess', res);
-                    if (res.data.message !== null) {
+                    if (res.data.token !== null) {
                         await router.push('/login');
                     }
                 })
@@ -67,10 +67,10 @@ export const user = {
                     await this.dispatch('loading/setLoading', false);
                 });
         },
-        async onUpdatePassword({commit}, {current_password, password, password_confirmation}) {
+        async onUpdatePassword({commit}, {oldPassword, password, passwordConfirmation}) {
             await this.dispatch('loading/setLoading', true);
             AccountApi
-                .updatePassword(current_password, password, password_confirmation)
+                .updatePassword(oldPassword, password, passwordConfirmation)
                 .then(async (res) => {
                     await this.dispatch('reports/showSuccess', res);
                 })
