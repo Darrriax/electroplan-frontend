@@ -1,11 +1,11 @@
 <template>
   <button
-      class="app-background fa-lg"
+      class="button-default-background fa-lg d-flex gap-2 align-items-center"
       :class="classes"
       :title="label"
       @hover="$emit('hover')"
   >
-    <font-awesome-icon :icon="icon" v-if="icon" class="m-r-5"/>
+    <font-awesome-icon :icon="icon" v-if="icon" class="icon-size-md"/>
     {{ label }}
   </button>
 </template>

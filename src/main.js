@@ -8,11 +8,13 @@ import store from "./store";
 
 import {library} from '@fortawesome/fontawesome-svg-core';
 import {
-    faCalendarDays, faKey, faSearch, faAt, faPhone, faUser, faPlus, faPen, faShareNodes
+    faCalendarDays, faKey, faSearch, faAt, faPhone, faUser, faPlus, faPen, faShareNodes, faBars, faFloppyDisk,
+    faRotateLeft, faRotateRight, faObjectGroup, faGear, faCircleInfo
 } from '@fortawesome/free-solid-svg-icons';
 
 library.add(
-    faCalendarDays, faKey, faSearch, faAt, faPhone, faUser, faPlus, faPen, faShareNodes
+    faCalendarDays, faKey, faSearch, faAt, faPhone, faUser, faPlus, faPen, faShareNodes, faBars, faFloppyDisk,
+    faRotateLeft, faRotateRight, faObjectGroup, faGear, faCircleInfo
 );
 
 const app = createApp(App);

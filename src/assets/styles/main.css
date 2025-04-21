@@ -27,7 +27,7 @@
     --font-size-xs: 0.65rem;
     --font-size-sm: 0.875rem;
     --font-size-base: 1rem;
-    --font-size-md: 1.125rem;
+    --font-size-md: 1.12rem;
     --font-size-lg: 1.25rem;
     --font-size-xl: 1.7rem;
     font-family: 'Arial', sans-serif;
@@ -161,6 +161,10 @@ label {
     background-color: var(--card-bg-color);
 }
 
+.button-default-background {
+    background-color: transparent;
+}
+
 button {
     position: relative;
     display: inline-block;
@@ -253,6 +257,14 @@ a:hover {
     text-decoration: none;
 }
 
+.svg-wrapper {
+    background: #e3e3e3;
+}
+
+.icon-size-md {
+    font-size: var(--font-size-md);
+}
+
 /*__________________________________CARD____________________________________*/
 .card-box {
     background: rgba(255, 255, 255, 0.35);
@@ -272,13 +284,27 @@ a:hover {
 }
 
 /*__________________________________NAVIGATION____________________________________*/
+.project-content {
+    padding-top: 110px;
+}
+
 .nav-container {
-    padding: 5px;
+    padding: 5px 0;
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     z-index: 1000;
+}
+
+.project-navbar {
+    position: fixed;
+    top: 58px;
+    left: 0;
+    right: 0;
+    z-index: 999;
+    padding: 5px 0;
+    font-size: var(--font-size-xs);
 }
 
 .nav-box {

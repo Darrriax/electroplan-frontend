@@ -2,6 +2,7 @@ import Home from '../components/pages/main/Home.vue';
 import Profile from "../components/pages/main/Profile.vue";
 import Login from "../components/pages/auth/Login.vue";
 import Registration from "../components/pages/auth/Registration.vue";
+import Project from "../components/pages/project/Project.vue";
 import {createRouter, createWebHistory} from "vue-router";
 
 const routes = [
@@ -40,6 +41,15 @@ const routes = [
         meta: {
             requiresAuth: false,
             title: 'Реєстрація особистого кабінету',
+        }
+    },
+    {
+        path: '/project',
+        component: Project,
+        name: 'project',
+        meta: {
+            requiresAuth: false,
+            title: 'Проектування електромонтажу',
         }
     },
 ];
