@@ -9,12 +9,12 @@ import store from "./store";
 import {library} from '@fortawesome/fontawesome-svg-core';
 import {
     faCalendarDays, faKey, faSearch, faAt, faPhone, faUser, faPlus, faPen, faShareNodes, faBars, faFloppyDisk,
-    faRotateLeft, faRotateRight, faObjectGroup, faGear, faCircleInfo
+    faRotateLeft, faRotateRight, faObjectGroup, faGear, faCircleInfo, faScissors
 } from '@fortawesome/free-solid-svg-icons';
 
 library.add(
     faCalendarDays, faKey, faSearch, faAt, faPhone, faUser, faPlus, faPen, faShareNodes, faBars, faFloppyDisk,
-    faRotateLeft, faRotateRight, faObjectGroup, faGear, faCircleInfo
+    faRotateLeft, faRotateRight, faObjectGroup, faGear, faCircleInfo, faScissors
 );
 
 const app = createApp(App);

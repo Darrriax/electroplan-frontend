@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 export function usePanAndZoom() {
     const viewX = ref(0)
@@ -6,6 +6,9 @@ export function usePanAndZoom() {
     const viewScale = ref(1)
     const isPanning = ref(false)
     const panStart = ref({ x: 0, y: 0 })
+
+    const svgWidth = ref(window.innerWidth)
+    const svgHeight = ref(window.innerHeight - 110)
 
     const handleMouseDown = (e, svgRef) => {
         if (e.target.tagName === 'rect' || e.target.tagName === 'circle') return
@@ -31,10 +34,26 @@ export function usePanAndZoom() {
         viewScale.value = Math.min(Math.max(0.1, viewScale.value * delta), 5)
     }
 
+    const handleResize = () => {
+        svgWidth.value = window.innerWidth
+        svgHeight.value = window.innerHeight - 110
+    }
+
+    onMounted(() => {
+        window.addEventListener('resize', handleResize)
+        handleResize()
+    })
+
+    onUnmounted(() => {
+        window.removeEventListener('resize', handleResize)
+    })
+
     return {
         viewX,
         viewY,
         viewScale,
+        svgWidth,
+        svgHeight,
         handleMouseDown,
         handleMouseMove,
         handleMouseUp,

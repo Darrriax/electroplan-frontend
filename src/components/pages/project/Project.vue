@@ -1,40 +1,34 @@
 <template>
   <projectLayout>
-
-    <!--    ToDo: project-canvas
-    1. Connect walls
-    Done: 2. Fix room expansion when dragging top and left walls
-    Done: 3. Add room corners
-    4. Add inner walls
-    5. Add different types of walls
-    Done: 6. Add measure units (mm, sm, m)-->
-
-
     <div class="controls">
-      <label>Товщина стін (см):
+      <label>
+        Товщина стін (см):
         <input type="number" v-model.number="wallThickness" min="0"/>
       </label>
-      <label>Одиниці виміру:
+      <label>
+        Одиниці виміру:
         <select v-model="unit">
           <option value="m">Метри</option>
           <option value="cm">Сантиметри</option>
           <option value="mm">Міліметри</option>
         </select>
       </label>
+      <button @click="centerRoom">Центрувати</button>
     </div>
+
     <div class="svg-wrapper">
       <svg
           ref="svgRef"
           :width="svgWidth"
           :height="svgHeight"
+          @click="handleSvgClick"
           @mousedown="handleMouseDown"
           @mouseup="handleMouseUp"
           @mousemove="handleMouseMove"
           @wheel.prevent="handleWheel"
-          style="cursor: grab"
+          class="svg-style"
       >
         <g :transform="`translate(${viewX} ${viewY}) scale(${viewScale})`">
-          <!-- Стіни -->
           <line
               v-for="(wall, index) in walls"
               :key="'wall-' + index"
@@ -43,12 +37,16 @@
               :x2="wall.x + wall.dx"
               :y2="wall.y + wall.dy"
               :stroke-width="wallThickness"
-              :stroke="activeWall === index ? '#ff0' : '#777'"
+              :stroke="activeWallIndex === index ? '#FFEB3B' : '#777'"
+              :class="{ 'active-wall': activeWallIndex === index }"
+              pointer-events="stroke"
               @mousedown="(e) => handleWallMouseDown(e, index)"
+              @mousemove="handleWallMouseMove"
+              @mouseup="handleWallMouseUp"
+              @click="(e) => handleWallClick(e, index)"
               style="cursor: move"
           />
 
-          <!-- Кути кімнати -->
           <circle
               v-for="(corner, index) in corners"
               :key="'corner-' + index"
@@ -57,24 +55,23 @@
               r="5"
               fill="lime"
               stroke="darkgreen"
-              stroke-width="1"
               @mousedown="(e) => handleCornerMouseDown(e, index)"
               style="cursor: pointer"
           />
+
           <path
               v-for="marker in angleMarkers"
               :key="'angle-marker-' + marker.index"
-              :d="`M ${marker.center.x + Math.cos(marker.startAngle)*marker.radius}
-          ${marker.center.y + Math.sin(marker.startAngle)*marker.radius}
-          A ${marker.radius} ${marker.radius} 0 ${marker.largeArc} ${marker.sweepFlag}
-          ${marker.center.x + Math.cos(marker.endAngle)*marker.radius}
-          ${marker.center.y + Math.sin(marker.endAngle)*marker.radius}
-          L ${marker.center.x} ${marker.center.y} Z`"
+              :d="`M ${marker.center.x + Math.cos(marker.startAngle) * marker.radius}
+                  ${marker.center.y + Math.sin(marker.startAngle) * marker.radius}
+                  A ${marker.radius} ${marker.radius} 0 ${marker.largeArc} ${marker.sweepFlag}
+                  ${marker.center.x + Math.cos(marker.endAngle) * marker.radius}
+                  ${marker.center.y + Math.sin(marker.endAngle) * marker.radius}
+                  L ${marker.center.x} ${marker.center.y} Z`"
               fill="rgba(50, 205, 50, 0.15)"
               stroke="rgba(50, 205, 50, 0.3)"
-              stroke-width="1"
           />
-          <!-- Вивід значень кутів -->
+
           <text
               v-for="angle in angles"
               :key="'angle-' + angle.index"
@@ -112,19 +109,46 @@
           >
             {{ line.displayedLength }} {{ unit }}
           </text>
+
+          <foreignObject
+              v-if="showGear"
+              :x="gearPosition.x"
+              :y="gearPosition.y"
+              width="36"
+              height="36"
+              style="overflow: visible; pointer-events: auto"
+          >
+            <div class="gear-icon-wrapper" @click.stop="toggleMenu">
+              <font-awesome-icon icon="fa-solid fa-gear"/>
+            </div>
+          </foreignObject>
+
+          <foreignObject
+              v-if="showMenu"
+              :x="gearPosition.x"
+              :y="gearPosition.y"
+              width="180"
+              height="100"
+              style="pointer-events: auto"
+          >
+            <WallActionMenu @split="splitWall" @add-inner="addInnerWall"/>
+          </foreignObject>
         </g>
       </svg>
     </div>
   </projectLayout>
 </template>
 
-
 <script setup>
-import {ref, computed, onUnmounted} from 'vue'
-import projectLayout from "../../UI/layouts/projectLayout.vue"
-import {usePanAndZoom} from '../../composables/usePanAndZoom'
+import {ref, onMounted, onUnmounted} from 'vue'
+import projectLayout from '../../UI/layouts/projectLayout.vue'
+import WallActionMenu from '../../UI/elements/SmallActionMenu.vue'
+
 import {useWalls} from '../../composables/useWalls'
 import {useRoomDrag} from '../../composables/useRoomDrag'
+import {useWallSplit} from '../../composables/useWallSplit'
+import {usePanAndZoom} from '../../composables/usePanAndZoom'
+import {useCenterRoom} from '../../composables/useCenterRoom'
 
 const unit = ref('cm')
 const wallThickness = ref(12)
@@ -137,66 +161,62 @@ const corners = ref([
 ])
 
 const svgRef = ref(null)
-const svgWidth = ref(window.innerWidth)
-const svgHeight = ref(window.innerHeight - 110)
 
-// Панорамування та масштабування
 const {
   viewX,
   viewY,
   viewScale,
-  handleMouseDown: panHandleMouseDown,
-  handleMouseMove: panHandleMouseMove,
-  handleMouseUp: panHandleMouseUp,
+  svgWidth,
+  svgHeight,
+  handleMouseDown,
+  handleMouseMove: panMouseMove,
+  handleMouseUp: panMouseUp,
   handleWheel
 } = usePanAndZoom()
 
-// Стіни та розміри
-const {walls, angles, angleMarkers, internalLines} = useWalls(
-    corners,
-    wallThickness,
-    unit,
-)
+const {walls, angles, internalLines, angleMarkers} = useWalls(corners, wallThickness, unit)
 
-// Перетягування елементів
 const {
-  activeWall,
-  activeCorner,
   handleWallMouseDown,
   handleCornerMouseDown,
   handleDragMove,
   resetDragState
-} = useRoomDrag(
-    corners,
-    svgRef,
-    viewScale,
-    viewX,
-    viewY
-)
+} = useRoomDrag(corners, svgRef, viewScale, viewX, viewY)
 
-// Об'єднання обробників подій
-const handleMouseDown = (e) => {
-  panHandleMouseDown(e, svgRef)
-}
+const {
+  showGear,
+  gearPosition,
+  showMenu,
+  activeWallIndex,
+  handleWallClick,
+  handleWallMouseMove,
+  handleWallMouseUp,
+  handleSvgClick,
+  toggleMenu,
+  splitWall,
+  addInnerWall
+} = useWallSplit(corners, viewScale, svgRef, viewX, viewY)
+
+const {centerRoom} = useCenterRoom(corners, svgRef, viewX, viewY, viewScale)
 
 const handleMouseMove = (e) => {
-  panHandleMouseMove(e)
+  panMouseMove(e)
   handleDragMove(e)
 }
 
 const handleMouseUp = () => {
-  panHandleMouseUp(svgRef)
+  panMouseUp(svgRef)
   resetDragState()
 }
 
-// Ресайз вікна
-const handleResize = () => {
-  svgWidth.value = window.innerWidth
-  svgHeight.value = window.innerHeight - 110
-}
+onMounted(() => {
+  centerRoom()
+  window.addEventListener('resize', centerRoom)
+})
 
-window.addEventListener('resize', handleResize)
-onUnmounted(() => window.removeEventListener('resize', handleResize))
+onUnmounted(() => {
+  window.removeEventListener('resize', centerRoom)
+})
 </script>
 
 <style scoped>
@@ -212,17 +232,37 @@ onUnmounted(() => window.removeEventListener('resize', handleResize))
   overflow: hidden;
 }
 
-svg {
-  background: #f8f8f8;
+.svg-style {
+  position: relative;
+  background: #eeeeee;
 }
 
-rect {
-  stroke-width: 1;
-  stroke: #333;
-  transition: fill 0.2s;
+.svg-wrapper ::v-deep svg text {
+  user-select: none;
+  pointer-events: none;
 }
 
-circle:hover {
-  stroke-width: 2;
+.gear-icon-wrapper {
+  background: rgba(255, 255, 255, 0.2);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, opacity 0.2s, transform 0.2s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
+.gear-icon-wrapper:hover {
+  background: white;
+  opacity: 1;
+  transform: scale(1.02);
+}
+
+.active-wall {
+  stroke: #b0b000;
+  filter: url(#inner-glow);
 }
 </style>
