@@ -43,7 +43,7 @@ export default {
   },
   methods: {
     goToProject() {
-      router.push('/project');
+      router.push('/plan-editor');
     },
   }
 }

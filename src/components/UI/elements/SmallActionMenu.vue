@@ -1,6 +1,6 @@
 <template>
   <div class="small-menu">
-    <div class="small-menu-header">Wall</div>
+    <div class="small-menu-header">WallManager</div>
     <div class="small-menu-item" @click="handleSplit">
       <font-awesome-icon icon="fa-solid fa-scissors" class="orange-icon"/>
       <span>Split wall</span>

@@ -2,12 +2,9 @@
   <AppLoader v-if="loadingStatus"/>
   <div class="project-wrap">
     <div class="sidebar_container"></div>
-    <div
-        class="min-vh-100 displayFlexColumn"
-        :class="{'project-content': isProjectPage}"
-    >
+    <div class="min-vh-100 displayFlexColumn project-content">
       <navigation class="navigation"/>
-      <projectNavbar v-if="isProjectPage" class="project-navbar"/>
+      <projectNavbar class="project-navbar"/>
       <slot/>
     </div>
   </div>
@@ -29,10 +26,5 @@ export default {
     ProjectNavbar
   },
   mixins: [isLoading],
-  setup() {
-    const route = useRoute();
-    const isProjectPage = computed(() => route.path.startsWith('/project'));
-    return { isProjectPage };
-  }
 }
 </script>
