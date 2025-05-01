@@ -11,7 +11,6 @@ export class WallManager {
         this.previewRect = options.previewRect;
         this.store = options.store;
         this.wallEdges = new WallEdges(canvas);
-        this.currentHoveredWall = null;
 
         this.activeWall = null;
         this.dimensionLines = [];

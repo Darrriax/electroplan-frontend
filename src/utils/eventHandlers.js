@@ -1,36 +1,93 @@
-export function handleMouseMove(e, context) {
-    const { canvas, currentTool, isDrawing, startPoint, wallManager, previewRect } = context;
-    if (!canvas) return;
+// eventHandlers.js
 
-    const pointer = canvas.getPointer(e.e);
+export function createCanvasEventHandlers({ getCanvasState, onDrawingStart, onDrawingEnd }) {
+    const state = {
+        isDragging: false,
+        lastPosition: null
+    };
 
-    if (currentTool === 'wall') {
-        if (!isDrawing) {
-            wallManager.handleWallHover(pointer);
-            previewRect?.updatePosition(pointer.x, pointer.y);
-            wallManager?.updateDrawing(pointer, pointer);
+    return {
+        handleMouseMove: (e) => {
+            const context = getCanvasState();
+            const { canvas, currentTool, isDrawing } = context;
+            if (!canvas || !currentTool) return;
+
+            const pointer = canvas.getPointer(e.e);
+
+            switch(currentTool) {
+                case 'wall':
+                    handleWallToolMove(pointer, context, state);
+                    break;
+                // Add other tool cases here
+            }
+        },
+
+        handleMouseDown: (e) => {
+            const context = getCanvasState();
+            const { currentTool, canvas } = context;
+
+            if (e.e.button !== 0 || !currentTool || !canvas) return null;
+
+            const pointer = canvas.getPointer(e.e);
+
+            switch(currentTool) {
+                case 'wall':
+                    handleWallToolDown(pointer, context);
+                    break;
+                // Add other tool cases here
+            }
+
+            onDrawingStart?.(pointer);
+            return pointer;
+        },
+
+        handleMouseUp: () => {
+            const context = getCanvasState();
+            const { currentTool } = context;
+
+            switch(currentTool) {
+                case 'wall':
+                    handleWallToolUp(context);
+                    break;
+                // Add other tool cases here
+            }
+
+            onDrawingEnd?.();
         }
-
-        if (isDrawing && wallManager?.activeWall) {
-            wallManager.updateDrawing(pointer, startPoint);
-        }
-    }
+    };
 }
 
-export function handleMouseDown(e, context) {
-    const { canvas, currentTool, wallManager, grid, previewRect } = context;
-    if (currentTool === 'wall' && e.e.button === 0) {
-        const startPoint = canvas.getPointer(e.e);
-        grid.showSnapLines(startPoint);
-        previewRect?.setVisible(false);
-        wallManager.startDrawing(startPoint);
-        return startPoint;
+// Wall-specific handlers
+function handleWallToolMove(pointer, context, state) {
+    const { wallManager, previewRect, isDrawing, startPoint } = context;
+
+    if (!state.isDragging) {
+        wallManager.handleWallHover(pointer);
+        previewRect?.updatePosition(pointer.x, pointer.y);
+        wallManager?.updateDrawing(pointer, pointer);
     }
-    return null;
+
+    if (isDrawing && wallManager?.activeWall) {
+        state.isDragging = true;
+        wallManager.updateDrawing(pointer, startPoint);
+    } else {
+        state.isDragging = false;
+    }
+
+    state.lastPosition = pointer;
 }
 
-export function handleMouseUp(context) {
-    const { grid, wallManager, currentTool, previewRect } = context;
+function handleWallToolDown(pointer, context) {
+    const { grid, wallManager, previewRect } = context;
+
+    grid.showSnapLines(pointer);
+    previewRect?.setVisible(false);
+    wallManager.startDrawing(pointer);
+}
+
+function handleWallToolUp(context) {
+    const { grid, wallManager, previewRect, currentTool } = context;
+
     grid.clearSnapLines();
     wallManager?.finishDrawing();
     previewRect?.setVisible(currentTool === 'wall');

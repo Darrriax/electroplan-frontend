@@ -1,28 +1,20 @@
 <template>
   <project-layout>
     <div class="plan-editor">
-      <!-- Бокове меню інструментів -->
-      <SidebarMenu :visible="isMenuOpen">
-        <div
-            v-for="tool in tools"
-            :key="tool.name"
-            class="tool-item"
-            :class="{ 'selected-tool': currentTool === tool.name }"
-            @click="selectTool(tool.name)"
-        >
-          <i :class="tool.icon"></i> {{ tool.label }}
-        </div>
-      </SidebarMenu>
-
-      <!-- Панель налаштувань стіни -->
-      <WallSettingsPanel
-          v-if="currentTool === 'wall'"
-          :thickness="wallThickness"
-          :unit="unit"
-          @update:thickness="val => $store.dispatch('walls/updateDefaultThickness', val)"
+      <ToolSidebar
+          :tools="editorTools"
+          :visible="isMenuOpen"
+          :current-tool="currentTool"
+          @tool-selected="setCurrentTool"
       />
 
-      <!-- Полотно для редагування плану -->
+      <WallSettingsPanel
+          v-if="isWallToolActive"
+          :thickness="wallThickness"
+          :unit="unit"
+          @update:thickness="updateWallThickness"
+      />
+
       <div class="editor-canvas">
         <canvas ref="canvas"></canvas>
       </div>
@@ -32,13 +24,25 @@
 
 <script>
 import ProjectLayout from '../../UI/layouts/ProjectLayout.vue';
-import SidebarMenu from '../../UI/elements/SidebarMenu.vue';
+import ToolSidebar from '../../UI/elements/ToolSidebar.vue';
 import WallSettingsPanel from '../../UI/settings/WallSettingsPanel.vue';
 import canvasMixin from '../../../mixins/canvasMixin';
-import {handleMouseMove, handleMouseDown, handleMouseUp} from '../../../utils/eventHandlers.js';
+import { createCanvasEventHandlers } from '../../../utils/eventHandlers.js';
+
+// Constants for better maintainability
+const EDITOR_TOOLS = [
+  { name: 'wall', label: 'Стіна', icon: 'fas fa-wall' },
+  { name: 'balcony', label: 'Балкон', icon: 'fas fa-umbrella-beach' },
+  { name: 'window', label: 'Вікно', icon: 'fas fa-window-maximize' },
+  { name: 'door', label: 'Двері', icon: 'fas fa-door-open' }
+];
 
 export default {
-  components: {ProjectLayout, SidebarMenu, WallSettingsPanel},
+  components: {
+    ProjectLayout,
+    ToolSidebar,
+    WallSettingsPanel
+  },
   mixins: [canvasMixin],
 
   data() {
@@ -46,96 +50,112 @@ export default {
       currentTool: null,
       isDrawing: false,
       startPoint: null,
-
-      tools: [
-        {name: 'wall', label: 'Стіна', icon: 'fas fa-wall'},
-        {name: 'balcony', label: 'Балкон', icon: 'fas fa-umbrella-beach'},
-        {name: 'window', label: 'Вікно', icon: 'fas fa-window-maximize'},
-        {name: 'door', label: 'Двері', icon: 'fas fa-door-open'}
-      ]
+      editorTools: EDITOR_TOOLS
     };
   },
 
   computed: {
     wallThickness() {
-      return this.$store.getters['walls/defaultThickness']
+      return this.$store.getters['walls/defaultThickness'];
     },
     isMenuOpen() {
       return this.$store.state.project.menuOpen;
     },
     unit() {
       return this.$store.getters['project/unit'];
+    },
+    isWallToolActive() {
+      return this.currentTool === 'wall';
     }
   },
 
   watch: {
-    wallThickness(newVal) {
-      this.previewRect?.updateSize(newVal / 10)
-      this.wallManager?.updateAllWallsThickness(newVal)
-      this.wallManager?.updateWallThickness(newVal)
-    },
-    currentTool(newTool) {
-      this.previewRect?.setVisible(newTool === 'wall');
-    }
+    wallThickness: 'handleWallThicknessChange',
+    currentTool: 'handleToolChange'
   },
 
   mounted() {
-    this.initCanvas();
-    document.addEventListener('contextmenu', this.handleContextMenu);
-
-    this.canvas.on('mouse:move', this.handleMouseMove);
-    this.canvas.on('mouse:down', this.handleMouseDown);
-    this.canvas.on('mouse:up', this.handleMouseUp);
+    this.initializeCanvas();
+    this.setupEventListeners();
   },
 
   beforeDestroy() {
-    document.removeEventListener('contextmenu', this.handleContextMenu);
-    this.canvas.off('mouse:move', this.handleMouseMove);
-    this.canvas.off('mouse:down', this.handleMouseDown);
-    this.canvas.off('mouse:up', this.handleMouseUp);
+    this.cleanupEventListeners();
   },
 
   methods: {
-    selectTool(tool) {
+    setCurrentTool(tool) {
       this.currentTool = tool;
-      this.previewRect?.setVisible(tool === 'wall');
     },
-    handleMouseMove(e) {
-      handleMouseMove(e, {
-        canvas: this.canvas,
-        currentTool: this.currentTool,
-        isDrawing: this.isDrawing,
-        startPoint: this.startPoint,
-        wallManager: this.wallManager,
-        previewRect: this.previewRect
-      });
-    },
-    handleMouseDown(e) {
-      const startPoint = handleMouseDown(e, {
-        canvas: this.canvas,
-        currentTool: this.currentTool,
-        wallManager: this.wallManager,
-        grid: this.grid,
-        previewRect: this.previewRect
-      });
 
-      if (startPoint) {
-        this.isDrawing = true;
-        this.startPoint = startPoint;
-      }
+    updateWallThickness(thickness) {
+      this.$store.dispatch('walls/updateDefaultThickness', thickness);
     },
-    handleMouseUp() {
-      handleMouseUp({
-        grid: this.grid,
-        wallManager: this.wallManager,
-        currentTool: this.currentTool,
-        previewRect: this.previewRect
-      });
 
-      this.isDrawing = false;
+    handleWallThicknessChange(newThickness) {
+      this.previewRect?.updateSize(newThickness / 10);
+      this.wallManager?.updateAllWallsThickness(newThickness);
+      this.wallManager?.updateWallThickness(newThickness);
     },
-    handleContextMenu(e) {
-      e.preventDefault();
+
+    handleToolChange(newTool) {
+      this.previewRect?.setVisible(newTool === 'wall');
+    },
+
+    initializeCanvas() {
+      this.initCanvas();
+      this.canvasEventHandlers = createCanvasEventHandlers({
+        getCanvasState: () => ({
+          canvas: this.canvas,
+          currentTool: this.currentTool,
+          isDrawing: this.isDrawing,
+          startPoint: this.startPoint,
+          wallManager: this.wallManager,
+          previewRect: this.previewRect,
+          grid: this.grid
+        }),
+        onDrawingStart: (point) => {
+          this.isDrawing = true;
+          this.startPoint = point;
+        },
+        onDrawingEnd: () => {
+          this.isDrawing = false;
+        }
+      });
+    },
+
+    setupEventListeners() {
+      document.addEventListener('contextmenu', this.preventContextMenuDefault);
+      this.canvas.on({
+        'mouse:move': this.handleCanvasMouseMove,
+        'mouse:down': this.handleCanvasMouseDown,
+        'mouse:up': this.handleCanvasMouseUp
+      });
+    },
+
+    cleanupEventListeners() {
+      document.removeEventListener('contextmenu', this.preventContextMenuDefault);
+      this.canvas.off({
+        'mouse:move': this.handleCanvasMouseMove,
+        'mouse:down': this.handleCanvasMouseDown,
+        'mouse:up': this.handleCanvasMouseUp
+      });
+    },
+
+    handleCanvasMouseMove(event) {
+      this.canvasEventHandlers.handleMouseMove(event);
+    },
+
+    handleCanvasMouseDown(event) {
+      this.canvasEventHandlers.handleMouseDown(event);
+    },
+
+    handleCanvasMouseUp(event) {
+      this.canvasEventHandlers.handleMouseUp(event);
+    },
+
+    preventContextMenuDefault(event) {
+      event.preventDefault();
       this.currentTool = null;
       this.previewRect?.setVisible(false);
     }
