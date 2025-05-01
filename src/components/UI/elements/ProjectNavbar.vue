@@ -88,19 +88,3 @@ export default {
 }
 </script>
 
-<style scoped>
-.divider {
-  width: 1px;
-  height: 24px;
-  background-color: #ccc;
-  margin: 0 10px;
-}
-
-.unit-select {
-  padding: 4px 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background: #fff;
-  font-size: 14px;
-}
-</style>

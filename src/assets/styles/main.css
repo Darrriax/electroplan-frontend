@@ -258,6 +258,7 @@ button a {
     color: black;
     text-decoration: none;
 }
+
 a:hover {
     color: white;
     text-decoration: none;
@@ -535,7 +536,7 @@ canvas {
     width: 100% !important;
     height: 100% !important;
     display: block;
-    image-rendering: -moz-crisp-edges;    /* Firefox */
+    image-rendering: -moz-crisp-edges; /* Firefox */
     image-rendering: -webkit-optimize-contrast; /* Chrome */
     image-rendering: crisp-edges;
     -ms-interpolation-mode: nearest-neighbor; /* IE */
@@ -553,4 +554,42 @@ canvas {
 .snap-indicator {
     fill: #32CD32;
     stroke-width: 0;
+}
+
+/*__________________________________SidebarMenu________________________________*/
+.sidebar-menu {
+    position: fixed;
+    top: 105px;
+    left: 0;
+    width: 160px;
+    background: white;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+    border-bottom-right-radius: 10px;
+    z-index: 100;
+    height: 100%;
+    transition: transform 0.3s ease-in-out,
+    max-height 0.3s ease-in-out;
+    transform: translateX(-100%);
+    max-height: 0;
+}
+
+.sidebar-menu > div {
+    overflow-y: auto;
+    max-height: calc(100vh - 140px);
+}
+
+/*__________________________________Divider________________________________*/
+.divider {
+    width: 1px;
+    height: 24px;
+    background-color: #ccc;
+    margin: 0 10px;
+}
+
+.unit-select {
+    padding: 4px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #fff;
+    font-size: 14px;
 }

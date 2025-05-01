@@ -59,13 +59,7 @@ export function createCanvasEventHandlers({ getCanvasState, onDrawingStart, onDr
 
 // Wall-specific handlers
 function handleWallToolMove(pointer, context, state) {
-    const { wallManager, previewRect, isDrawing, startPoint } = context;
-
-    if (!state.isDragging) {
-        wallManager.handleWallHover(pointer);
-        previewRect?.updatePosition(pointer.x, pointer.y);
-        wallManager?.updateDrawing(pointer, pointer);
-    }
+    const { wallManager, isDrawing, startPoint } = context;
 
     if (isDrawing && wallManager?.activeWall) {
         state.isDragging = true;
@@ -78,17 +72,11 @@ function handleWallToolMove(pointer, context, state) {
 }
 
 function handleWallToolDown(pointer, context) {
-    const { grid, wallManager, previewRect } = context;
-
-    grid.showSnapLines(pointer);
-    previewRect?.setVisible(false);
+    const { wallManager } = context;
     wallManager.startDrawing(pointer);
 }
 
 function handleWallToolUp(context) {
-    const { grid, wallManager, previewRect, currentTool } = context;
-
-    grid.clearSnapLines();
+    const { wallManager } = context;
     wallManager?.finishDrawing();
-    previewRect?.setVisible(currentTool === 'wall');
 }
