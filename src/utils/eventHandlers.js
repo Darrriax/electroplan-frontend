@@ -6,6 +6,7 @@ export function handleMouseMove(e, context) {
 
     if (currentTool === 'wall') {
         if (!isDrawing) {
+            wallManager.handleWallHover(pointer);
             previewRect?.updatePosition(pointer.x, pointer.y);
             wallManager?.updateDrawing(pointer, pointer);
         }

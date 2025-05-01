@@ -4,8 +4,8 @@ import { fabric } from 'fabric';
 import { Grid } from '../utils/canvas/Grid';
 import { PreviewRect } from '../utils/canvas/PreviewRect';
 import { WallManager } from '../utils/canvas/WallManager';
-import { WallSnapManager } from '../utils/canvas/WallSnapManager';
 import { createWallPattern } from '../utils/patternUtils';
+import {WallSnapManager} from "../utils/canvas/WallSnapManager.js";
 
 export default {
     data() {

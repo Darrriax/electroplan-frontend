@@ -1,6 +1,7 @@
 // utils/canvas/WallManager.js
 import { fabric } from 'fabric';
 import { createWallPattern } from '../patternUtils';
+import {WallEdges} from "./WallEdges.js";
 
 export class WallManager {
     constructor(canvas, options) {
@@ -9,6 +10,8 @@ export class WallManager {
         this.snapManager = options.snapManager;
         this.previewRect = options.previewRect;
         this.store = options.store;
+        this.wallEdges = new WallEdges(canvas);
+        this.currentHoveredWall = null;
 
         this.activeWall = null;
         this.dimensionLines = [];
@@ -17,6 +20,60 @@ export class WallManager {
         this.snapThreshold = 12;
 
         this.bindCanvasEvents();
+    }
+
+    showWallEdges(wall) {
+        this.wallEdges.clearEdges();
+        this.wallEdges.createEdges({
+            start: wall.start,
+            end: wall.end,
+            thickness: wall.thickness
+        });
+    }
+
+    handleWallHover(mousePoint) {
+        const nearestWall = this.findNearestWall(mousePoint);
+        if (nearestWall) {
+            this.showWallEdges(nearestWall);
+            this.currentHoveredWall = nearestWall;
+        } else {
+            this.wallEdges.clearEdges();
+            this.currentHoveredWall = null;
+        }
+    }
+
+    findNearestWall(point, threshold = 15) {
+        const walls = this.store.getters['walls/allWalls'];
+        let nearest = { wall: null, distance: Infinity };
+
+        walls.forEach(wall => {
+            const distance = this.calculateDistanceToWall(point, wall);
+            if (distance < threshold && distance < nearest.distance) {
+                nearest = { wall, distance };
+            }
+        });
+
+        return nearest.wall;
+    }
+
+    calculateDistanceToWall(point, wall) {
+        const start = wall.start;
+        const end = wall.end;
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const lengthSq = dx*dx + dy*dy;
+
+        if (lengthSq === 0) return Math.hypot(point.x - start.x, point.y - start.y);
+
+        const t = ((point.x - start.x)*dx + (point.y - start.y)*dy) / lengthSq;
+        const tClamped = Math.max(0, Math.min(1, t));
+
+        const projection = {
+            x: start.x + tClamped*dx,
+            y: start.y + tClamped*dy
+        };
+
+        return Math.hypot(point.x - projection.x, point.y - projection.y);
     }
 
     bindCanvasEvents() {
@@ -178,6 +235,11 @@ export class WallManager {
         let targetPoint = currentPoint;
         let angle = this.calculateAdjustedAngle(startPoint, targetPoint);
 
+        const nearestWall = this.findNearestWall(currentPoint);
+        if (nearestWall) {
+            targetPoint = this.calculateSnapPoint(currentPoint, nearestWall);
+            this.previewRect.magnetToWall(nearestWall, currentPoint);
+        }
         if (this.currentSnapPoint) {
             const wall = this.findWallAtPoint(this.currentSnapPoint);
             angle = wall.angle + 90;
@@ -187,23 +249,29 @@ export class WallManager {
                 x: this.currentSnapPoint.x + (thickness / 2) * Math.cos(angleRad),
                 y: this.currentSnapPoint.y + (thickness / 2) * Math.sin(angleRad)
             };
-
-            if (this.previewRect) {
-                this.previewRect.magnetToWall(wall, currentPoint);
-            }
         }
 
         const dx = targetPoint.x - startPoint.x;
         const dy = targetPoint.y - startPoint.y;
-        const length = Math.sqrt(dx * dx + dy * dy);
+        const length = Math.sqrt(dx*dx + dy*dy);
+
+        // Зберігаємо реальний кут перед оновленням
+        const finalAngle = this.calculateAdjustedAngle(startPoint, targetPoint);
 
         this.activeWall.set({
             width: length,
-            angle: angle,
+            angle: finalAngle,
             left: startPoint.x,
             top: startPoint.y,
             height: thickness
         });
+
+        // Перераховуємо кінцеву точку на основі реального кута
+        const angleRad = finalAngle * Math.PI / 180;
+        const realEnd = {
+            x: startPoint.x + length * Math.cos(angleRad),
+            y: startPoint.y + length * Math.sin(angleRad)
+        };
 
         if (this.currentSnapPoint) {
             this.snapManager.showSnapIndicator(this.currentSnapPoint);
@@ -213,7 +281,8 @@ export class WallManager {
             this.activeWall.set({ stroke: '#404040' });
         }
 
-        this.drawDimension(startPoint, targetPoint, length, thickness);
+        // Малюємо розміри на основі реальних координат
+        this.drawDimension(startPoint, realEnd, length, thickness);
         this.canvas.requestRenderAll();
     }
 
@@ -234,14 +303,22 @@ export class WallManager {
     drawDimension(start, end, length, thickness) {
         this.clearDimension();
 
-        const angle = Math.atan2(end.y - start.y, end.x - start.x);
-        const angleDeg = angle * 180 / Math.PI;
-        const midX = (start.x + end.x) / 2;
-        const midY = (start.y + end.y) / 2;
+        // Отримуємо реальний кут з активної стіни
+        const angle = this.activeWall.angle * Math.PI / 180;
+        const angleDeg = this.activeWall.angle;
+
+        // Перераховуємо кінцеву точку на основі реального кута
+        const realEnd = {
+            x: start.x + length * Math.cos(angle),
+            y: start.y + length * Math.sin(angle)
+        };
+
+        const midX = (start.x + realEnd.x) / 2;
+        const midY = (start.y + realEnd.y) / 2;
 
         const baseOffset = 10;
         const offset = thickness / 2 + baseOffset;
-        const extra = 10; // Виступ за розмірну лінію
+        const extra = 10;
         const offsets = [+offset, -offset];
 
         const isFlipped = angleDeg > 90 && angleDeg < 270;
@@ -257,33 +334,36 @@ export class WallManager {
 
             // Лінія розміру
             const dimLine = new fabric.Line(
-                [start.x + offsetX, start.y + offsetY, end.x + offsetX, end.y + offsetY],
+                [start.x + offsetX, start.y + offsetY, realEnd.x + offsetX, realEnd.y + offsetY],
                 { stroke: '#000', strokeWidth: 1, selectable: false }
             );
             all.push(dimLine);
 
-            // Перпендикуляр зліва
+            // Перпендикуляри
             const perpStart = new fabric.Line(
                 [
-                    start.x + offsetX - perpX, start.y + offsetY - perpY,
-                    start.x + offsetX + perpX, start.y + offsetY + perpY
+                    start.x + offsetX - perpX,
+                    start.y + offsetY - perpY,
+                    start.x + offsetX + perpX,
+                    start.y + offsetY + perpY
                 ],
                 { stroke: '#000', strokeWidth: 1, selectable: false }
             );
             all.push(perpStart);
 
-            // Перпендикуляр справа
             const perpEnd = new fabric.Line(
                 [
-                    end.x + offsetX - perpX, end.y + offsetY - perpY,
-                    end.x + offsetX + perpX, end.y + offsetY + perpY
+                    realEnd.x + offsetX - perpX,
+                    realEnd.y + offsetY - perpY,
+                    realEnd.x + offsetX + perpX,
+                    realEnd.y + offsetY + perpY
                 ],
                 { stroke: '#000', strokeWidth: 1, selectable: false }
             );
             all.push(perpEnd);
 
             // Текст довжини
-            const text = new fabric.Text(`${length.toFixed(0)}`, {
+            const text = new fabric.Text(`${Math.round(length)}`, {
                 left: midX + offsetX,
                 top: midY + offsetY,
                 fontSize: 14,
@@ -298,6 +378,39 @@ export class WallManager {
 
         all.forEach(obj => this.canvas.add(obj));
         this.dimensionLines.push(...all);
+    }
+
+    calculateSnapPoint(currentPoint, wall) {
+        const angleRad = Math.atan2(wall.end.y - wall.start.y, wall.end.x - wall.start.x);
+        const normal = {
+            x: -Math.sin(angleRad),
+            y: Math.cos(angleRad)
+        };
+
+        // Вектор від стіни до курсора
+        const toCursor = {
+            x: currentPoint.x - wall.start.x,
+            y: currentPoint.y - wall.start.y
+        };
+
+        // Визначаємо сторону
+        const dot = toCursor.x * normal.x + toCursor.y * normal.y;
+        const side = dot > 0 ? 1 : -1;
+
+        // Зміщення з урахуванням товщин
+        const totalOffset = (wall.thickness/10 + this.getThickness()/10)/2;
+
+        // Проекція на стіну
+        const t = ((currentPoint.x - wall.start.x)*(wall.end.x - wall.start.x) +
+            ((currentPoint.y - wall.start.y)*(wall.end.y - wall.start.y)) /
+            Math.pow(wallLength, 2))
+
+        const tClamped = Math.max(0, Math.min(1, t));
+
+        return {
+            x: wall.start.x + tClamped*(wall.end.x - wall.start.x) + normal.x*totalOffset*side,
+            y: wall.start.y + tClamped*(wall.end.y - wall.start.y) + normal.y*totalOffset*side
+        };
     }
 
     /**
