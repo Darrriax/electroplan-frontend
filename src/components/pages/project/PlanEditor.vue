@@ -28,6 +28,7 @@ import ToolSidebar from '../../UI/elements/ToolSidebar.vue';
 import WallSettingsPanel from '../../UI/settings/WallSettingsPanel.vue';
 import canvasMixin from '../../../mixins/canvasMixin';
 import { createCanvasEventHandlers } from '../../../utils/eventHandlers.js';
+import {mapState} from "vuex";
 
 // Constants for better maintainability
 const EDITOR_TOOLS = [
@@ -55,15 +56,13 @@ export default {
   },
 
   computed: {
-    wallThickness() {
-      return this.$store.getters['walls/defaultThickness'];
-    },
-    isMenuOpen() {
-      return this.$store.state.project.menuOpen;
-    },
-    unit() {
-      return this.$store.getters['project/unit'];
-    },
+    ...mapState('walls', {
+      defaultThickness: state => state.defaultThickness,
+      unit: state => state.unit
+    }),
+    ...mapState('project', {
+      isMenuOpen: state => state.menuOpen,
+    }),
     isWallToolActive() {
       return this.currentTool === 'wall';
     }
@@ -94,7 +93,6 @@ export default {
 
     handleWallThicknessChange(newThickness) {
       this.previewRect?.updateSize(newThickness / 10);
-      this.wallManager?.updateAllWallsThickness(newThickness);
       this.wallManager?.updateWallThickness(newThickness);
     },
 

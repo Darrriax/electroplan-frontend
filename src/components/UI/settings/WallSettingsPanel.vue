@@ -31,80 +31,91 @@
   </transition>
 </template>
 
-<script setup>
-import {computed} from 'vue'
-import {useStore} from 'vuex'
+<script>
+import { mapActions, mapGetters, mapState } from "vuex";
 
-const store = useStore()
+export default {
+  name: 'WallSettingsPanel',
 
-// Отримуємо одиниці виміру з модуля project
-const unit = computed(() => store.getters['project/unit'])
+  data() {
+    return {
+      basePresets: [50, 80, 100, 120, 150, 200],
+      stepMap: { mm: 1, cm: 1, m: 0.1 }
+    }
+  },
 
-const wallThickness = computed({
-  get: () => store.getters['walls/defaultThickness'],
-  set: (value) => store.dispatch('walls/updateDefaultThickness', value)
-})
+  computed: {
+    ...mapGetters({
+      unit: 'project/unit',
+      wallThickness: 'walls/defaultThickness'
+    }),
 
-const basePresets = [50, 80, 100, 120, 150, 200] // мм
-const stepMap = {mm: 10, cm: 10, m: 100}
+    computedPresets() {
+      return this.basePresets.map(preset => ({
+        value: preset,
+        display: `${this.convertToCurrentUnit(preset)}`
+      }))
+    },
 
-const convertToCurrentUnit = (valueMM) => {
-  if (!unit.value) return '0' // Додано перевірку на наявність unit
-  switch (unit.value) {
-    case 'cm':
-      return (valueMM / 10).toFixed(0)
-    case 'm':
-      return (valueMM / 1000).toFixed(2)
-    default:
-      return valueMM
+    displayValue() {
+      return `${this.convertToCurrentUnit(this.wallThickness)} ${this.unit}`
+    }
+  },
+
+  methods: {
+    ...mapActions({
+      updateThickness: 'walls/updateDefaultThickness'
+    }),
+
+    convertToCurrentUnit(valueMM) {
+      if (!this.unit) return '0'
+      switch (this.unit) {
+        case 'cm': return (valueMM / 10).toFixed(0)
+        case 'm': return (valueMM / 1000).toFixed(2)
+        default: return valueMM
+      }
+    },
+
+    convertToMM(value) {
+      const numberValue = parseFloat(value) || 0
+      if (!this.unit) return 0
+      switch (this.unit) {
+        case 'cm': return numberValue * 10
+        case 'm': return numberValue * 1000
+        default: return numberValue
+      }
+    },
+
+    increase() {
+      if (!this.unit) return
+      const step = this.stepMap[this.unit]
+      this.updateThickness(this.wallThickness + this.convertToMM(step))
+    },
+
+    decrease() {
+      if (!this.unit) return
+      const step = this.stepMap[this.unit]
+      const newValue = this.wallThickness - this.convertToMM(step)
+      this.updateThickness(Math.max(10, newValue))
+    },
+
+    handleBlur(e) {
+      const raw = e.target.innerText.replace(/[^\d.,]/g, '').replace(',', '.')
+      const value = parseFloat(raw) || 0
+      this.updateThickness(Math.max(10, this.convertToMM(value)))
+    },
+
+    handleEnter(e) {
+      e.target.blur()
+    },
+
+    isPresetActive(value) {
+      return this.wallThickness === value
+    },
+
+    setThickness(value) {
+      this.updateThickness(value)
+    }
   }
 }
-
-const convertToMM = (value) => {
-  const numberValue = parseFloat(value) || 0 // Додано перевірку на число
-  if (!unit.value) return 0
-  switch (unit.value) {
-    case 'cm':
-      return numberValue * 10
-    case 'm':
-      return numberValue * 1000
-    default:
-      return numberValue
-  }
-}
-
-const computedPresets = computed(() => {
-  return basePresets.map(preset => ({
-    value: preset,
-    display: `${convertToCurrentUnit(preset)}`
-  }))
-})
-
-const displayValue = computed(() => {
-  return `${convertToCurrentUnit(wallThickness.value)} ${unit.value || ''}`
-})
-
-const increase = () => {
-  if (!unit.value) return
-  const step = stepMap[unit.value]
-  wallThickness.value += convertToMM(step)
-}
-
-const decrease = () => {
-  if (!unit.value) return
-  const step = stepMap[unit.value]
-  const newValue = wallThickness.value - convertToMM(step)
-  wallThickness.value = Math.max(10, newValue)
-}
-
-const handleBlur = (e) => {
-  const raw = e.target.innerText.replace(/[^\d.,]/g, '').replace(',', '.')
-  const value = parseFloat(raw) || 0
-  wallThickness.value = Math.max(10, convertToMM(value))
-}
-
-const handleEnter = (e) => e.target.blur()
-
-const isPresetActive = (value) => wallThickness.value === value
-const setThickness = (value) => wallThickness.value = value
 </script>

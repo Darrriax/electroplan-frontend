@@ -45,4 +45,34 @@ export class PreviewRect {
         this.rect.set({ width: size, height: size });
         this.canvas.requestRenderAll();
     }
+
+    /**
+     * Повертає координати 4-х кутів прямокутника.
+     * Порядок: верх-ліво, верх-право, низ-право, низ-ліво
+     */
+    getCorners() {
+        const left = this.rect.left;
+        const top = this.rect.top;
+        const width = this.rect.width * this.rect.scaleX;
+        const height = this.rect.height * this.rect.scaleY;
+
+        const halfW = width / 2;
+        const halfH = height / 2;
+
+        return [
+            { x: left - halfW, y: top - halfH }, // top-left
+            { x: left + halfW, y: top - halfH }, // top-right
+            { x: left + halfW, y: top + halfH }, // bottom-right
+            { x: left - halfW, y: top + halfH }  // bottom-left
+        ];
+    }
+    getEdges() {
+        const corners = this.getCorners();
+        return [
+            { start: corners[0], end: corners[1] }, // Верхня сторона
+            { start: corners[1], end: corners[2] }, // Права сторона
+            { start: corners[2], end: corners[3] }, // Нижня сторона
+            { start: corners[3], end: corners[0] }, // Ліва сторона
+        ];
+    }
 }
