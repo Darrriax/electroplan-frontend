@@ -62,7 +62,6 @@ function handleWallToolMove(pointer, context, state) {
     const { wallManager, previewRect, isDrawing, startPoint } = context;
 
     if (!state.isDragging) {
-        wallManager.handleWallHover(pointer);
         previewRect?.updatePosition(pointer.x, pointer.y);
         wallManager?.updateDrawing(pointer, pointer);
     }
