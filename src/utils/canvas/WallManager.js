@@ -1,6 +1,6 @@
 // utils/canvas/WallManager.js
-import { fabric } from 'fabric';
-import { createWallPattern } from '../patternUtils';
+import {fabric} from 'fabric';
+import {createWallPattern} from '../patternUtils';
 import {WallEdges} from "./WallEdges.js";
 
 export class WallManager {
@@ -10,91 +10,13 @@ export class WallManager {
         this.snapManager = options.snapManager;
         this.previewRect = options.previewRect;
         this.store = options.store;
-        this.wallEdges = new WallEdges(canvas);
 
         this.activeWall = null;
         this.dimensionLines = [];
-        this.currentSnapPoint = null;
         this.snapAngles = [0, 45, 90, 135, 180, 225, 270, 315];
         this.snapThreshold = 12;
-
-        this.bindCanvasEvents();
     }
 
-    showWallEdges(wall) {
-        this.wallEdges.clearEdges();
-        this.wallEdges.createEdges({
-            start: wall.start,
-            end: wall.end,
-            thickness: wall.thickness
-        });
-    }
-
-    handleWallHover(mousePoint) {
-        const nearestWall = this.findNearestWall(mousePoint);
-        if (nearestWall) {
-            this.showWallEdges(nearestWall);
-            this.currentHoveredWall = nearestWall;
-        } else {
-            this.wallEdges.clearEdges();
-            this.currentHoveredWall = null;
-        }
-    }
-
-    findNearestWall(point, threshold = 15) {
-        const walls = this.store.getters['walls/allWalls'];
-        let nearest = { wall: null, distance: Infinity };
-
-        walls.forEach(wall => {
-            const distance = this.calculateDistanceToWall(point, wall);
-            if (distance < threshold && distance < nearest.distance) {
-                nearest = { wall, distance };
-            }
-        });
-
-        return nearest.wall;
-    }
-
-    calculateDistanceToWall(point, wall) {
-        const start = wall.start;
-        const end = wall.end;
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
-        const lengthSq = dx*dx + dy*dy;
-
-        if (lengthSq === 0) return Math.hypot(point.x - start.x, point.y - start.y);
-
-        const t = ((point.x - start.x)*dx + (point.y - start.y)*dy) / lengthSq;
-        const tClamped = Math.max(0, Math.min(1, t));
-
-        const projection = {
-            x: start.x + tClamped*dx,
-            y: start.y + tClamped*dy
-        };
-
-        return Math.hypot(point.x - projection.x, point.y - projection.y);
-    }
-
-    bindCanvasEvents() {
-        this.canvas.on('object:modified', this.handleWallModified.bind(this));
-        this.canvas.on('object:moving', this.handleWallMoving.bind(this));
-        this.canvas.on('object:scaling', this.handleWallScaling.bind(this));
-    }
-
-    handleWallModified(e) {
-        const wall = e.target;
-        this.updateStoreWall(wall);
-    }
-
-    handleWallMoving(e) {
-        const wall = e.target;
-        this.updatePreviewDuringMove(wall);
-    }
-
-    handleWallScaling(e) {
-        const wall = e.target;
-        this.updateWallDimensions(wall);
-    }
 
     startDrawing(startPoint) {
         const thickness = this.store.getters['walls/defaultThickness']
@@ -143,47 +65,10 @@ export class WallManager {
     }
 
     linkWallToFabricObject(wallId) {
-        this.activeWall.set({ wallId });
+        this.activeWall.set({wallId});
         this.snapManager.registerWall(this.activeWall);
     }
 
-    updateStoreWall(fabricWall) {
-        const wallId = fabricWall.wallId;
-        const wallData = this.calculateWallData();
-
-        this.store.dispatch('walls/updateWallProperties', {
-            id: wallId,
-            properties: {
-                start: wallData.start,
-                end: wallData.end,
-                thickness: wallData.thickness
-            }
-        });
-    }
-
-    updateWallDimensions(wall) {
-        const newThickness = wall.height * 10;
-        const newLength = wall.width;
-
-        this.store.dispatch('walls/updateWallProperties', {
-            id: wall.wallId,
-            properties: {
-                thickness: newThickness,
-                length: newLength
-            }
-        });
-    }
-
-    deleteSelectedWalls() {
-        const activeObjects = this.canvas.getActiveObjects();
-        activeObjects.forEach(obj => {
-            if (obj.wallId) {
-                this.store.dispatch('walls/deleteWall', obj.wallId);
-                this.canvas.remove(obj);
-            }
-        });
-        this.canvas.discardActiveObject().requestRenderAll();
-    }
 
     updateAllWallsThickness() {
         const thickness = this.store.getters['walls/defaultThickness']
@@ -191,16 +76,11 @@ export class WallManager {
             if (obj.wallId) {
                 obj.set({
                     height: thickness / 10,
-                    top: obj.top - (thickness/10 - obj.height)/2
+                    top: obj.top - (thickness / 10 - obj.height) / 2
                 })
             }
         })
         this.canvas.requestRenderAll()
-    }
-
-    updateAllWallsHeight(height) {
-        this.store.dispatch('walls/updateAllWallHeight', height);
-        this.canvas.requestRenderAll();
     }
 
     /**
@@ -229,30 +109,11 @@ export class WallManager {
      */
     updateDrawing(currentPoint, startPoint) {
         const thickness = this.getThickness() / 10;
-        this.currentSnapPoint = this.snapManager.findSnapPoint(currentPoint, thickness);
-
         let targetPoint = currentPoint;
-        let angle = this.calculateAdjustedAngle(startPoint, targetPoint);
-
-        const nearestWall = this.findNearestWall(currentPoint);
-        if (nearestWall) {
-            targetPoint = this.calculateSnapPoint(currentPoint, nearestWall);
-            this.previewRect.magnetToWall(nearestWall, currentPoint);
-        }
-        if (this.currentSnapPoint) {
-            const wall = this.findWallAtPoint(this.currentSnapPoint);
-            angle = wall.angle + 90;
-
-            const angleRad = angle * Math.PI / 180;
-            targetPoint = {
-                x: this.currentSnapPoint.x + (thickness / 2) * Math.cos(angleRad),
-                y: this.currentSnapPoint.y + (thickness / 2) * Math.sin(angleRad)
-            };
-        }
 
         const dx = targetPoint.x - startPoint.x;
         const dy = targetPoint.y - startPoint.y;
-        const length = Math.sqrt(dx*dx + dy*dy);
+        const length = Math.sqrt(dx * dx + dy * dy);
 
         // Зберігаємо реальний кут перед оновленням
         const finalAngle = this.calculateAdjustedAngle(startPoint, targetPoint);
@@ -272,28 +133,9 @@ export class WallManager {
             y: startPoint.y + length * Math.sin(angleRad)
         };
 
-        if (this.currentSnapPoint) {
-            this.snapManager.showSnapIndicator(this.currentSnapPoint);
-            this.activeWall.set({ stroke: 'transparent' });
-        } else {
-            this.snapManager.hideSnapIndicator();
-            this.activeWall.set({ stroke: '#404040' });
-        }
-
         // Малюємо розміри на основі реальних координат
         this.drawDimension(startPoint, realEnd, length, thickness);
         this.canvas.requestRenderAll();
-    }
-
-
-    /**
-     * Пошук стіни, до якої можна прив'язати точку.
-     */
-    findWallAtPoint(point) {
-        return this.snapManager.walls.find(wall => {
-            const points = this.snapManager.getSnapPoints(wall, this.getThickness() / 10);
-            return points.some(p => Math.hypot(p.x - point.x, p.y - point.y) < 5);
-        });
     }
 
     /**
@@ -334,7 +176,7 @@ export class WallManager {
             // Лінія розміру
             const dimLine = new fabric.Line(
                 [start.x + offsetX, start.y + offsetY, realEnd.x + offsetX, realEnd.y + offsetY],
-                { stroke: '#000', strokeWidth: 1, selectable: false }
+                {stroke: '#000', strokeWidth: 1, selectable: false}
             );
             all.push(dimLine);
 
@@ -346,7 +188,7 @@ export class WallManager {
                     start.x + offsetX + perpX,
                     start.y + offsetY + perpY
                 ],
-                { stroke: '#000', strokeWidth: 1, selectable: false }
+                {stroke: '#000', strokeWidth: 1, selectable: false}
             );
             all.push(perpStart);
 
@@ -357,7 +199,7 @@ export class WallManager {
                     realEnd.x + offsetX + perpX,
                     realEnd.y + offsetY + perpY
                 ],
-                { stroke: '#000', strokeWidth: 1, selectable: false }
+                {stroke: '#000', strokeWidth: 1, selectable: false}
             );
             all.push(perpEnd);
 
@@ -377,39 +219,6 @@ export class WallManager {
 
         all.forEach(obj => this.canvas.add(obj));
         this.dimensionLines.push(...all);
-    }
-
-    calculateSnapPoint(currentPoint, wall) {
-        const angleRad = Math.atan2(wall.end.y - wall.start.y, wall.end.x - wall.start.x);
-        const normal = {
-            x: -Math.sin(angleRad),
-            y: Math.cos(angleRad)
-        };
-
-        // Вектор від стіни до курсора
-        const toCursor = {
-            x: currentPoint.x - wall.start.x,
-            y: currentPoint.y - wall.start.y
-        };
-
-        // Визначаємо сторону
-        const dot = toCursor.x * normal.x + toCursor.y * normal.y;
-        const side = dot > 0 ? 1 : -1;
-
-        // Зміщення з урахуванням товщин
-        const totalOffset = (wall.thickness/10 + this.getThickness()/10)/2;
-
-        // Проекція на стіну
-        const t = ((currentPoint.x - wall.start.x)*(wall.end.x - wall.start.x) +
-            ((currentPoint.y - wall.start.y)*(wall.end.y - wall.start.y)) /
-            Math.pow(wallLength, 2))
-
-        const tClamped = Math.max(0, Math.min(1, t));
-
-        return {
-            x: wall.start.x + tClamped*(wall.end.x - wall.start.x) + normal.x*totalOffset*side,
-            y: wall.start.y + tClamped*(wall.end.y - wall.start.y) + normal.y*totalOffset*side
-        };
     }
 
     /**
