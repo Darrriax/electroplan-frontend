@@ -4,17 +4,21 @@ import { fabric } from 'fabric';
 import { Grid } from '../utils/canvas/Grid';
 import { PreviewRect } from '../utils/canvas/PreviewRect';
 import { WallManager } from '../utils/canvas/WallManager';
+import { WallSnapManager } from "../utils/canvas/WallSnapManager.js";
+import { WallDimensions } from "../utils/canvas/WallDimensions.js";
+import { RoomManager } from "../utils/canvas/RoomManager.js";
 import { createWallPattern } from '../utils/patternUtils';
-import {WallSnapManager} from "../utils/canvas/WallSnapManager.js";
 
 export default {
     data() {
         return {
-            canvas: null,         // Fabric.js канвас
-            grid: null,           // Сітка
-            previewRect: null,    // Прямокутник попереднього перегляду
-            wallManager: null,    // Менеджер стін
-            snapManager: null     // Менеджер прилипання
+            canvas: null,
+            grid: null,
+            previewRect: null,
+            wallManager: null,
+            snapManager: null,
+            wallDimensions: null,
+            roomManager: null
         };
     },
 
@@ -25,7 +29,7 @@ export default {
         initCanvas() {
             const container = this.$refs.canvas.parentElement;
 
-            // Ініціалізація канвасу
+            // Initialize canvas
             this.canvas = new fabric.Canvas(this.$refs.canvas, {
                 width: container.clientWidth,
                 height: container.clientHeight,
@@ -33,33 +37,47 @@ export default {
                 selection: false
             });
 
-            // Ініціалізація сітки
+            // Initialize grid
             this.grid = new Grid(this.canvas);
             this.grid.setupGrid();
 
-            // Ініціалізація прямокутника попереднього перегляду
-            this.previewRect = new PreviewRect(this.canvas, {
-                initialSize: this.wallThickness / 10,
-                pattern: createWallPattern()
-            });
-
-            // Ініціалізація менеджера прилипання до стін
+            // Initialize snap manager first
             this.snapManager = new WallSnapManager(this.canvas, {
                 store: this.$store
             });
 
-            // Ініціалізація менеджера стін з врахуванням товщини та прилипання
+            // Initialize preview rect with snap manager
+            this.previewRect = new PreviewRect(this.canvas, {
+                initialSize: this.wallThickness / 10,
+                pattern: createWallPattern(),
+                snapManager: this.snapManager // Pass snap manager
+            });
+
+            // Initialize room manager before wall manager
+            this.roomManager = new RoomManager(this.canvas, this.$store);
+
+            // Initialize wall manager with all dependencies including room manager
             this.wallManager = new WallManager(this.canvas, {
                 getThickness: () => this.wallThickness,
                 snapManager: this.snapManager,
                 previewRect: this.previewRect,
-                store: this.$store // ← передаємо Vuex store
+                roomManager: this.roomManager,
+                store: this.$store
+            });
+
+            this.wallDimensions = new WallDimensions(this.canvas, this.$store);
+
+            // Load any existing walls and detect rooms
+            this.$nextTick(() => {
+                if (this.roomManager && this.$store.state.walls.walls.length > 0) {
+                    this.roomManager.renderRooms();
+                }
             });
         }
     },
 
     beforeDestroy() {
-        // Очищення канвасу при знищенні компонента
+        // Cleanup canvas when component is destroyed
         if (this.canvas) {
             this.canvas.dispose();
         }

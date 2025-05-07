@@ -5,6 +5,7 @@ import {reports} from "./moduls/reports.js";
 import {user} from "./moduls/user.js";
 import {project} from "./moduls/project.js";
 import {walls} from "./moduls/walls.js";
+import {rooms} from "./moduls/rooms.js";
 
 export default createStore({
     modules: {
@@ -13,6 +14,7 @@ export default createStore({
         reports,
         user,
         project,
-        walls
+        walls,
+        rooms
     },
 });

@@ -1,9 +1,10 @@
-// eventHandlers.js
+// utils/eventHandlers.js
 
 export function createCanvasEventHandlers({ getCanvasState, onDrawingStart, onDrawingEnd }) {
     const state = {
         isDragging: false,
-        lastPosition: null
+        lastPosition: null,
+        currentSnapPoint: null
     };
 
     return {
@@ -29,16 +30,17 @@ export function createCanvasEventHandlers({ getCanvasState, onDrawingStart, onDr
             if (e.e.button !== 0 || !currentTool || !canvas) return null;
 
             const pointer = canvas.getPointer(e.e);
+            let actualStartPoint = pointer;
 
             switch(currentTool) {
                 case 'wall':
-                    handleWallToolDown(pointer, context);
+                    actualStartPoint = handleWallToolDown(pointer, context);
                     break;
                 // Add other tool cases here
             }
 
-            onDrawingStart?.(pointer);
-            return pointer;
+            onDrawingStart?.(actualStartPoint);
+            return actualStartPoint;  // Return the potentially snapped point
         },
 
         handleMouseUp: () => {
@@ -59,11 +61,21 @@ export function createCanvasEventHandlers({ getCanvasState, onDrawingStart, onDr
 
 // Wall-specific handlers
 function handleWallToolMove(pointer, context, state) {
-    const { wallManager, previewRect, isDrawing, startPoint } = context;
+    const { wallManager, previewRect, isDrawing, startPoint, snapManager } = context;
 
     if (!state.isDragging) {
-        previewRect?.updatePosition(pointer.x, pointer.y);
-        wallManager?.updateDrawing(pointer, pointer);
+        // Update preview rectangle position with snapping
+        const snappedPosition = previewRect?.updatePosition(pointer.x, pointer.y);
+
+        // If we're not drawing yet, we still want to show snap indicators
+        if (snappedPosition && snapManager && !isDrawing) {
+            const snapPoint = snapManager.findNearestSnapPoint(pointer);
+            if (snapPoint) {
+                snapManager.showSnapPointMarker(snapPoint);
+            } else {
+                snapManager.clearSnapPointMarker();
+            }
+        }
     }
 
     if (isDrawing && wallManager?.activeWall) {
@@ -77,17 +89,29 @@ function handleWallToolMove(pointer, context, state) {
 }
 
 function handleWallToolDown(pointer, context) {
-    const { grid, wallManager, previewRect } = context;
+    const { grid, wallManager, previewRect, snapManager } = context;
 
     grid.showSnapLines(pointer);
     previewRect?.setVisible(false);
-    wallManager.startDrawing(pointer);
+
+    // Start drawing with potentially snapped point
+    const actualStartPoint = wallManager.startDrawing(pointer);
+
+    // Return the actual start point (which might be snapped)
+    return actualStartPoint;
 }
 
 function handleWallToolUp(context) {
-    const { grid, wallManager, previewRect, currentTool } = context;
+    const { grid, wallManager, wallDimensions, previewRect, currentTool, roomManager } = context;
 
     grid.clearSnapLines();
-    wallManager?.finishDrawing();
+    wallManager?.finishDrawing().then(() => {
+        // After wall is created, check for room formation
+        if (roomManager) {
+            roomManager.updateRooms();
+        }
+    });
+
+    wallDimensions?.drawForAll();
     previewRect?.setVisible(currentTool === 'wall');
 }
