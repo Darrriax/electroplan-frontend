@@ -7,16 +7,17 @@
           :current-tool="currentTool"
           @tool-selected="setCurrentTool"
       />
-
-      <WallSettingsPanel
-          v-if="isWallToolActive"
-          :thickness="wallThickness"
-          :unit="unit"
-          @update:thickness="updateWallThickness"
-      />
-
-      <div class="editor-canvas">
-        <canvas ref="canvas"></canvas>
+      <div class="editor-content">
+        <WallSettingsCard
+            v-if="isWallToolActive"
+            :thickness="wallThickness"
+            :unit="unit"
+            @update:thickness="updateWallThickness"
+            class="wall-settings"
+        />
+        <div class="editor-canvas-container">
+          <canvas ref="canvas" class="editor-canvas"></canvas>
+        </div>
       </div>
     </div>
   </project-layout>
@@ -24,141 +25,141 @@
 
 <script>
 import ProjectLayout from '../../UI/layouts/ProjectLayout.vue';
-import ToolSidebar from '../../UI/elements/ToolSidebar.vue';
-import WallSettingsPanel from '../../UI/settings/WallSettingsPanel.vue';
-import canvasMixin from '../../../mixins/canvasMixin';
-import { createCanvasEventHandlers } from '../../../utils/eventHandlers.js';
-
-// Constants for better maintainability
-const EDITOR_TOOLS = [
-  { name: 'wall', label: 'Стіна', icon: 'fas fa-wall' },
-  { name: 'balcony', label: 'Балкон', icon: 'fas fa-umbrella-beach' },
-  { name: 'window', label: 'Вікно', icon: 'fas fa-window-maximize' },
-  { name: 'door', label: 'Двері', icon: 'fas fa-door-open' }
-];
+import WallDrawingManager from '../../../utils/wallDrawing.js';
+import { mapState, mapGetters, mapActions } from 'vuex';
+import ToolSidebar from "../../UI/elements/ToolSidebar.vue";
+import WallSettingsCard from "../../UI/settings/WallSettingsCard.vue";
 
 export default {
+  name: 'PlanEditor',
   components: {
     ProjectLayout,
     ToolSidebar,
-    WallSettingsPanel
+    WallSettingsCard
   },
-  mixins: [canvasMixin],
-
   data() {
     return {
-      currentTool: null,
-      isDrawing: false,
-      startPoint: null,
-      editorTools: EDITOR_TOOLS
+      drawingManager: null,
+      editorTools: [
+        { id: 'wall', name: 'wall', label: 'Walls', icon: 'mdi mdi-wall' },
+        { id: 'door', name: 'door', label: 'Doors', icon: 'mdi mdi-door' },
+        { id: 'window', name: 'window', label: 'Windows', icon: 'mdi mdi-window-closed-variant' },
+        { id: 'balcony', name: 'balcony', label: 'Balcony', icon: 'mdi mdi-balcony' }
+      ]
     };
   },
-
   computed: {
-    wallThickness() {
-      return this.$store.getters['walls/defaultThickness'];
-    },
-    isMenuOpen() {
-      return this.$store.state.project.menuOpen;
-    },
-    unit() {
-      return this.$store.getters['project/unit'];
-    },
+    ...mapState('project', ['unit']),
+    ...mapGetters({
+      isMenuOpen: 'project/isMenuOpen',
+      currentTool: 'project/getCurrentTool',
+      wallThickness: 'walls/defaultThickness'
+    }),
     isWallToolActive() {
       return this.currentTool === 'wall';
     }
   },
+  methods: {
+    ...mapActions({
+      setToolAction: 'project/setTool',
+      updateThickness: 'walls/updateDefaultThickness'
+    }),
+    setCurrentTool(tool) {
+      this.setToolAction(tool);
+    },
+    updateWallThickness(thickness) {
+      this.updateThickness(thickness);
+    },
+    initializeCanvas() {
+      if (!this.$refs.canvas) return;
 
-  watch: {
-    wallThickness: 'handleWallThicknessChange',
-    currentTool: 'handleToolChange'
+      // Create new drawing manager instance
+      this.drawingManager = new WallDrawingManager(this.$refs.canvas, this.$store);
+
+      // Load any existing data
+      this.drawingManager.loadFromStore();
+    },
+    resizeCanvas() {
+      if (!this.drawingManager) return;
+      this.drawingManager.resizeCanvas();
+    }
   },
-
   mounted() {
     this.initializeCanvas();
-    this.setupEventListeners();
+
+    // Handle window resize
+    window.addEventListener('resize', this.resizeCanvas);
+
+    // Set initial tool
+    if (!this.currentTool) {
+      this.setCurrentTool('wall');
+    }
   },
+  beforeUnmount() { // Updated from beforeDestroy which is deprecated in Vue 3
+    // Clean up event listeners
+    window.removeEventListener('resize', this.resizeCanvas);
 
-  beforeDestroy() {
-    this.cleanupEventListeners();
+    // Clean up drawing manager
+    if (this.drawingManager) {
+      this.drawingManager.cleanup();
+    }
   },
-
-  methods: {
-    setCurrentTool(tool) {
-      this.currentTool = tool;
-    },
-
-    updateWallThickness(thickness) {
-      this.$store.dispatch('walls/updateDefaultThickness', thickness);
-    },
-
-    handleWallThicknessChange(newThickness) {
-      this.previewRect?.updateSize(newThickness / 10);
-      this.wallManager?.updateAllWallsThickness(newThickness);
-      this.wallManager?.updateWallThickness(newThickness);
-    },
-
-    handleToolChange(newTool) {
-      this.previewRect?.setVisible(newTool === 'wall');
-    },
-
-    initializeCanvas() {
-      this.initCanvas();
-      this.canvasEventHandlers = createCanvasEventHandlers({
-        getCanvasState: () => ({
-          canvas: this.canvas,
-          currentTool: this.currentTool,
-          isDrawing: this.isDrawing,
-          startPoint: this.startPoint,
-          wallManager: this.wallManager,
-          previewRect: this.previewRect,
-          grid: this.grid
-        }),
-        onDrawingStart: (point) => {
-          this.isDrawing = true;
-          this.startPoint = point;
-        },
-        onDrawingEnd: () => {
-          this.isDrawing = false;
+  watch: {
+    // Watch for changes in the store that would affect the canvas
+    'wallThickness': {
+      handler() {
+        if (this.drawingManager) {
+          this.drawingManager.draw();
         }
-      });
+      }
     },
-
-    setupEventListeners() {
-      document.addEventListener('contextmenu', this.preventContextMenuDefault);
-      this.canvas.on({
-        'mouse:move': this.handleCanvasMouseMove,
-        'mouse:down': this.handleCanvasMouseDown,
-        'mouse:up': this.handleCanvasMouseUp
-      });
-    },
-
-    cleanupEventListeners() {
-      document.removeEventListener('contextmenu', this.preventContextMenuDefault);
-      this.canvas.off({
-        'mouse:move': this.handleCanvasMouseMove,
-        'mouse:down': this.handleCanvasMouseDown,
-        'mouse:up': this.handleCanvasMouseUp
-      });
-    },
-
-    handleCanvasMouseMove(event) {
-      this.canvasEventHandlers.handleMouseMove(event);
-    },
-
-    handleCanvasMouseDown(event) {
-      this.canvasEventHandlers.handleMouseDown(event);
-    },
-
-    handleCanvasMouseUp(event) {
-      this.canvasEventHandlers.handleMouseUp(event);
-    },
-
-    preventContextMenuDefault(event) {
-      event.preventDefault();
-      this.currentTool = null;
-      this.previewRect?.setVisible(false);
+    'currentTool': {
+      handler() {
+        if (this.drawingManager) {
+          this.drawingManager.draw();
+        }
+      }
     }
   }
 };
 </script>
+
+<style scoped>
+.plan-editor {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.editor-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  height: 100%;
+}
+
+.editor-canvas-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background-color: #f8f8f8;
+  height: 100%;
+}
+
+.editor-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.wall-settings {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+}
+</style>
