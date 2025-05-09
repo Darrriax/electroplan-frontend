@@ -14,7 +14,7 @@
 </template>
 
 <script>
-import SidebarMenu from './SidebarMenu.vue';
+import SidebarMenu from '../elements/SidebarMenu.vue';
 
 export default {
   name: 'ToolSidebar',
