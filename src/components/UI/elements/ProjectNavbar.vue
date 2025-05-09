@@ -12,10 +12,26 @@
 
       <!-- Права панель -->
       <div class="navbar-right d-flex align-items-center gap-2">
-        <button-default icon="fa-solid fa-layer-group" label="Original Plan" @click="selectOriginalPlan"/>
-        <button-default icon="fa-solid fa-plug" label="Power Sockets" @click="selectPowerSockets"/>
-        <button-default icon="fa-solid fa-lightbulb" label="Light" @click="selectLight"/>
-        <button-default icon="fa-solid fa-toggle-on" label="Switches" @click="selectSwitches"/>
+        <button-default
+            icon="fa-solid fa-layer-group"
+            label="Original Plan"
+            :class="{ 'active-mode': activeMode === 'originalPlan' }"
+            @click="selectOriginalPlan"/>
+        <button-default
+            icon="fa-solid fa-plug"
+            label="Power Sockets"
+            :class="{ 'active-mode': activeMode === 'powerSockets' }"
+            @click="selectPowerSockets"/>
+        <button-default
+            icon="fa-solid fa-lightbulb"
+            label="Light"
+            :class="{ 'active-mode': activeMode === 'light' }"
+            @click="selectLight"/>
+        <button-default
+            icon="fa-solid fa-toggle-on"
+            label="Switches"
+            :class="{ 'active-mode': activeMode === 'switches' }"
+            @click="selectSwitches"/>
 
         <div class="divider"/>
 
@@ -34,21 +50,30 @@
         <button-default icon="fa-solid fa-info-circle" @click="openProjectInfo"/>
       </div>
     </div>
+
+    <!-- Підключаємо компонент бокового меню -->
+    <sidebar-tools-menu />
   </div>
 </template>
 
 <script>
 import ButtonDefault from "../buttons/ButtonDefault.vue"
+import SidebarToolsMenu from "../settings/SidebarToolsMenu.vue"
+import { mapState, mapMutations } from 'vuex'
 
 export default {
   name: "ProjectNavbar",
   components: {
     ButtonDefault,
+    SidebarToolsMenu
   },
   data() {
     return {
       selectedUnit: 'cm'
     }
+  },
+  computed: {
+    ...mapState('editorTools', ['isMenuOpen', 'activeMode'])
   },
   watch: {
     selectedUnit(newVal) {
@@ -57,29 +82,38 @@ export default {
 
       // Конвертація значення при зміні одиниць
       let newThickness = thickness
-      if(oldUnit === 'cm' && newVal === 'mm') newThickness = thickness
-      if(oldUnit === 'mm' && newVal === 'cm') newThickness = thickness
-      if(oldUnit === 'm' && newVal === 'cm') newThickness = thickness * 10
-      if(oldUnit === 'cm' && newVal === 'm') newThickness = thickness / 10
+      if(oldUnit === 'cm' && newVal === 'mm') newThickness = thickness * 10
+      if(oldUnit === 'mm' && newVal === 'cm') newThickness = thickness / 10
+      if(oldUnit === 'm' && newVal === 'cm') newThickness = thickness * 100
+      if(oldUnit === 'cm' && newVal === 'm') newThickness = thickness / 100
 
       this.$store.commit('project/setUnit', newVal)
       this.$store.commit('project/setWallThickness', Math.round(newThickness))
     }
   },
   methods: {
+    ...mapMutations('editorTools', ['toggleSidebarMenu', 'setActiveMode']),
+
     toggleMenu() {
-      this.$store.commit('project/toggleMenu')
+      this.toggleSidebarMenu()
     },
     centerPlan() {},
     saveProject() {},
     undoAction() {},
     redoAction() {},
     selectOriginalPlan() {
+      this.setActiveMode('originalPlan')
       this.$router.push('/plan-editor')
     },
-    selectPowerSockets() {},
-    selectLight() {},
-    selectSwitches() {},
+    selectPowerSockets() {
+      this.setActiveMode('powerSockets')
+    },
+    selectLight() {
+      this.setActiveMode('light')
+    },
+    selectSwitches() {
+      this.setActiveMode('switches')
+    },
     view2D() {},
     view3D() {},
     openSettings() {},
@@ -102,5 +136,12 @@ export default {
   border-radius: 4px;
   background: #fff;
   font-size: 14px;
+}
+
+.active-mode {
+  padding: 10px;
+  border-radius: 10px;
+  background-color: #ffa500 !important; /* Оранжевий фон */
+  border-color: #ff8c00 !important; /* Оранжевий бордер */
 }
 </style>

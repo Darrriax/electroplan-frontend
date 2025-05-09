@@ -6,6 +6,7 @@ import {user} from "./modules/user.js";
 import {project} from "./modules/project.js";
 import {walls} from "./modules/walls.js";
 import {rooms} from "./modules/rooms.js";
+import editorTools from "./modules/editorTools.js";
 
 export default createStore({
     modules: {
@@ -15,6 +16,7 @@ export default createStore({
         user,
         project,
         walls,
-        rooms
+        rooms,
+        editorTools
     },
 });
