@@ -41,9 +41,9 @@
         <div class="divider"/>
 
         <!-- Одиниці виміру -->
-        <select v-model="selectedUnit" class="unit-select">
-          <option value="mm">мм</option>
-          <option value="cm">см</option>
+        <select v-model="selectedUnit" class="unit-select" @change="changeUnit">
+          <option value="мм">мм</option>
+          <option value="см">см</option>
         </select>
 
         <button-default icon="fa-solid fa-gear" @click="openSettings"/>
@@ -69,30 +69,30 @@ export default {
   },
   data() {
     return {
-      selectedUnit: 'cm'
+      selectedUnit: 'см' // За замовчуванням використовуємо сантиметри
     }
   },
   computed: {
-    ...mapState('editorTools', ['isMenuOpen', 'activeMode'])
+    ...mapState('editorTools', ['isMenuOpen', 'activeMode']),
+    ...mapState('project', ['unit'])
   },
-  watch: {
-    selectedUnit(newVal) {
-      const oldUnit = this.$store.state.project.unit
-      const thickness = this.$store.state.project.wallThickness
-
-      // Конвертація значення при зміні одиниць
-      let newThickness = thickness
-      if(oldUnit === 'cm' && newVal === 'mm') newThickness = thickness * 10
-      if(oldUnit === 'mm' && newVal === 'cm') newThickness = thickness / 10
-      if(oldUnit === 'm' && newVal === 'cm') newThickness = thickness * 100
-      if(oldUnit === 'cm' && newVal === 'm') newThickness = thickness / 100
-
-      this.$store.commit('project/setUnit', newVal)
-      this.$store.commit('project/setWallThickness', Math.round(newThickness))
-    }
+  mounted() {
+    // Синхронізуємо локальний вибір з тим, що в сховищі
+    this.selectedUnit = this.unit;
   },
   methods: {
     ...mapMutations('editorTools', ['toggleSidebarMenu', 'setActiveMode']),
+    ...mapMutations('project', ['setUnit', 'setWallThickness']),
+
+    changeUnit() {
+      const oldUnit = this.unit;
+      const newUnit = this.selectedUnit;
+
+      if (oldUnit !== newUnit) {
+        // Оновлюємо одиниці у сховищі
+        this.setUnit(newUnit);
+      }
+    },
 
     toggleMenu() {
       this.toggleSidebarMenu()

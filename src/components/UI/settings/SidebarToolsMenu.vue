@@ -1,25 +1,34 @@
-<!-- src/components/sidebar/SidebarToolsMenu.vue -->
+<!-- src/components/UI/elements/SidebarToolsMenu.vue -->
 <template>
-  <div class="sidebar-tools" :class="{ 'sidebar-open': isMenuOpen }">
-    <div class="tools-container">
-      <button
-          v-for="tool in currentTools"
-          :key="tool.id"
-          class="tool-button"
-          :class="{ 'active': isToolActive(tool.id) }"
-          @click="selectTool(tool.id)">
-        <i :class="tool.icon"></i>
-        <span>{{ tool.name }}</span>
-      </button>
+  <div>
+    <div class="sidebar-tools" :class="{ 'sidebar-open': isMenuOpen }">
+      <div class="tools-container">
+        <button
+            v-for="tool in currentTools"
+            :key="tool.id"
+            class="tool-button"
+            :class="{ 'active': isToolActive(tool.id) }"
+            @click="selectTool(tool.id)">
+          <i :class="tool.icon"></i>
+          <span>{{ tool.name }}</span>
+        </button>
+      </div>
     </div>
+
+    <!-- Додаємо компонент налаштувань стіни -->
+    <WallSettingsCard />
   </div>
 </template>
 
 <script>
 import { mapState, mapMutations } from 'vuex';
+import WallSettingsCard from '../settings/WallSettingsCard.vue';
 
 export default {
   name: "SidebarToolsMenu",
+  components: {
+    WallSettingsCard
+  },
   computed: {
     ...mapState('editorTools', {
       isMenuOpen: state => state.isMenuOpen,
