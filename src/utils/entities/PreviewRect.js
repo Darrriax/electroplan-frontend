@@ -8,25 +8,67 @@ export class PreviewRect {
         this.fillColor = fillColor;  // Колір заливки
         this.visible = false;  // Видимість
         this.hatchPattern = hatchPattern;  // Об'єкт заштриховки
+        this.angle = 0;        // Кут повороту в радіанах
+        this.isMagnetized = false; // Флаг примагнічування
     }
 
     // Оновлення позиції прямокутника
     updatePosition(x, y, cellSize) {
-        // Прив'язка до сітки
-        this.x = Math.round(x / cellSize) * cellSize;
-        this.y = Math.round(y / cellSize) * cellSize;
+        if (!this.isMagnetized) {
+            // Прив'язка до сітки якщо не примагнічений
+            this.x = Math.round(x / cellSize) * cellSize;
+            this.y = Math.round(y / cellSize) * cellSize;
+            this.angle = 0; // Обнуляємо кут, якщо не примагнічений
+        }
 
         // Оновлюємо область підсвічування у хетч-патерні, якщо він є
+        this._updateHatchPattern();
+    }
+
+    // Встановлення позиції з магнітизацією
+    setMagnetizedPosition(x, y, angle = 0) {
+        this.x = x;
+        this.y = y;
+        this.angle = angle;
+        this.isMagnetized = true;
+
+        // Оновлюємо область підсвічування у хетч-патерні
+        this._updateHatchPattern();
+    }
+
+    // Скидання статусу примагнічування
+    resetMagnetization() {
+        this.isMagnetized = false;
+        this.angle = 0;
+    }
+
+    // Оновлення області підсвічування в хетч-патерні
+    _updateHatchPattern() {
         if (this.hatchPattern && this.visible) {
             const halfWidth = this.width / 2;
             const halfHeight = this.height / 2;
 
-            this.hatchPattern.setHighlightArea(
-                this.x - halfWidth,
-                this.y - halfHeight,
-                this.width,
-                this.height
-            );
+            // Якщо прямокутник повернутий, потрібно розрахувати оновлену область
+            if (this.angle !== 0) {
+                // Для повернутого прямокутника створюємо більшу область підсвічування,
+                // щоб вона охоплювала весь повернутий прямокутник
+                const diagonal = Math.sqrt(this.width * this.width + this.height * this.height);
+
+                this.hatchPattern.setHighlightArea(
+                    this.x - diagonal / 2,
+                    this.y - diagonal / 2,
+                    diagonal,
+                    diagonal
+                );
+            } else {
+                // Для неповернутого прямокутника використовуємо точні розміри
+                this.hatchPattern.setHighlightArea(
+                    this.x - halfWidth,
+                    this.y - halfHeight,
+                    this.width,
+                    this.height
+                );
+            }
         }
     }
 
@@ -36,6 +78,16 @@ export class PreviewRect {
 
         const halfWidth = this.width / 2;
         const halfHeight = this.height / 2;
+
+        // Зберігаємо стан контексту перед трансформаціями
+        ctx.save();
+
+        // Якщо прямокутник повернутий, застосовуємо відповідну трансформацію
+        if (this.angle !== 0) {
+            ctx.translate(this.x, this.y);
+            ctx.rotate(this.angle);
+            ctx.translate(-this.x, -this.y);
+        }
 
         // Малюємо заливку прямокутника
         ctx.fillStyle = this.fillColor;
@@ -56,14 +108,40 @@ export class PreviewRect {
             this.height
         );
 
+        // Відновлюємо стан контексту
+        ctx.restore();
+
         // Малюємо заштриховку, якщо вона є
         if (this.hatchPattern && this.visible) {
             // Отримуємо розміри канвасу для правильного відображення заштриховки
             const canvasWidth = ctx.canvas.width * 2;
             const canvasHeight = ctx.canvas.height * 2;
 
+            ctx.save();
+
+            // Створюємо маску для заштриховки відповідно до повороту прямокутника
+            ctx.beginPath();
+
+            if (this.angle !== 0) {
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+                ctx.rect(-halfWidth, -halfHeight, this.width, this.height);
+            } else {
+                ctx.rect(this.x - halfWidth, this.y - halfHeight, this.width, this.height);
+            }
+
+            ctx.clip();
+
+            // Якщо прямокутник повернутий, повертаємо контекст назад для заштриховки
+            if (this.angle !== 0) {
+                ctx.rotate(-this.angle);
+                ctx.translate(-this.x, -this.y);
+            }
+
             // Малюємо підсвічену область (PreviewRect)
             this.hatchPattern.drawHighlight(ctx, canvasWidth, canvasHeight);
+
+            ctx.restore();
         }
     }
 

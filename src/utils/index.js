@@ -11,6 +11,6 @@ export { HatchPattern } from './entities/HatchPattern';
 export { MouseHandler } from './functions/MouseHandler';
 export { CanvasInitializer } from './functions/CanvasInitializer';
 export { WallDrawingHandler } from './functions/WallDrawingHandler';
+export { MagnetizationHandler } from './functions/MagnetizationHandler';
 // export { RoomDetection } from './functions/RoomDetection';
 // export { DimensionsCalculator } from './functions/DimensionsCalculator';
-// export { MagnetizationHandler } from './functions/MagnetizationHandler';

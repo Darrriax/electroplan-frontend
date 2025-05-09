@@ -2,6 +2,7 @@
 import { Grid, MouseHandler, HatchPattern, WallDrawingHandler } from '../index';
 import { PreviewRect } from '../entities/PreviewRect';
 import { Wall } from '../entities/Wall';  // Додаємо імпорт Wall
+import { MagnetizationHandler } from './MagnetizationHandler'; // Імпортуємо обробник магнітизації
 
 export class CanvasInitializer {
     constructor(canvas, options = {}) {
@@ -13,6 +14,7 @@ export class CanvasInitializer {
             cellSize: 10,
             isWallToolActive: false,
             wallThicknessInCm: 10,
+            magneticThreshold: 20, // Поріг магнітизації в пікселях
             ...options
         };
 
@@ -21,6 +23,7 @@ export class CanvasInitializer {
         this.previewRect = null;
         this.hatchPattern = null;
         this.wallDrawingHandler = null;
+        this.magnetizationHandler = null; // Додаємо обробник магнітизації
 
         this.callbacks = {
             onResize: null,
@@ -52,6 +55,12 @@ export class CanvasInitializer {
         this.previewRect.width = size;
         this.previewRect.height = size;
         this.previewRect.visible = false;
+
+        // Ініціалізуємо обробник магнітизації
+        this.magnetizationHandler = new MagnetizationHandler({
+            magneticThreshold: this.options.magneticThreshold,
+            cellSize: this.options.cellSize
+        });
 
         // Ініціалізуємо MouseHandler
         this.initMouseHandler();
@@ -226,7 +235,35 @@ export class CanvasInitializer {
             const worldX = (mouseX - this.mouseHandler.offsetX) / this.mouseHandler.scale;
             const worldY = (mouseY - this.mouseHandler.offsetY) / this.mouseHandler.scale;
 
-            this.previewRect.updatePosition(worldX, worldY, this.options.cellSize);
+            // Спочатку перевіряємо на магнітизацію до стін, якщо стіни є
+            if (this.wallDrawingHandler && this.wallDrawingHandler.walls.length > 0) {
+                // Отримуємо результат перевірки магнітизації
+                const magnetizationResult = this.magnetizationHandler.magnetizeToWall(
+                    this.previewRect,
+                    this.wallDrawingHandler.walls,
+                    worldX,
+                    worldY,
+                    this.mouseHandler.scale
+                );
+
+                // Якщо є результат магнітизації, застосовуємо його
+                if (magnetizationResult) {
+                    // Встановлюємо примагнічену позицію для PreviewRect
+                    this.previewRect.setMagnetizedPosition(
+                        magnetizationResult.x,
+                        magnetizationResult.y,
+                        magnetizationResult.angle
+                    );
+                } else {
+                    // Якщо примагнічування немає, скидаємо статус і оновлюємо позицію звичайним чином
+                    this.previewRect.resetMagnetization();
+                    this.previewRect.updatePosition(worldX, worldY, this.options.cellSize);
+                }
+            } else {
+                // Якщо стін немає, просто оновлюємо позицію
+                this.previewRect.updatePosition(worldX, worldY, this.options.cellSize);
+            }
+
             this.redraw();
         }
 
@@ -278,18 +315,39 @@ export class CanvasInitializer {
             this.previewRect.height = size;
 
             if (this.previewRect.visible && this.hatchPattern) {
-                const halfWidth = size / 2;
-                const halfHeight = size / 2;
-
-                this.hatchPattern.setHighlightArea(
-                    this.previewRect.x - halfWidth,
-                    this.previewRect.y - halfHeight,
-                    size,
-                    size
-                );
+                this._updateHatchPatternForPreviewRect();
             }
 
             this.redraw();
+        }
+    }
+
+    // Додали окремий метод для оновлення хетч-патерну PreviewRect
+    _updateHatchPatternForPreviewRect() {
+        if (!this.previewRect || !this.hatchPattern) return;
+
+        const halfWidth = this.previewRect.width / 2;
+        const halfHeight = this.previewRect.height / 2;
+
+        // Якщо прямокутник повернутий, створюємо більшу область підсвічування
+        if (this.previewRect.angle !== 0) {
+            const diagonal = Math.sqrt(this.previewRect.width * this.previewRect.width +
+                this.previewRect.height * this.previewRect.height);
+
+            this.hatchPattern.setHighlightArea(
+                this.previewRect.x - diagonal / 2,
+                this.previewRect.y - diagonal / 2,
+                diagonal,
+                diagonal
+            );
+        } else {
+            // Для неповернутого прямокутника використовуємо точні розміри
+            this.hatchPattern.setHighlightArea(
+                this.previewRect.x - halfWidth,
+                this.previewRect.y - halfHeight,
+                this.previewRect.width,
+                this.previewRect.height
+            );
         }
     }
 
@@ -309,6 +367,14 @@ export class CanvasInitializer {
         // Оновлюємо опції для WallDrawingHandler
         if (this.wallDrawingHandler) {
             this.wallDrawingHandler.updateOptions(newOptions);
+        }
+
+        // Оновлюємо опції для MagnetizationHandler
+        if (this.magnetizationHandler) {
+            this.magnetizationHandler.updateOptions({
+                magneticThreshold: this.options.magneticThreshold,
+                cellSize: this.options.cellSize
+            });
         }
     }
 
@@ -331,5 +397,6 @@ export class CanvasInitializer {
         this.previewRect = null;
         this.hatchPattern = null;
         this.wallDrawingHandler = null;
+        this.magnetizationHandler = null;
     }
 }
