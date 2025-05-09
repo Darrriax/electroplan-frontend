@@ -1,9 +1,13 @@
-// src/utils/functions/MouseHandler.js
+// utils/functions/MouseHandler.js
 export class MouseHandler {
-    constructor(canvas, drawCallback) {
+    constructor(canvas, drawCallback, options = {}) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.drawCallback = drawCallback;
+        this.options = {
+            isWallToolActive: false,
+            ...options
+        };
 
         this.isDragging = false;
         this.startX = 0;
@@ -22,6 +26,7 @@ export class MouseHandler {
         this.canvas.addEventListener('mousemove', this._onMouseMove.bind(this));
         this.canvas.addEventListener('mouseup', this._onMouseUp.bind(this));
         this.canvas.addEventListener('wheel', this._onWheel.bind(this), { passive: false });
+        this.canvas.addEventListener('contextmenu', this._onContextMenu.bind(this));
 
         // Додаємо обробник зміни розміру вікна для перерахунку центру
         window.addEventListener('resize', this._handleResize.bind(this));
@@ -34,9 +39,17 @@ export class MouseHandler {
     }
 
     _onMouseDown(e) {
-        this.isDragging = true;
-        this.startX = e.offsetX;
-        this.startY = e.offsetY;
+        // Якщо активний інструмент стіни, не дозволяємо переміщення
+        if (this.options.isWallToolActive && e.button === 0) {
+            return;
+        }
+
+        // Переміщення дозволено тільки коли не обрано жодного інструменту
+        if (!this.options.isWallToolActive && e.button === 0) {
+            this.isDragging = true;
+            this.startX = e.offsetX;
+            this.startY = e.offsetY;
+        }
     }
 
     _onMouseMove(e) {
@@ -78,9 +91,29 @@ export class MouseHandler {
         this._redraw();
     }
 
+    // Обробник клікання правою кнопкою миші - відміна активного інструменту
+    _onContextMenu(e) {
+        e.preventDefault(); // Відміняємо стандартне контекстне меню
+
+        // Створюємо кастомну подію для відміни активного інструменту
+        const customEvent = new CustomEvent('tool:deselect', {
+            bubbles: true,
+            detail: { mode: 'originalPlan' }
+        });
+
+        this.canvas.dispatchEvent(customEvent);
+    }
+
     _redraw() {
         this.ctx.setTransform(this.scale, 0, 0, this.scale, this.offsetX, this.offsetY);
         this.drawCallback(this.ctx);
+    }
+
+    updateOptions(newOptions) {
+        this.options = {
+            ...this.options,
+            ...newOptions
+        };
     }
 
     resetView() {

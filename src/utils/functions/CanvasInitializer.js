@@ -1,6 +1,7 @@
 // utils/functions/CanvasInitializer.js
-import { Grid, MouseHandler, HatchPattern } from '../index';
+import { Grid, MouseHandler, HatchPattern, WallDrawingHandler } from '../index';
 import { PreviewRect } from '../entities/PreviewRect';
+import { Wall } from '../entities/Wall';  // Додаємо імпорт Wall
 
 export class CanvasInitializer {
     constructor(canvas, options = {}) {
@@ -10,6 +11,8 @@ export class CanvasInitializer {
             virtualSize: 500000,
             pixelsPerCm: 1,
             cellSize: 10,
+            isWallToolActive: false,
+            wallThicknessInCm: 10,
             ...options
         };
 
@@ -17,12 +20,15 @@ export class CanvasInitializer {
         this.mouseHandler = null;
         this.previewRect = null;
         this.hatchPattern = null;
+        this.wallDrawingHandler = null;
 
         this.callbacks = {
             onResize: null,
             onMouseMove: null,
             onMouseEnter: null,
-            onMouseLeave: null
+            onMouseLeave: null,
+            onWallCreated: null,
+            onToolDeselect: null
         };
     }
 
@@ -39,7 +45,7 @@ export class CanvasInitializer {
 
         // Створюємо екземпляр PreviewRect
         const thickness = this.options.wallThickness || 10;
-        this.previewRect = new PreviewRect(thickness, 'rgba(100, 100, 255, 0.5)', this.hatchPattern);
+        this.previewRect = new PreviewRect(thickness, 'rgba(255,255,255,0)', this.hatchPattern);
 
         // Встановлюємо розмір PreviewRect
         const size = this.options.wallThicknessInCm * this.options.pixelsPerCm;
@@ -50,12 +56,16 @@ export class CanvasInitializer {
         // Ініціалізуємо MouseHandler
         this.initMouseHandler();
 
+        // Ініціалізуємо WallDrawingHandler
+        this.initWallDrawingHandler();
+
         // Прив'язуємо обробники подій
         this.bindEvents();
 
         return this;
     }
 
+    // Оновлення ініціалізації MouseHandler в CanvasInitializer
     initMouseHandler() {
         this.mouseHandler = new MouseHandler(this.canvas, (ctx) => {
             ctx.clearRect(
@@ -74,9 +84,14 @@ export class CanvasInitializer {
                 -this.options.virtualSize / 2
             );
 
-            // Малюємо заштриховку та PreviewRect
+            // Оскільки ми хочемо, щоб хетч-патерн був глобальним шаром, малюємо його одразу після сітки
+            // але перед стінами. Це дозволить патерну "проявлятися" через стіни
             if (this.options.isWallToolActive) {
-                // Спочатку малюємо заштриховку
+                // Встановлюємо видимість хетч-патерна
+                this.hatchPattern.setVisibility(true);
+
+                // Малюємо заштриховку на всьому полотні
+                // Стіни завдяки кліпінгу будуть "проявляти" цей патерн
                 this.hatchPattern.draw(
                     ctx,
                     this.options.virtualSize,
@@ -84,20 +99,96 @@ export class CanvasInitializer {
                     -this.options.virtualSize / 2,
                     -this.options.virtualSize / 2
                 );
+            }
 
-                // Потім малюємо PreviewRect
+            // Малюємо стіни ЗАВЖДИ, незалежно від активності інструмента
+            if (this.wallDrawingHandler) {
+                this.wallDrawingHandler.drawWalls(ctx);
+            }
+
+            // Малюємо PreviewRect
+            if (this.options.isWallToolActive) {
                 this.previewRect.draw(ctx, this.options.pixelsPerCm);
             }
+        }, {
+            isWallToolActive: this.options.isWallToolActive
         });
 
         // Початкове малювання
         this.redraw();
     }
 
+    initWallDrawingHandler() {
+        // Initialize wall drawing handler
+        this.wallDrawingHandler = new WallDrawingHandler(this.canvas, this.mouseHandler, {
+            wallThickness: this.options.wallThickness,
+            wallThicknessInCm: this.options.wallThicknessInCm,
+            pixelsPerCm: this.options.pixelsPerCm,
+            cellSize: this.options.cellSize,
+            isWallToolActive: this.options.isWallToolActive
+        }).init(this.hatchPattern);  // Передаємо hatchPattern
+
+        // Set up callback to store created walls in Vuex
+        this.wallDrawingHandler.setCallbacks({
+            onWallCreated: (wall) => {
+                // Dispatch to Vuex store
+                if (this.options.onWallCreated) {
+                    this.options.onWallCreated(wall);
+                }
+            },
+            onDrawingStart: (startPoint) => {
+                // Callback when drawing starts
+                if (this.options.onDrawingStart) {
+                    this.options.onDrawingStart(startPoint);
+                }
+            },
+            onDrawingEnd: () => {
+                // Callback when drawing ends
+                if (this.options.onDrawingEnd) {
+                    this.options.onDrawingEnd();
+                }
+            }
+        });
+
+        // Load existing walls from store
+        if (this.options.existingWalls && Array.isArray(this.options.existingWalls)) {
+            // Копіюємо стіни та встановлюємо заштриховку для кожної
+            this.wallDrawingHandler.walls = this.options.existingWalls.map(wall => {
+                // Створюємо копію стіни
+                const wallCopy = new Wall({
+                    id: wall.id,
+                    x: wall.x,
+                    y: wall.y,
+                    width: wall.width,
+                    height: wall.height,
+                    thickness: wall.thickness || this.options.wallThicknessInCm,
+                    angle: wall.angle || 0
+                });
+
+                // Встановлюємо заштриховку для стіни
+                wallCopy.setHatchPattern(this.hatchPattern);
+
+                // Зберігаємо з'єднані стіни, якщо вони є
+                if (wall.connectedWalls && Array.isArray(wall.connectedWalls)) {
+                    wallCopy.connectedWalls = [...wall.connectedWalls];
+                }
+
+                return wallCopy;
+            });
+
+            // Оновлюємо nextWallId, щоб уникнути дублювання ID
+            if (this.wallDrawingHandler.walls.length > 0) {
+                const maxId = Math.max(...this.wallDrawingHandler.walls.map(w => w.id));
+                this.wallDrawingHandler.nextWallId = maxId + 1;
+            }
+        }
+    }
+
     bindEvents() {
         this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
         this.canvas.addEventListener('mouseenter', this.handleMouseEnter.bind(this));
         this.canvas.addEventListener('mouseleave', this.handleMouseLeave.bind(this));
+        this.canvas.addEventListener('tool:deselect', this.handleToolDeselect.bind(this));
         window.addEventListener('resize', this.handleResize.bind(this));
     }
 
@@ -105,6 +196,7 @@ export class CanvasInitializer {
         this.canvas.removeEventListener('mousemove', this.handleMouseMove.bind(this));
         this.canvas.removeEventListener('mouseenter', this.handleMouseEnter.bind(this));
         this.canvas.removeEventListener('mouseleave', this.handleMouseLeave.bind(this));
+        this.canvas.removeEventListener('tool:deselect', this.handleToolDeselect.bind(this));
         window.removeEventListener('resize', this.handleResize.bind(this));
     }
 
@@ -146,7 +238,7 @@ export class CanvasInitializer {
     handleMouseEnter() {
         this.options.isMouseOnCanvas = true;
 
-        if (this.options.isWallToolActive) {
+        if (this.options.isWallToolActive && this.wallDrawingHandler && !this.wallDrawingHandler.isDrawing) {
             this.previewRect.show();
             this.redraw();
         }
@@ -164,6 +256,12 @@ export class CanvasInitializer {
 
         if (this.callbacks.onMouseLeave) {
             this.callbacks.onMouseLeave();
+        }
+    }
+
+    handleToolDeselect(e) {
+        if (this.callbacks.onToolDeselect) {
+            this.callbacks.onToolDeselect(e.detail);
         }
     }
 
@@ -200,6 +298,18 @@ export class CanvasInitializer {
             ...this.options,
             ...newOptions
         };
+
+        // Оновлюємо опції для MouseHandler
+        if (this.mouseHandler) {
+            this.mouseHandler.updateOptions({
+                isWallToolActive: this.options.isWallToolActive
+            });
+        }
+
+        // Оновлюємо опції для WallDrawingHandler
+        if (this.wallDrawingHandler) {
+            this.wallDrawingHandler.updateOptions(newOptions);
+        }
     }
 
     setCallbacks(callbacks) {
@@ -211,9 +321,15 @@ export class CanvasInitializer {
 
     destroy() {
         this.unbindEvents();
+
+        if (this.wallDrawingHandler) {
+            this.wallDrawingHandler.destroy();
+        }
+
         this.grid = null;
         this.mouseHandler = null;
         this.previewRect = null;
         this.hatchPattern = null;
+        this.wallDrawingHandler = null;
     }
 }

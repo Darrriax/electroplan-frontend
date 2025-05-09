@@ -10,7 +10,7 @@
 // PlanEditor.vue - script section
 import ProjectLayout from '../../UI/layouts/ProjectLayout.vue';
 import { CanvasInitializer } from '../../../utils';
-import { mapGetters, mapState } from 'vuex';
+import { mapGetters, mapState, mapMutations } from 'vuex';
 
 export default {
   name: 'PlanEditor',
@@ -28,6 +28,7 @@ export default {
   computed: {
     ...mapGetters('project', ['projectSettings']),
     ...mapState('editorTools', ['activeMode', 'activeTool']),
+    ...mapState('walls', ['walls']),
     wallThickness() {
       return this.projectSettings.wallThickness;
     },
@@ -118,6 +119,9 @@ export default {
     }
   },
   methods: {
+    ...mapMutations('editorTools', ['setActiveTool']),
+    ...mapMutations('walls', ['addWall']),
+
     initCanvas() {
       const canvas = this.$refs.canvas;
 
@@ -129,7 +133,12 @@ export default {
         wallThickness: this.wallThickness,
         wallThicknessInCm: this.wallThicknessInCm,
         isWallToolActive: this.isWallToolActive,
-        isMouseOnCanvas: this.isMouseOnCanvas
+        isMouseOnCanvas: this.isMouseOnCanvas,
+        existingWalls: this.walls,
+        onWallCreated: (wall) => {
+          // Add new wall to Vuex store
+          this.addWall(wall);
+        }
       }).init();
 
       // Налаштовуємо колбеки для зв'язку з компонентом Vue
@@ -139,6 +148,15 @@ export default {
         },
         onMouseLeave: () => {
           this.isMouseOnCanvas = false;
+        },
+        onToolDeselect: (detail) => {
+          // Відключаємо активний інструмент при натисканні правою кнопкою миші
+          if (detail && detail.mode) {
+            this.setActiveTool({
+              mode: detail.mode,
+              toolId: null
+            });
+          }
         }
       });
     }
