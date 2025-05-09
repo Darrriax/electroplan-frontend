@@ -1,118 +1,92 @@
-// src/utils/entities/PreviewRect.js
+// utils/entities/PreviewRect.js
 export class PreviewRect {
-    constructor(thickness = 10, color = 'rgba(100, 100, 255, 0.5)') {
+    constructor(thickness, color = 'rgba(100, 100, 255, 0.5)', hatchPattern = null) {
         this.x = 0;
         this.y = 0;
         this.width = 0;
         this.height = 0;
-        this.thickness = thickness;  // Товщина стіни (в см)
+        this.thickness = thickness;
         this.color = color;
-        this.angle = 0;              // Кут нахилу (в радіанах)
         this.visible = false;
-        this.magnetized = false;     // Чи примагнічений до стіни
-        this.magnetizedTo = null;    // Об'єкт стіни, до якої примагнічений
-        this.magnetizedEdge = null;  // Сторона примагнічування ('top', 'right', 'bottom', 'left')
+        this.hatchPattern = hatchPattern; // Посилання на екземпляр HatchPattern
     }
 
-    // Оновлення розташування на основі позиції миші
-    updatePosition(mouseX, mouseY, cellSize) {
-        if (this.magnetized) return;
-
+    // Оновлення позиції прямокутника з прив'язкою до сітки
+    updatePosition(x, y, gridSize) {
         // Прив'язка до сітки
-        this.x = Math.floor(mouseX / cellSize) * cellSize;
-        this.y = Math.floor(mouseY / cellSize) * cellSize;
+        this.x = Math.round(x / gridSize) * gridSize;
+        this.y = Math.round(y / gridSize) * gridSize;
+
+        // Оновлюємо область підсвічування у HatchPattern, якщо він доступний
+        if (this.visible && this.hatchPattern) {
+            const halfWidth = this.width / 2;
+            const halfHeight = this.height / 2;
+
+            this.hatchPattern.setHighlightArea(
+                this.x - halfWidth,
+                this.y - halfHeight,
+                this.width,
+                this.height
+            );
+        }
     }
 
-    // Малювання PreviewRect на канвасі
+    // Малювання прямокутника на канвасі
     draw(ctx, pixelsPerCm) {
         if (!this.visible) return;
 
-        ctx.save();
+        const halfWidth = this.width / 2;
+        const halfHeight = this.height / 2;
 
-        // Якщо є кут нахилу, повертаємо контекст канвасу
-        if (this.angle !== 0) {
-            ctx.translate(this.x, this.y);
-            ctx.rotate(this.angle);
-            ctx.translate(-this.x, -this.y);
+        // Спочатку малюємо заштриховку, якщо вона є
+        if (this.hatchPattern) {
+            // Заштриховка малюється через HatchPattern.draw()
+            // Область підсвічування вже встановлена в updatePosition
         }
 
-        // Малюємо прямокутник
-        ctx.fillStyle = this.color;
-        ctx.fillRect(this.x, this.y, this.width, this.height);
+        // Потім малюємо контур прямокутника
+        ctx.save();
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
 
-        // Малюємо діагональну заштриховку всередині
-        this.drawPattern(ctx);
-
-        // Малюємо рамку
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(this.x, this.y, this.width, this.height);
+        // Малюємо контур прямокутника з центром у точці (x, y)
+        ctx.strokeRect(
+            this.x - halfWidth,
+            this.y - halfHeight,
+            this.width,
+            this.height
+        );
 
         ctx.restore();
     }
 
-    // Малювання діагональної заштриховки всередині PreviewRect
-    drawPattern(ctx) {
-        const spacing = 10;
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.lineWidth = 1;
+    // Показати PreviewRect
+    show() {
+        this.visible = true;
+        // Активуємо видимість заштриховки
+        if (this.hatchPattern) {
+            this.hatchPattern.setVisibility(true);
 
-        for (let i = -this.height; i < this.width + this.height; i += spacing) {
-            ctx.beginPath();
-            ctx.moveTo(this.x + i, this.y);
-            ctx.lineTo(this.x + i + this.height, this.y + this.height);
-            if (i + this.height > this.width) {
-                // Обрізаємо лінії, які виходять за межі прямокутника
-                const dy = this.width - i;
-                ctx.lineTo(this.x + this.width, this.y + dy);
-            }
-            ctx.stroke();
+            // Також оновлюємо область підсвічування у HatchPattern
+            const halfWidth = this.width / 2;
+            const halfHeight = this.height / 2;
+
+            this.hatchPattern.setHighlightArea(
+                this.x - halfWidth,
+                this.y - halfHeight,
+                this.width,
+                this.height
+            );
         }
     }
 
-    // Магнітування до стіни
-    magnetizeTo(wall, edge, pixelsPerCm) {
-        this.magnetized = true;
-        this.magnetizedTo = wall;
-        this.magnetizedEdge = edge;
-
-        // Встановлюємо той самий кут, що і у стіни
-        this.angle = wall.angle;
-
-        // Розташовуємо PreviewRect відповідно до примагнічування
-        switch (edge) {
-            case 'top':
-                this.x = wall.x;
-                this.y = wall.y - this.thickness * pixelsPerCm;
-                this.width = wall.width;
-                this.height = this.thickness * pixelsPerCm;
-                break;
-            case 'right':
-                this.x = wall.x + wall.width;
-                this.y = wall.y;
-                this.width = this.thickness * pixelsPerCm;
-                this.height = wall.height;
-                break;
-            case 'bottom':
-                this.x = wall.x;
-                this.y = wall.y + wall.height;
-                this.width = wall.width;
-                this.height = this.thickness * pixelsPerCm;
-                break;
-            case 'left':
-                this.x = wall.x - this.thickness * pixelsPerCm;
-                this.y = wall.y;
-                this.width = this.thickness * pixelsPerCm;
-                this.height = wall.height;
-                break;
+    // Приховати PreviewRect
+    hide() {
+        this.visible = false;
+        // Приховуємо заштриховку та очищаємо підсвічену область
+        if (this.hatchPattern) {
+            this.hatchPattern.clearHighlightArea();
+            this.hatchPattern.setVisibility(false);
         }
-    }
-
-    // Скасування магнітування
-    resetMagnetization() {
-        this.magnetized = false;
-        this.magnetizedTo = null;
-        this.magnetizedEdge = null;
-        this.angle = 0;
     }
 }
