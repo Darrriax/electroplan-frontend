@@ -24,10 +24,6 @@ export class MagnetizationHandler {
         // Перетворюємо поріг магнітизації з урахуванням масштабу
         const threshold = this.options.magneticThreshold / scale;
 
-        // Розміри PreviewRect
-        const halfWidth = previewRect.width / 2;
-        const halfHeight = previewRect.height / 2;
-
         // Знаходимо найближчу стіну та її грань
         let closestWall = null;
         let closestEdge = null;
@@ -35,15 +31,19 @@ export class MagnetizationHandler {
 
         // Проходимо по всіх стінах та шукаємо найближчу
         for (const wall of walls) {
-            // Перевіряємо, чи миша знаходиться поблизу стіни
+            // Перевіряємо, чи миша знаходиться поблизу стіни з урахуванням її товщини
             // Трансформуємо координати миші відповідно до кута стіни
             const transformedPoint = this._transformPointByWallAngle(mouseX, mouseY, wall);
 
-            // Перевіряємо, чи точка знаходиться в межах стіни з урахуванням порогу
-            if (this._isPointNearWall(transformedPoint.x, transformedPoint.y, wall, threshold)) {
-                // Визначаємо найближчу грань стіни
-                const edge = this._getNearestEdge(transformedPoint.x, transformedPoint.y, wall);
-                const distance = this._calculateDistanceToEdge(transformedPoint.x, transformedPoint.y, wall, edge);
+            // Розрахуємо реальні межі стіни з урахуванням товщини
+            const wallThickness = wall.thickness || 10; // використовуємо товщину стіни, якщо доступна
+            const halfThickness = wallThickness / 2;
+
+            // Перевіряємо, чи точка знаходиться в межах стіни з урахуванням порогу та товщини
+            if (this._isPointNearWallEdges(transformedPoint.x, transformedPoint.y, wall, threshold, halfThickness)) {
+                // Визначаємо найближчу грань стіни з урахуванням товщини
+                const edge = this._getNearestWallEdge(transformedPoint.x, transformedPoint.y, wall, halfThickness);
+                const distance = this._calculateDistanceToWallEdge(transformedPoint.x, transformedPoint.y, wall, edge, halfThickness);
 
                 if (distance < minDistance && distance < threshold) {
                     minDistance = distance;
@@ -117,41 +117,54 @@ export class MagnetizationHandler {
     }
 
     /**
-     * Перевіряє, чи точка знаходиться поблизу стіни
+     * Перевіряє, чи точка знаходиться поблизу країв стіни з урахуванням товщини
      * @param {Number} x - X-координата точки
      * @param {Number} y - Y-координата точки
      * @param {Object} wall - Стіна
      * @param {Number} threshold - Поріг відстані
-     * @returns {Boolean} - true, якщо точка поблизу стіни
+     * @param {Number} halfThickness - Половина товщини стіни
+     * @returns {Boolean} - true, якщо точка поблизу краю стіни
      */
-    _isPointNearWall(x, y, wall, threshold) {
-        // Розширені межі стіни з урахуванням порогу
-        const expandedX = wall.x - threshold;
-        const expandedY = wall.y - threshold;
-        const expandedWidth = wall.width + threshold * 2;
-        const expandedHeight = wall.height + threshold * 2;
+    _isPointNearWallEdges(x, y, wall, threshold, halfThickness) {
+        // Розширені межі стіни з урахуванням порогу та товщини
+        const wallLeft = wall.x - halfThickness;
+        const wallRight = wall.x + wall.width + halfThickness;
+        const wallTop = wall.y - halfThickness;
+        const wallBottom = wall.y + wall.height + halfThickness;
 
+        // Перевіряємо чи точка знаходиться поблизу країв стіни з урахуванням порогу
         return (
-            x >= expandedX &&
-            x <= expandedX + expandedWidth &&
-            y >= expandedY &&
-            y <= expandedY + expandedHeight
+            // Перевірка для лівого краю
+            (Math.abs(x - wallLeft) <= threshold && y >= wallTop - threshold && y <= wallBottom + threshold) ||
+            // Перевірка для правого краю
+            (Math.abs(x - wallRight) <= threshold && y >= wallTop - threshold && y <= wallBottom + threshold) ||
+            // Перевірка для верхнього краю
+            (Math.abs(y - wallTop) <= threshold && x >= wallLeft - threshold && x <= wallRight + threshold) ||
+            // Перевірка для нижнього краю
+            (Math.abs(y - wallBottom) <= threshold && x >= wallLeft - threshold && x <= wallRight + threshold)
         );
     }
 
     /**
-     * Визначає найближчу грань стіни до заданої точки
+     * Визначає найближчу грань стіни до заданої точки з урахуванням товщини
      * @param {Number} x - X-координата точки
      * @param {Number} y - Y-координата точки
      * @param {Object} wall - Стіна
+     * @param {Number} halfThickness - Половина товщини стіни
      * @returns {String} - Назва грані ('top', 'right', 'bottom', 'left')
      */
-    _getNearestEdge(x, y, wall) {
+    _getNearestWallEdge(x, y, wall, halfThickness) {
+        // Розрахунок реальних країв стіни з урахуванням товщини
+        const topEdge = wall.y - halfThickness;
+        const rightEdge = wall.x + wall.width + halfThickness;
+        const bottomEdge = wall.y + wall.height + halfThickness;
+        const leftEdge = wall.x - halfThickness;
+
         // Відстані до кожної грані
-        const topDistance = Math.abs(y - wall.y);
-        const rightDistance = Math.abs(x - (wall.x + wall.width));
-        const bottomDistance = Math.abs(y - (wall.y + wall.height));
-        const leftDistance = Math.abs(x - wall.x);
+        const topDistance = Math.abs(y - topEdge);
+        const rightDistance = Math.abs(x - rightEdge);
+        const bottomDistance = Math.abs(y - bottomEdge);
+        const leftDistance = Math.abs(x - leftEdge);
 
         // Знаходимо найменшу відстань
         const minDistance = Math.min(topDistance, rightDistance, bottomDistance, leftDistance);
@@ -170,7 +183,7 @@ export class MagnetizationHandler {
      * @param {String} edge - Грань стіни ('top', 'right', 'bottom', 'left')
      * @returns {Number} - Відстань до грані
      */
-    _calculateDistanceToEdge(x, y, wall, edge) {
+    _calculateDistanceToWallEdge(x, y, wall, edge) {
         switch (edge) {
             case 'top': return Math.abs(y - wall.y);
             case 'right': return Math.abs(x - (wall.x + wall.width));
