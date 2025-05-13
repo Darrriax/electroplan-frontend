@@ -15,8 +15,9 @@
             @update:thickness="updateWallThickness"
             class="wall-settings"
         />
+        <DoorSettingsCard v-if="isDoorToolActive" />
         <div class="editor-canvas-container">
-          <canvas ref="canvas" class="editor-canvas" @contextmenu="onContextMenu" @wheel="onWheel"></canvas>
+          <canvas ref="canvas" class="editor-canvas" @contextmenu="onContextMenu" @wheel="onWheel" @click="handleCanvasClick"></canvas>
         </div>
       </div>
     </div>
@@ -29,13 +30,15 @@ import WallDrawingManager from '../../../utils/wallDrawing.js';
 import { mapState, mapGetters, mapActions } from 'vuex';
 import ToolSidebar from "../../UI/elements/ToolSidebar.vue";
 import WallSettingsCard from "../../UI/settings/WallSettingsCard.vue";
+import DoorSettingsCard from "../../UI/settings/DoorSettingsCard.vue";
 
 export default {
   name: 'PlanEditor',
   components: {
     ProjectLayout,
     ToolSidebar,
-    WallSettingsCard
+    WallSettingsCard,
+    DoorSettingsCard
   },
   data() {
     return {
@@ -58,6 +61,9 @@ export default {
     }),
     isWallToolActive() {
       return this.currentTool === 'wall';
+    },
+    isDoorToolActive() {
+      return this.currentTool === 'door';
     }
   },
   mounted() {
@@ -136,7 +142,19 @@ export default {
         this.drawingManager.draw();
       }
     },
-  beforeUnmount() { // Updated from beforeDestroy which is deprecated in Vue 3
+    handleCanvasClick(e) {
+      console.log('Canvas clicked');
+      if (this.drawingManager) {
+        console.log('Drawing manager exists');
+        const point = this.drawingManager.getMousePos(e);
+        console.log('Mouse position:', point);
+        this.drawingManager.handleClick(point);
+      } else {
+        console.log('No drawing manager available');
+      }
+    }
+  },
+  beforeUnmount() {
     // Clean up event listeners
     window.removeEventListener('resize', this.resizeCanvas);
 
@@ -162,7 +180,7 @@ export default {
       }
     }
   }
-}}
+}
 </script>
 
 <style scoped>
