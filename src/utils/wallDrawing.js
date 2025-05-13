@@ -184,13 +184,18 @@ export default class WallDrawingManager {
             const point = this.getMousePos(e);
             const wall = this.draggedWall.wall;
             
-            if (this.draggedWall.point === 'start' || this.draggedWall.point === 'end') {
-                // Update the shared point, which will automatically update all connected walls
+            if (this.draggedWall.point === 'middle') {
+                // Apply constrained movement and adjust adjacent walls
+                this.constrainMovement(wall, point);
+                
+                // Save wall positions to store after movement
+                this.saveWallsToStore();
+            } else if (this.draggedWall.point === 'start' || this.draggedWall.point === 'end') {
+                // Handle endpoint dragging as before
                 const sharedPoint = this.draggedWall.sharedPoint;
                 sharedPoint.x = point.x;
                 sharedPoint.y = point.y;
-
-                // Update all connected walls that share this point
+                
                 sharedPoint.connectedWalls.forEach(connection => {
                     if (connection.isStart) {
                         connection.wall.start = sharedPoint;
@@ -198,38 +203,8 @@ export default class WallDrawingManager {
                         connection.wall.end = sharedPoint;
                     }
                 });
-            } else if (this.draggedWall.point === 'middle') {
-                // Calculate the movement delta
-                const dx = point.x - (wall.start.x + wall.end.x) / 2;
-                const dy = point.y - (wall.start.y + wall.end.y) / 2;
-                
-                // Move both shared points of the wall
-                const startSharedPoint = this.findSharedPoint(wall.start);
-                const endSharedPoint = this.findSharedPoint(wall.end);
-
-                // Update start shared point
-                startSharedPoint.x += dx;
-                startSharedPoint.y += dy;
-                startSharedPoint.connectedWalls.forEach(connection => {
-                    if (connection.isStart) {
-                        connection.wall.start = startSharedPoint;
-                    } else {
-                        connection.wall.end = startSharedPoint;
-                    }
-                });
-
-                // Update end shared point
-                endSharedPoint.x += dx;
-                endSharedPoint.y += dy;
-                endSharedPoint.connectedWalls.forEach(connection => {
-                    if (connection.isStart) {
-                        connection.wall.start = endSharedPoint;
-                    } else {
-                        connection.wall.end = endSharedPoint;
-                    }
-                });
             }
-
+            
             // Recalculate rooms after wall movement
             this.detectRooms();
             this.draw();
@@ -630,25 +605,24 @@ export default class WallDrawingManager {
         };
     }
 
-    updateAngleDisplay(currentPoint) {
-        if (!this.angleDisplay) return;
+    updateAngleDisplay(point) {
+        if (!this.angleDisplay || !this.startConnection) return;
 
-        // Calculate current angle
-        const dx = currentPoint.x - this.startPoint.x;
-        const dy = currentPoint.y - this.startPoint.y;
-        const currentAngle = Math.atan2(dy, dx);
-
-        // Calculate angle between walls (always use the smaller angle)
-        let angle = Math.abs(currentAngle - this.angleDisplay.connectedAngle);
-        if (angle > Math.PI) {
-            angle = 2 * Math.PI - angle;
-        }
-
-        // Convert to degrees
-        const angleDegrees = (angle * 180 / Math.PI).toFixed(0);
-
-        this.angleDisplay.currentAngle = currentAngle;
-        this.angleDisplay.angle = angleDegrees;
+        const connectedWall = this.startConnection.wall;
+        const dx = point.x - this.startPoint.x;
+        const dy = point.y - this.startPoint.y;
+        
+        // Create temporary wall for angle calculation
+        const tempWall = {
+            start: { ...this.startPoint },
+            end: { x: point.x, y: point.y }
+        };
+        
+        // Calculate angle between walls
+        const angle = this.calculateWallAngle(connectedWall, tempWall, this.startPoint);
+        
+        this.angleDisplay.currentAngle = Math.atan2(dy, dx);
+        this.angleDisplay.angle = angle;
     }
 
     // Room detection logic
@@ -917,6 +891,36 @@ export default class WallDrawingManager {
             this.drawWallPreview();
         }
 
+        // Draw angles for selected wall
+        if (this.selectedWall) {
+            const connectedWalls = this.findConnectedWalls(this.selectedWall);
+            
+            // Group connected walls by shared points
+            const startConnections = connectedWalls.filter(wall => 
+                this.distance(wall.start, this.selectedWall.start) < 1 ||
+                this.distance(wall.end, this.selectedWall.start) < 1
+            );
+            
+            const endConnections = connectedWalls.filter(wall => 
+                this.distance(wall.start, this.selectedWall.end) < 1 ||
+                this.distance(wall.end, this.selectedWall.end) < 1
+            );
+
+            // Draw angles at start point
+            if (startConnections.length > 0) {
+                startConnections.forEach(connectedWall => {
+                    this.drawAngleBetweenWalls(this.selectedWall, connectedWall, this.selectedWall.start);
+                });
+            }
+
+            // Draw angles at end point
+            if (endConnections.length > 0) {
+                endConnections.forEach(connectedWall => {
+                    this.drawAngleBetweenWalls(this.selectedWall, connectedWall, this.selectedWall.end);
+                });
+            }
+        }
+
         // Restore context
         this.ctx.restore();
     }
@@ -968,13 +972,23 @@ export default class WallDrawingManager {
     }
 
     drawWallDimension(wall) {
+        // Find connected walls at both ends
+        const startConnections = this.findWallsConnectedToPoint(wall.start);
+        const endConnections = this.findWallsConnectedToPoint(wall.end);
+
+        // Calculate the internal points accounting for wall thickness
+        const internalPoints = this.calculateInternalPoints(wall, startConnections, endConnections);
+        if (!internalPoints) return;
+
+        const { internalStart, internalEnd } = internalPoints;
+
         const midPoint = {
-            x: (wall.start.x + wall.end.x) / 2,
-            y: (wall.start.y + wall.end.y) / 2
+            x: (internalStart.x + internalEnd.x) / 2,
+            y: (internalStart.y + internalEnd.y) / 2
         };
 
-        const dx = wall.end.x - wall.start.x;
-        const dy = wall.end.y - wall.start.y;
+        const dx = internalEnd.x - internalStart.x;
+        const dy = internalEnd.y - internalStart.y;
         const length = Math.sqrt(dx * dx + dy * dy);
 
         // Only draw dimension if wall is long enough
@@ -1013,29 +1027,29 @@ export default class WallDrawingManager {
         this.ctx.lineWidth = 1;
         this.ctx.setLineDash([4, 4]);
 
-        // Draw extension lines
+        // Draw extension lines from internal points
         this.ctx.beginPath();
-        this.ctx.moveTo(wall.start.x, wall.start.y);
+        this.ctx.moveTo(internalStart.x, internalStart.y);
         this.ctx.lineTo(
-            wall.start.x + nx * offset,
-            wall.start.y + ny * offset
+            internalStart.x + nx * offset,
+            internalStart.y + ny * offset
         );
-        this.ctx.moveTo(wall.end.x, wall.end.y);
+        this.ctx.moveTo(internalEnd.x, internalEnd.y);
         this.ctx.lineTo(
-            wall.end.x + nx * offset,
-            wall.end.y + ny * offset
+            internalEnd.x + nx * offset,
+            internalEnd.y + ny * offset
         );
         this.ctx.stroke();
 
         // Draw dimension line
         this.ctx.beginPath();
         this.ctx.moveTo(
-            wall.start.x + nx * offset,
-            wall.start.y + ny * offset
+            internalStart.x + nx * offset,
+            internalStart.y + ny * offset
         );
         this.ctx.lineTo(
-            wall.end.x + nx * offset,
-            wall.end.y + ny * offset
+            internalEnd.x + nx * offset,
+            internalEnd.y + ny * offset
         );
         this.ctx.stroke();
 
@@ -1048,40 +1062,40 @@ export default class WallDrawingManager {
         // Start arrow
         this.ctx.beginPath();
         this.ctx.moveTo(
-            wall.start.x + nx * offset,
-            wall.start.y + ny * offset
+            internalStart.x + nx * offset,
+            internalStart.y + ny * offset
         );
         this.ctx.lineTo(
-            wall.start.x + nx * offset + Math.cos(angle + Math.PI * 0.75) * arrowSize,
-            wall.start.y + ny * offset + Math.sin(angle + Math.PI * 0.75) * arrowSize
+            internalStart.x + nx * offset + Math.cos(angle + Math.PI * 0.75) * arrowSize,
+            internalStart.y + ny * offset + Math.sin(angle + Math.PI * 0.75) * arrowSize
         );
         this.ctx.moveTo(
-            wall.start.x + nx * offset,
-            wall.start.y + ny * offset
+            internalStart.x + nx * offset,
+            internalStart.y + ny * offset
         );
         this.ctx.lineTo(
-            wall.start.x + nx * offset + Math.cos(angle - Math.PI * 0.75) * arrowSize,
-            wall.start.y + ny * offset + Math.sin(angle - Math.PI * 0.75) * arrowSize
+            internalStart.x + nx * offset + Math.cos(angle - Math.PI * 0.75) * arrowSize,
+            internalStart.y + ny * offset + Math.sin(angle - Math.PI * 0.75) * arrowSize
         );
         this.ctx.stroke();
 
         // End arrow
         this.ctx.beginPath();
         this.ctx.moveTo(
-            wall.end.x + nx * offset,
-            wall.end.y + ny * offset
+            internalEnd.x + nx * offset,
+            internalEnd.y + ny * offset
         );
         this.ctx.lineTo(
-            wall.end.x + nx * offset + Math.cos(angle + Math.PI + Math.PI * 0.75) * arrowSize,
-            wall.end.y + ny * offset + Math.sin(angle + Math.PI + Math.PI * 0.75) * arrowSize
+            internalEnd.x + nx * offset + Math.cos(angle + Math.PI + Math.PI * 0.75) * arrowSize,
+            internalEnd.y + ny * offset + Math.sin(angle + Math.PI + Math.PI * 0.75) * arrowSize
         );
         this.ctx.moveTo(
-            wall.end.x + nx * offset,
-            wall.end.y + ny * offset
+            internalEnd.x + nx * offset,
+            internalEnd.y + ny * offset
         );
         this.ctx.lineTo(
-            wall.end.x + nx * offset + Math.cos(angle + Math.PI - Math.PI * 0.75) * arrowSize,
-            wall.end.y + ny * offset + Math.sin(angle + Math.PI - Math.PI * 0.75) * arrowSize
+            internalEnd.x + nx * offset + Math.cos(angle + Math.PI - Math.PI * 0.75) * arrowSize,
+            internalEnd.y + ny * offset + Math.sin(angle + Math.PI - Math.PI * 0.75) * arrowSize
         );
         this.ctx.stroke();
 
@@ -1114,6 +1128,52 @@ export default class WallDrawingManager {
         this.ctx.fillText(dimensionText, 0, -2);
         
         this.ctx.restore();
+    }
+
+    calculateInternalPoints(wall, startConnections, endConnections) {
+        const dx = wall.end.x - wall.start.x;
+        const dy = wall.end.y - wall.start.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+
+        if (length < 0.001) return null;
+
+        // Calculate unit vectors for wall direction and normal
+        const ux = dx / length;  // Unit vector in wall direction
+        const uy = dy / length;
+        const nx = -dy / length; // Normal vector (perpendicular to wall)
+        const ny = dx / length;
+
+        // Find perpendicular walls at each end
+        const startPerpendicularWalls = startConnections.filter(connectedWall => {
+            const angle = this.calculateWallAngle(wall, connectedWall, wall.start);
+            return angle !== null && Math.abs(angle - 90) < 15;
+        });
+
+        const endPerpendicularWalls = endConnections.filter(connectedWall => {
+            const angle = this.calculateWallAngle(wall, connectedWall, wall.end);
+            return angle !== null && Math.abs(angle - 90) < 15;
+        });
+
+        // Get the thicknesses of perpendicular walls
+        const startThickness = startPerpendicularWalls.length > 0 
+            ? Math.max(...startPerpendicularWalls.map(w => w.thickness))
+            : 0;
+        const endThickness = endPerpendicularWalls.length > 0 
+            ? Math.max(...endPerpendicularWalls.map(w => w.thickness))
+            : 0;
+
+        // Calculate internal points using perpendicular wall thicknesses
+        let internalStart = {
+            x: wall.start.x + (startThickness / 2) * ux,
+            y: wall.start.y + (startThickness / 2) * uy
+        };
+
+        let internalEnd = {
+            x: wall.end.x - (endThickness / 2) * ux,
+            y: wall.end.y - (endThickness / 2) * uy
+        };
+
+        return { internalStart, internalEnd };
     }
 
     drawRooms() {
@@ -1496,5 +1556,231 @@ export default class WallDrawingManager {
         }
 
         return null; // No split wall needed with shared points
+    }
+
+    // Add these helper methods after the existing helper methods
+    isWallMoreHorizontal(wall) {
+        const dx = Math.abs(wall.end.x - wall.start.x);
+        const dy = Math.abs(wall.end.y - wall.start.y);
+        return dx >= dy;
+    }
+
+    constrainMovement(wall, point) {
+        const isHorizontal = this.isWallMoreHorizontal(wall);
+        const dx = point.x - (wall.start.x + wall.end.x) / 2;
+        const dy = point.y - (wall.start.y + wall.end.y) / 2;
+        
+        // Calculate the constrained movement
+        const movement = {
+            x: isHorizontal ? 0 : dx,
+            y: isHorizontal ? dy : 0
+        };
+
+        // Find walls connected to both endpoints
+        const startConnectedWalls = this.findWallsConnectedToPoint(wall.start).filter(w => w.id !== wall.id);
+        const endConnectedWalls = this.findWallsConnectedToPoint(wall.end).filter(w => w.id !== wall.id);
+
+        // Store original positions
+        const originalStart = { ...wall.start };
+        const originalEnd = { ...wall.end };
+
+        // Move the wall
+        wall.start.x += movement.x;
+        wall.start.y += movement.y;
+        wall.end.x += movement.x;
+        wall.end.y += movement.y;
+
+        // Adjust connected walls at start point
+        startConnectedWalls.forEach(connectedWall => {
+            if (this.distance(connectedWall.start, originalStart) < 1) {
+                connectedWall.start = wall.start;
+            } else if (this.distance(connectedWall.end, originalStart) < 1) {
+                connectedWall.end = wall.start;
+            }
+        });
+
+        // Adjust connected walls at end point
+        endConnectedWalls.forEach(connectedWall => {
+            if (this.distance(connectedWall.start, originalEnd) < 1) {
+                connectedWall.start = wall.end;
+            } else if (this.distance(connectedWall.end, originalEnd) < 1) {
+                connectedWall.end = wall.end;
+            }
+        });
+
+        return movement;
+    }
+
+    findWallsConnectedToPoint(point) {
+        return this.walls.filter(wall => 
+            this.distance(wall.start, point) < 1 || 
+            this.distance(wall.end, point) < 1
+        );
+    }
+
+    calculateWallAngle(wall1, wall2, sharedPoint) {
+        try {
+            // Get vectors for both walls from the shared point
+            let vec1, vec2;
+            
+            // For wall1
+            if (this.distance(sharedPoint, wall1.start) < 1) {
+                vec1 = {
+                    x: wall1.end.x - wall1.start.x,
+                    y: wall1.end.y - wall1.start.y
+                };
+            } else {
+                vec1 = {
+                    x: wall1.start.x - wall1.end.x,
+                    y: wall1.start.y - wall1.end.y
+                };
+            }
+            
+            // For wall2
+            if (this.distance(sharedPoint, wall2.start) < 1) {
+                vec2 = {
+                    x: wall2.end.x - wall2.start.x,
+                    y: wall2.end.y - wall2.start.y
+                };
+            } else {
+                vec2 = {
+                    x: wall2.start.x - wall2.end.x,
+                    y: wall2.start.y - wall2.end.y
+                };
+            }
+
+            // Calculate angle between vectors
+            const dot = vec1.x * vec2.x + vec1.y * vec2.y;
+            const mag1 = Math.sqrt(vec1.x * vec1.x + vec1.y * vec1.y);
+            const mag2 = Math.sqrt(vec2.x * vec2.x + vec2.y * vec2.y);
+            
+            // Check for zero magnitudes to avoid division by zero
+            if (mag1 === 0 || mag2 === 0) {
+                return null;
+            }
+
+            const cosAngle = dot / (mag1 * mag2);
+            // Clamp cosAngle to [-1, 1] to avoid NaN from floating point errors
+            const clampedCosAngle = Math.max(-1, Math.min(1, cosAngle));
+            let angle = Math.acos(clampedCosAngle) * 180 / Math.PI;
+
+            // Calculate cross product to determine orientation
+            const cross = vec1.x * vec2.y - vec1.y * vec2.x;
+
+            // For clockwise room traversal, we want to show the internal angle
+            // We need to consider the position of the shared point relative to the room
+            const centerX = (wall1.start.x + wall1.end.x + wall2.start.x + wall2.end.x) / 4;
+            const centerY = (wall1.start.y + wall1.end.y + wall2.start.y + wall2.end.y) / 4;
+            
+            // Vector from center to shared point
+            const toSharedPoint = {
+                x: sharedPoint.x - centerX,
+                y: sharedPoint.y - centerY
+            };
+
+            // Calculate if the point is in a clockwise or counterclockwise position
+            const isClockwise = (toSharedPoint.x * (vec1.y + vec2.y) - toSharedPoint.y * (vec1.x + vec2.x)) > 0;
+
+            // Adjust the angle based on orientation and position
+            if ((cross < 0 && !isClockwise) || (cross > 0 && isClockwise)) {
+                angle = 360 - angle;
+            }
+
+            // Return the internal angle
+            return Math.round(angle > 180 ? 360 - angle : angle);
+        } catch (error) {
+            console.error('Error calculating wall angle:', error);
+            return null;
+        }
+    }
+
+    findConnectedWalls(wall) {
+        return this.walls.filter(otherWall => {
+            if (otherWall === wall) return false;
+            return (
+                this.distance(wall.start, otherWall.start) < 1 ||
+                this.distance(wall.start, otherWall.end) < 1 ||
+                this.distance(wall.end, otherWall.start) < 1 ||
+                this.distance(wall.end, otherWall.end) < 1
+            );
+        });
+    }
+
+    drawAngleBetweenWalls(wall1, wall2, sharedPoint) {
+        const angle = this.calculateWallAngle(wall1, wall2, sharedPoint);
+        
+        // Skip drawing if angle calculation failed
+        if (angle === null) {
+            console.warn('Invalid angle between walls');
+            return;
+        }
+        
+        // Calculate vectors for both walls from the shared point
+        let vec1Start, vec2Start;
+        
+        // For wall1
+        if (this.distance(sharedPoint, wall1.start) < 1) {
+            vec1Start = {
+                x: wall1.end.x - wall1.start.x,
+                y: wall1.end.y - wall1.start.y
+            };
+        } else {
+            vec1Start = {
+                x: wall1.start.x - wall1.end.x,
+                y: wall1.start.y - wall1.end.y
+            };
+        }
+        
+        // For wall2
+        if (this.distance(sharedPoint, wall2.start) < 1) {
+            vec2Start = {
+                x: wall2.end.x - wall2.start.x,
+                y: wall2.end.y - wall2.start.y
+            };
+        } else {
+            vec2Start = {
+                x: wall2.start.x - wall2.end.x,
+                y: wall2.start.y - wall2.end.y
+            };
+        }
+
+        // Calculate angles for arc drawing
+        const angle1 = Math.atan2(vec1Start.y, vec1Start.x);
+        const angle2 = Math.atan2(vec2Start.y, vec2Start.x);
+        
+        // Determine the radius and offset for the angle display
+        const radius = 30;
+        
+        // Calculate midpoint for text placement, ensuring it's inside the room
+        const midAngle = (angle1 + angle2) / 2;
+        const textX = sharedPoint.x + radius * Math.cos(midAngle);
+        const textY = sharedPoint.y + radius * Math.sin(midAngle);
+        
+        // Draw the angle arc
+        this.ctx.beginPath();
+        this.ctx.arc(sharedPoint.x, sharedPoint.y, radius, 
+            Math.min(angle1, angle2), Math.max(angle1, angle2));
+        this.ctx.strokeStyle = '#2196F3';
+        this.ctx.stroke();
+        
+        // Draw background for text
+        const text = `${angle}°`;
+        this.ctx.font = '14px Arial';
+        const textWidth = this.ctx.measureText(text).width;
+        const padding = 4;
+        
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        this.ctx.fillRect(
+            textX - textWidth/2 - padding,
+            textY - 8 - padding,
+            textWidth + padding * 2,
+            16 + padding * 2
+        );
+        
+        // Draw the angle text
+        this.ctx.fillStyle = '#2196F3';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(text, textX, textY);
     }
 }
