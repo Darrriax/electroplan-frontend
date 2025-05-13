@@ -73,18 +73,6 @@ input[type='checkbox'] {
     cursor: pointer;
 }
 
-/* Chrome, Safari, Edge, Opera */
-input[type="number"]::-webkit-outer-spin-button,
-input[type="number"]::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-}
-
-/* Firefox */
-input[type="number"] {
-    -moz-appearance: textfield;
-}
-
 label {
     cursor: pointer;
 }
@@ -444,14 +432,14 @@ a:hover {
 /*ToDo: rewrite and reformat this styles / use global variables*/
 /*__________________________________WallSettingsPanel________________________________*/
 .wall-settings-card {
-    margin-top: 240px;
+    margin-top: 210px;
     left: 0;
-    width: 70px;
+    width: 160px;
     background: white;
     border-radius: 10px;
     padding: 8px;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-    height: 230px;
+    height: 205px;
     z-index: 1000;
     position: fixed;
 }

@@ -12,26 +12,10 @@
 
       <!-- Права панель -->
       <div class="navbar-right d-flex align-items-center gap-2">
-        <button-default
-            icon="fa-solid fa-layer-group"
-            label="Original Plan"
-            :class="{ 'active-mode': activeMode === 'originalPlan' }"
-            @click="selectOriginalPlan"/>
-        <button-default
-            icon="fa-solid fa-plug"
-            label="Power Sockets"
-            :class="{ 'active-mode': activeMode === 'powerSockets' }"
-            @click="selectPowerSockets"/>
-        <button-default
-            icon="fa-solid fa-lightbulb"
-            label="Light"
-            :class="{ 'active-mode': activeMode === 'light' }"
-            @click="selectLight"/>
-        <button-default
-            icon="fa-solid fa-toggle-on"
-            label="Switches"
-            :class="{ 'active-mode': activeMode === 'switches' }"
-            @click="selectSwitches"/>
+        <button-default icon="fa-solid fa-layer-group" label="Original Plan" @click="selectOriginalPlan"/>
+        <button-default icon="fa-solid fa-plug" label="Power Sockets" @click="selectPowerSockets"/>
+        <button-default icon="fa-solid fa-lightbulb" label="Light" @click="selectLight"/>
+        <button-default icon="fa-solid fa-toggle-on" label="Switches" @click="selectSwitches"/>
 
         <div class="divider"/>
 
@@ -41,79 +25,67 @@
         <div class="divider"/>
 
         <!-- Одиниці виміру -->
-        <select v-model="selectedUnit" class="unit-select" @change="changeUnit">
-          <option value="мм">мм</option>
-          <option value="см">см</option>
+        <select v-model="selectedUnit" class="unit-select">
+          <option value="mm">мм</option>
+          <option value="cm">см</option>
         </select>
 
         <button-default icon="fa-solid fa-gear" @click="openSettings"/>
         <button-default icon="fa-solid fa-info-circle" @click="openProjectInfo"/>
       </div>
     </div>
-
-    <!-- Підключаємо компонент бокового меню -->
-    <sidebar-tools-menu />
   </div>
 </template>
 
 <script>
 import ButtonDefault from "../buttons/ButtonDefault.vue"
-import SidebarToolsMenu from "../settings/SidebarToolsMenu.vue"
-import { mapState, mapMutations } from 'vuex'
 
 export default {
   name: "ProjectNavbar",
   components: {
     ButtonDefault,
-    SidebarToolsMenu
   },
   data() {
     return {
-      selectedUnit: 'см' // За замовчуванням використовуємо сантиметри
+      selectedUnit: 'cm'
     }
   },
-  computed: {
-    ...mapState('editorTools', ['isMenuOpen', 'activeMode']),
-    ...mapState('project', ['unit'])
-  },
-  mounted() {
-    // Синхронізуємо локальний вибір з тим, що в сховищі
-    this.selectedUnit = this.unit;
+  watch: {
+    selectedUnit(newVal) {
+      const oldUnit = this.$store.state.project.unit
+      const thickness = this.$store.state.project.wallThickness
+
+      // Конвертація значення при зміні одиниць
+      let newThickness = thickness
+      if(oldUnit === 'cm' && newVal === 'mm') newThickness = thickness
+      if(oldUnit === 'mm' && newVal === 'cm') newThickness = thickness
+      if(oldUnit === 'm' && newVal === 'cm') newThickness = thickness * 10
+      if(oldUnit === 'cm' && newVal === 'm') newThickness = thickness / 10
+
+      this.$store.commit('project/setUnit', newVal)
+      this.$store.commit('project/setWallThickness', Math.round(newThickness))
+    }
   },
   methods: {
-    ...mapMutations('editorTools', ['toggleSidebarMenu', 'setActiveMode']),
-    ...mapMutations('project', ['setUnit', 'setWallThickness']),
-
-    changeUnit() {
-      const oldUnit = this.unit;
-      const newUnit = this.selectedUnit;
-
-      if (oldUnit !== newUnit) {
-        // Оновлюємо одиниці у сховищі
-        this.setUnit(newUnit);
-      }
-    },
-
     toggleMenu() {
-      this.toggleSidebarMenu()
+      this.$store.commit('project/toggleMenu')
     },
     centerPlan() {},
     saveProject() {},
-    undoAction() {},
-    redoAction() {},
+    undoAction() {
+      // Emit an event to be caught by parent components
+      this.$emit('undo');
+    },
+    redoAction() {
+      // Emit an event to be caught by parent components
+      this.$emit('redo');
+    },
     selectOriginalPlan() {
-      this.setActiveMode('originalPlan')
       this.$router.push('/plan-editor')
     },
-    selectPowerSockets() {
-      this.setActiveMode('powerSockets')
-    },
-    selectLight() {
-      this.setActiveMode('light')
-    },
-    selectSwitches() {
-      this.setActiveMode('switches')
-    },
+    selectPowerSockets() {},
+    selectLight() {},
+    selectSwitches() {},
     view2D() {},
     view3D() {},
     openSettings() {},
@@ -136,12 +108,5 @@ export default {
   border-radius: 4px;
   background: #fff;
   font-size: 14px;
-}
-
-.active-mode {
-  padding: 10px;
-  border-radius: 10px;
-  background-color: #ffa500 !important; /* Оранжевий фон */
-  border-color: #ff8c00 !important; /* Оранжевий бордер */
 }
 </style>

@@ -4,7 +4,7 @@
     <div class="sidebar_container"></div>
     <div class="min-vh-100 displayFlexColumn project-content">
       <navigation class="navigation"/>
-      <projectNavbar class="project-navbar"/>
+      <projectNavbar class="project-navbar" @undo="handleUndo" @redo="handleRedo"/>
       <slot/>
     </div>
   </div>
@@ -26,5 +26,15 @@ export default {
     ProjectNavbar
   },
   mixins: [isLoading],
+  methods: {
+    handleUndo() {
+      // Emit the event up to be caught by the page component (PlanEditor)
+      this.$emit('undo');
+    },
+    handleRedo() {
+      // Emit the event up to be caught by the page component (PlanEditor)
+      this.$emit('redo');
+    }
+  }
 }
 </script>

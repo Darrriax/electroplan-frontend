@@ -1,167 +1,168 @@
 <template>
-  <project-layout>
+  <project-layout @undo="undoAction" @redo="redoAction">
     <div class="plan-editor">
-      <canvas ref="canvas" class="grid-canvas"></canvas>
+      <ToolSidebar
+          :tools="editorTools"
+          :visible="isMenuOpen"
+          :current-tool="currentTool"
+          @tool-selected="setCurrentTool"
+      />
+      <div class="editor-content">
+        <WallSettingsCard
+            v-if="isWallToolActive"
+            :thickness="wallThickness"
+            :unit="unit"
+            @update:thickness="updateWallThickness"
+            class="wall-settings"
+        />
+        <div class="editor-canvas-container">
+          <canvas ref="canvas" class="editor-canvas" @contextmenu="onContextMenu" @wheel="onWheel"></canvas>
+        </div>
+      </div>
     </div>
   </project-layout>
 </template>
 
 <script>
-// PlanEditor.vue - script section
 import ProjectLayout from '../../UI/layouts/ProjectLayout.vue';
-import { CanvasInitializer } from '../../../utils';
-import { mapGetters, mapState, mapMutations } from 'vuex';
+import WallDrawingManager from '../../../utils/wallDrawing.js';
+import { mapState, mapGetters, mapActions } from 'vuex';
+import ToolSidebar from "../../UI/elements/ToolSidebar.vue";
+import WallSettingsCard from "../../UI/settings/WallSettingsCard.vue";
 
 export default {
   name: 'PlanEditor',
   components: {
     ProjectLayout,
+    ToolSidebar,
+    WallSettingsCard
   },
   data() {
     return {
-      canvasInit: null,
-      isMouseOnCanvas: false,
-      pixelsPerCm: 1, // Масштаб: скільки пікселів у 1 см
-      cellSize: 10,   // Розмір клітинки сітки
+      drawingManager: null,
+      editorTools: [
+        { id: 'wall', name: 'wall', label: 'Walls', icon: 'mdi mdi-wall' },
+        { id: 'door', name: 'door', label: 'Doors', icon: 'mdi mdi-door' },
+        { id: 'window', name: 'window', label: 'Windows', icon: 'mdi mdi-window-closed-variant' },
+        { id: 'balcony', name: 'balcony', label: 'Balcony', icon: 'mdi mdi-balcony' }
+      ]
     };
   },
   computed: {
-    ...mapGetters('project', ['projectSettings']),
-    ...mapState('editorTools', ['activeMode', 'activeTool']),
-    ...mapState('walls', ['walls']),
-    wallThickness() {
-      return this.projectSettings.wallThickness;
-    },
-    unit() {
-      return this.projectSettings.unit;
-    },
-    // Масштабний коефіцієнт залежно від одиниці виміру
-    scaleMultiplier() {
-      switch (this.unit) {
-        case 'мм':
-          return 0.1;  // 1 мм = 0.1 см
-        case 'м':
-          return 100;   // 1 м = 100 см
-        case 'дм':
-          return 10;   // 1 дм = 10 см
-        case 'фут':
-          return 30.48; // 1 фут = 30.48 см
-        case 'дюйм':
-          return 2.54; // 1 дюйм = 2.54 см
-        case 'см':
-        default:
-          return 1;      // 1 см = 1 см (базова одиниця)
-      }
-    },
-    // Отримуємо товщину стіни в сантиметрах для масштабування
-    wallThicknessInCm() {
-      return this.wallThickness * this.scaleMultiplier;
-    },
+    ...mapState('project', ['unit']),
+    ...mapGetters({
+      isMenuOpen: 'project/isMenuOpen',
+      currentTool: 'project/getCurrentTool',
+      wallThickness: 'walls/defaultThickness',
+      wallHeight: 'walls/defaultHeight'
+    }),
     isWallToolActive() {
-      // Перевіряємо, чи активний інструмент "Стіна" у режимі "originalPlan"
-      return this.activeMode === 'originalPlan' && this.activeTool.originalPlan === 'wall';
-    }
-  },
-  watch: {
-    // Слідкуємо за зміною товщини стіни у Vuex
-    wallThicknessInCm: {
-      handler(newValue) {
-        if (this.canvasInit) {
-          this.canvasInit.updateOptions({
-            wallThicknessInCm: newValue,
-            pixelsPerCm: this.pixelsPerCm
-          });
-          this.canvasInit.updatePreviewRect(newValue, this.pixelsPerCm);
-        }
-      },
-      immediate: true
-    },
-    // Слідкуємо за зміною одиниць виміру
-    unit: {
-      handler() {
-        if (this.canvasInit) {
-          this.canvasInit.updateOptions({
-            wallThicknessInCm: this.wallThicknessInCm,
-            pixelsPerCm: this.pixelsPerCm
-          });
-          this.canvasInit.updatePreviewRect(this.wallThicknessInCm, this.pixelsPerCm);
-        }
-      },
-      immediate: true
-    },
-    // Слідкуємо за зміною активного інструменту
-    isWallToolActive: {
-      handler(isActive) {
-        if (this.canvasInit) {
-          this.canvasInit.updateOptions({
-            isWallToolActive: isActive,
-            isMouseOnCanvas: this.isMouseOnCanvas
-          });
-
-          if (isActive && this.isMouseOnCanvas) {
-            this.canvasInit.previewRect.show();
-          } else {
-            this.canvasInit.previewRect.hide();
-          }
-
-          this.canvasInit.redraw();
-        }
-      },
-      immediate: true
+      return this.currentTool === 'wall';
     }
   },
   mounted() {
-    this.initCanvas();
-  },
-  beforeUnmount() {
-    if (this.canvasInit) {
-      this.canvasInit.destroy();
+    this.initializeCanvas();
+
+    // Handle window resize
+    window.addEventListener('resize', this.resizeCanvas);
+
+    // Add keyboard shortcuts
+    window.addEventListener('keydown', this.handleKeyboard);
+
+    // Set initial tool
+    if (!this.currentTool) {
+      this.setCurrentTool('wall');
     }
   },
   methods: {
-    ...mapMutations('editorTools', ['setActiveTool']),
-    ...mapMutations('walls', ['addWall']),
+    ...mapActions({
+      setToolAction: 'project/setTool',
+      updateThickness: 'walls/updateDefaultThickness',
+      updateHeight: 'walls/updateDefaultHeight'
+    }),
+    setCurrentTool(tool) {
+      this.setToolAction(tool);
+    },
+    updateWallThickness(thickness) {
+      this.updateThickness(thickness);
+    },
+    updateWallHeight(height) {
+      this.updateHeight(height);
+    },
+    initializeCanvas() {
+      if (!this.$refs.canvas) return;
 
-    initCanvas() {
-      const canvas = this.$refs.canvas;
+      // Create new drawing manager instance
+      this.drawingManager = new WallDrawingManager(this.$refs.canvas, this.$store);
 
-      // Ініціалізуємо канвас використовуючи наш новий клас
-      this.canvasInit = new CanvasInitializer(canvas, {
-        virtualSize: 500000,
-        pixelsPerCm: this.pixelsPerCm,
-        cellSize: this.cellSize,
-        wallThickness: this.wallThickness,
-        wallThicknessInCm: this.wallThicknessInCm,
-        isWallToolActive: this.isWallToolActive,
-        isMouseOnCanvas: this.isMouseOnCanvas,
-        existingWalls: this.walls,
-        onWallCreated: (wall) => {
-          // Add new wall to Vuex store
-          this.addWall(wall);
+      // Load any existing data
+      this.drawingManager.loadFromStore();
+    },
+    resizeCanvas() {
+      if (!this.drawingManager) return;
+      this.drawingManager.resizeCanvas();
+    },
+    handleKeyboard(event) {
+      // Undo: Ctrl/Cmd + Z
+      if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        this.undoAction();
+      }
+      // Redo: Ctrl/Cmd + Shift + Z
+      if ((event.ctrlKey || event.metaKey) && event.key === 'z' && event.shiftKey) {
+        event.preventDefault();
+        this.redoAction();
+      }
+    },
+    undoAction() {
+      if (this.drawingManager) {
+        this.drawingManager.undo();
+      }
+    },
+    redoAction() {
+      if (this.drawingManager) {
+        this.drawingManager.redo();
+      }
+    },
+	onContextMenu(event) {
+      event.preventDefault(); // Prevent the default context menu
+      this.setCurrentTool(null); // Deselect the current tool
+    },
+    onWheel(event) {
+      event.preventDefault();
+      if (this.drawingManager) {
+        const delta = event.deltaY > 0 ? 0.9 : 1.1;
+        this.drawingManager.zoom = Math.min(Math.max(0.1, this.drawingManager.zoom * delta), 5);
+        this.drawingManager.draw();
+      }
+    },
+  beforeUnmount() { // Updated from beforeDestroy which is deprecated in Vue 3
+    // Clean up event listeners
+    window.removeEventListener('resize', this.resizeCanvas);
+
+    // Clean up drawing manager
+    if (this.drawingManager) {
+      this.drawingManager.cleanup();
+    }
+  },
+  watch: {
+    // Watch for changes in the store that would affect the canvas
+    'wallThickness': {
+      handler() {
+        if (this.drawingManager) {
+          this.drawingManager.draw();
         }
-      }).init();
-
-      // Налаштовуємо колбеки для зв'язку з компонентом Vue
-      this.canvasInit.setCallbacks({
-        onMouseEnter: () => {
-          this.isMouseOnCanvas = true;
-        },
-        onMouseLeave: () => {
-          this.isMouseOnCanvas = false;
-        },
-        onToolDeselect: (detail) => {
-          // Відключаємо активний інструмент при натисканні правою кнопкою миші
-          if (detail && detail.mode) {
-            this.setActiveTool({
-              mode: detail.mode,
-              toolId: null
-            });
-          }
+      }
+    },
+    'currentTool': {
+      handler() {
+        if (this.drawingManager) {
+          this.drawingManager.draw();
         }
-      });
+      }
     }
   }
-};
+}}
 </script>
 
 <style scoped>
@@ -173,10 +174,33 @@ export default {
   overflow: hidden;
 }
 
-.grid-canvas {
+.editor-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  height: 100%;
+}
+
+.editor-canvas-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background-color: #f8f8f8;
+  height: 100%;
+}
+
+.editor-canvas {
+  display: block;
   width: 100%;
   height: 100%;
-  display: block;
-  background-color: white;
+  cursor: crosshair;
+}
+
+.wall-settings {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
 }
 </style>

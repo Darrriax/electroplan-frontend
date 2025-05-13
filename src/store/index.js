@@ -1,12 +1,12 @@
 import {createStore} from "vuex";
-import {auth} from "./modules/auth.js";
-import {loading} from "./modules/loading";
-import {reports} from "./modules/reports.js";
-import {user} from "./modules/user.js";
-import {project} from "./modules/project.js";
-import {walls} from "./modules/walls.js";
-import {rooms} from "./modules/rooms.js";
-import editorTools from "./modules/editorTools.js";
+import {auth} from "./moduls/auth.js";
+import {loading} from "./moduls/loading";
+import {reports} from "./moduls/reports.js";
+import {user} from "./moduls/user.js";
+import {project} from "./moduls/project.js";
+import {walls} from "./moduls/walls.js";
+import {rooms} from "./moduls/rooms.js";
+import {history} from "./moduls/history.js";
 
 export default createStore({
     modules: {
@@ -17,6 +17,6 @@ export default createStore({
         project,
         walls,
         rooms,
-        editorTools
+        history
     },
 });
