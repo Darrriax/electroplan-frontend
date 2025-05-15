@@ -16,6 +16,7 @@
             class="wall-settings"
         />
         <DoorSettingsCard v-if="isDoorToolActive" />
+        <WindowSettingsCard v-if="isWindowToolActive" />
         <div class="editor-canvas-container">
           <canvas ref="canvas" class="editor-canvas" @contextmenu="onContextMenu" @wheel="onWheel" @click="handleCanvasClick"></canvas>
         </div>
@@ -31,6 +32,7 @@ import { mapState, mapGetters, mapActions } from 'vuex';
 import ToolSidebar from "../../UI/elements/ToolSidebar.vue";
 import WallSettingsCard from "../../UI/settings/WallSettingsCard.vue";
 import DoorSettingsCard from "../../UI/settings/DoorSettingsCard.vue";
+import WindowSettingsCard from "../../UI/settings/WindowSettingsCard.vue";
 
 export default {
   name: 'PlanEditor',
@@ -38,7 +40,8 @@ export default {
     ProjectLayout,
     ToolSidebar,
     WallSettingsCard,
-    DoorSettingsCard
+    DoorSettingsCard,
+    WindowSettingsCard
   },
   data() {
     return {
@@ -46,8 +49,7 @@ export default {
       editorTools: [
         { id: 'wall', name: 'wall', label: 'Walls', icon: 'mdi mdi-wall' },
         { id: 'door', name: 'door', label: 'Doors', icon: 'mdi mdi-door' },
-        { id: 'window', name: 'window', label: 'Windows', icon: 'mdi mdi-window-closed-variant' },
-        { id: 'balcony', name: 'balcony', label: 'Balcony', icon: 'mdi mdi-balcony' }
+        { id: 'window', name: 'window', label: 'Windows', icon: 'mdi mdi-window-closed-variant' }
       ]
     };
   },
@@ -64,6 +66,9 @@ export default {
     },
     isDoorToolActive() {
       return this.currentTool === 'door';
+    },
+    isWindowToolActive() {
+      return this.currentTool === 'window';
     }
   },
   mounted() {

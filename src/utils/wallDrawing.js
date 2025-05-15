@@ -1,5 +1,7 @@
 // wallDrawing.js - Core drawing functionality for walls
 import WallConnectionManager from './wallConnection.js';
+import WindowManager from './drawing/WindowManager.js';
+import { formatMeasurement } from './unitConversion';
 
 // Constants
 const GRID_SIZE = 10; // Grid size in pixels
@@ -22,8 +24,9 @@ export default class WallDrawingManager {
         this.ctx = canvas.getContext('2d');
         this.store = store;
 
-        // Create wall connection manager
+        // Create managers
         this.connectionManager = new WallConnectionManager();
+        this.windowManager = new WindowManager(this.ctx, store);
 
         // Wall drawing state
         this.isDrawing = false;
@@ -204,7 +207,7 @@ export default class WallDrawingManager {
     }
 
     onMouseMove(e) {
-            const point = this.getMousePos(e);
+        const point = this.getMousePos(e);
 
         // Update cursor for door selection/dragging
         if (!this.store.state.project.currentTool && !this.isDraggingDoor) {
@@ -362,45 +365,91 @@ export default class WallDrawingManager {
 
         this.currentPoint = point;
 
-        // Check if we should snap to existing walls
+        // Check if we should snap to existing walls or corners
         this.magnetPoint = null;
         this.magnetPointWall = null;
+        this.magnetIsEnd = null;
 
         // Only check for magnet points if we're using the wall tool
         if (this.store.state.project.currentTool === 'wall') {
-            // Get wall thickness for magnetization calculations
-            const wallThickness = this.store.getters['walls/defaultThickness'] / 100; // Convert mm to canvas units
+            const MAGNET_THRESHOLD = 20; // Magnetization threshold in pixels
+            let minDistance = MAGNET_THRESHOLD;
 
-            // Check if we need to snap to existing walls
+            // First, check for corner points (wall endpoints)
             for (const wall of this.walls) {
-                // Check if point is near wall start or end
-                if (this.distance(point, wall.start) < 10) {
+                // Check start point
+                const startDistance = this.distance(point, wall.start);
+                if (startDistance < minDistance) {
                     this.magnetPoint = { ...wall.start };
                     this.magnetPointWall = wall;
                     this.magnetIsEnd = false;
-                    break;
+                    minDistance = startDistance;
                 }
-                if (this.distance(point, wall.end) < 10) {
+
+                // Check end point
+                const endDistance = this.distance(point, wall.end);
+                if (endDistance < minDistance) {
                     this.magnetPoint = { ...wall.end };
                     this.magnetPointWall = wall;
                     this.magnetIsEnd = true;
-                    break;
+                    minDistance = endDistance;
                 }
 
-                // Check if point is near wall edges
-                const snapPoint = this.getPointOnWall(point, wall);
-                if (snapPoint) {
-                    this.magnetPoint = snapPoint;
-                    this.magnetPointWall = wall;
-                    this.magnetIsEnd = null; // Not at an endpoint
-                    break;
+                // If we're drawing a wall (have a start point)
+                if (this.isDrawing && this.startPoint) {
+                    // Check if the current line is nearly perpendicular to existing walls
+                    const currentAngle = Math.atan2(
+                        point.y - this.startPoint.y,
+                        point.x - this.startPoint.x
+                    );
+
+                    const wallAngle = Math.atan2(
+                        wall.end.y - wall.start.y,
+                        wall.end.x - wall.start.x
+                    );
+
+                    // Calculate angle difference
+                    let angleDiff = Math.abs(currentAngle - wallAngle);
+                    angleDiff = Math.min(angleDiff, Math.PI - angleDiff);
+
+                    // If nearly perpendicular (90 degrees ± tolerance)
+                    const PERPENDICULAR_TOLERANCE = Math.PI / 36; // ±5 degrees
+                    if (Math.abs(angleDiff - Math.PI/2) < PERPENDICULAR_TOLERANCE) {
+                        // Project point onto wall line
+                        const projection = this.projectPointOnLine(point, wall.start, wall.end);
+                        const distToProjection = this.distance(point, projection);
+
+                        // If close enough to the wall and projection is on the wall segment
+                        if (distToProjection < MAGNET_THRESHOLD && this.isPointOnWallSegment(projection, wall)) {
+                            this.magnetPoint = projection;
+                            this.magnetPointWall = wall;
+                            this.magnetIsEnd = null; // Not at an endpoint
+                            minDistance = distToProjection;
+                        }
+                    }
                 }
             }
 
-            // Update angle display if we're drawing
-            if (this.isDrawing && this.angleDisplay) {
-                this.updateAngleDisplay(point);
+            // If no corner was found within threshold, check for wall edges
+            if (!this.magnetPoint) {
+                for (const wall of this.walls) {
+                    const snapPoint = this.getPointOnWall(point, wall);
+                    if (snapPoint) {
+                        const distanceToWall = this.distance(point, snapPoint);
+                        if (distanceToWall < minDistance) {
+                            this.magnetPoint = snapPoint;
+                            this.magnetPointWall = wall;
+                            this.magnetIsEnd = null;
+                            minDistance = distanceToWall;
+                        }
+                    }
+                }
             }
+        }
+
+        // Update angle display if we're drawing
+        if (this.isDrawing && this.angleDisplay) {
+            this.updateAngleDisplay(this.magnetPoint || point);
         }
 
         // Update cursor based on what's under it
@@ -428,7 +477,21 @@ export default class WallDrawingManager {
             this.updateDoorPreview(point);
         }
 
+        // Update window preview if in window placement mode
+        if (this.store.state.project.currentTool === 'window') {
+            this.windowManager.updateWindowPreview(point, this.walls);
+        }
+
         this.draw();
+    }
+
+    isPointOnWallSegment(point, wall) {
+        const wallLength = this.distance(wall.start, wall.end);
+        const distanceFromStart = this.distance(point, wall.start);
+        const distanceFromEnd = this.distance(point, wall.end);
+        
+        // Allow for some floating point imprecision
+        return Math.abs(distanceFromStart + distanceFromEnd - wallLength) < 0.1;
     }
 
     updateConnectedWalls(wall, newPoint, isStart, updatedWalls) {
@@ -690,7 +753,7 @@ export default class WallDrawingManager {
                 this.ctx.beginPath();
                 this.ctx.moveTo(minX - padding, y);
                 this.ctx.lineTo(maxX + padding, y + (maxX - minX) + padding * 2);
-                this.ctx.stroke();
+        this.ctx.stroke();
             }
         } else {
             // For horizontal walls, draw lines from top-right to bottom-left
@@ -979,9 +1042,18 @@ export default class WallDrawingManager {
         const y = (e.clientY - rect.top - this.panOffset.y) / this.zoom;
 
         if (snapToGrid) {
+            // Only snap to grid when initially placing walls
+            if (this.store.state.project.currentTool === 'wall' && !this.isDrawing) {
+                return {
+                    x: Math.round(x / GRID_SIZE) * GRID_SIZE,
+                    y: Math.round(y / GRID_SIZE) * GRID_SIZE
+                };
+            }
+            
+            // For wall resizing and movement, use 1cm precision
             return {
-                x: Math.round(x / GRID_SIZE) * GRID_SIZE,
-                y: Math.round(y / GRID_SIZE) * GRID_SIZE
+                x: Math.round(x),
+                y: Math.round(y)
             };
         }
         return { x, y };
@@ -1076,6 +1148,9 @@ export default class WallDrawingManager {
         // Draw placed doors
         this.drawPlacedDoors();
 
+        // Draw placed windows
+        this.windowManager.drawPlacedWindows(this.store.state.windows.windows);
+
         // Draw alignment guides if we're in drawing mode
         if (this.isDrawing && this.alignmentGuides) {
             this.drawAlignmentGuides();
@@ -1104,6 +1179,11 @@ export default class WallDrawingManager {
         // Draw door preview if in door placement mode
         if (this.store.state.project.currentTool === 'door') {
             this.drawDoorPreview();
+        }
+
+        // Draw window preview if in window placement mode
+        if (this.store.state.project.currentTool === 'window') {
+            this.windowManager.drawWindowPreview();
         }
 
         // Draw angles for selected wall
@@ -1308,142 +1388,119 @@ export default class WallDrawingManager {
 
         const { internalStart, internalEnd } = internalPoints;
 
-        // Check if this wall has any doors
+        // Check if this wall has any doors or windows
         const doors = this.store.state.doors.doors.filter(door => door.wallId === wall.id);
+        const windows = this.store.state.windows.windows.filter(window => window.wallId === wall.id);
 
-        if (doors.length > 0) {
-            // For walls with doors, draw segment dimensions
-            doors.forEach(door => {
-                // Calculate wall direction vector
-                const wallDx = wall.end.x - wall.start.x;
-                const wallDy = wall.end.y - wall.start.y;
-                const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
-                const wallUnitX = wallDx / wallLength;
-                const wallUnitY = wallDy / wallLength;
+        if (doors.length > 0 || windows.length > 0) {
+            // Calculate wall direction vector
+            const wallDx = wall.end.x - wall.start.x;
+            const wallDy = wall.end.y - wall.start.y;
+            const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
+            const wallUnitX = wallDx / wallLength;
+            const wallUnitY = wallDy / wallLength;
 
         // Calculate normal vector for offset direction
-                const nx = -wallDy / wallLength;
-                const ny = wallDx / wallLength;
+            const nx = -wallDy / wallLength;
+            const ny = wallDx / wallLength;
 
-                // Offset for dimension line
+            // Offset for dimension line
         const offset = wall.thickness + 20;
 
-                // Draw extension lines from internal points and door edges
+            // Draw extension lines from internal points
         this.ctx.strokeStyle = '#666';
         this.ctx.lineWidth = 1;
         this.ctx.setLineDash([4, 4]);
 
-                // Calculate door start and end points
-                const doorStartX = door.x;
-                const doorStartY = door.y;
-                const doorEndX = door.x + wallUnitX * door.width;
-                const doorEndY = door.y + wallUnitY * door.width;
+            // Combine doors and windows and sort them by position along the wall
+            const elements = [
+                ...doors.map(door => ({ type: 'door', element: door })),
+                ...windows.map(window => ({ type: 'window', element: window }))
+            ].sort((a, b) => {
+                const distA = this.distance(wall.start, { x: a.element.x, y: a.element.y });
+                const distB = this.distance(wall.start, { x: b.element.x, y: b.element.y });
+                return distA - distB;
+            });
+
+            // Draw segments between elements
+            let lastEndPoint = internalStart;
+            let lastEndX = internalStart.x;
+            let lastEndY = internalStart.y;
+
+            elements.forEach((item, index) => {
+                const element = item.element;
+                const elementWidth = element.width;
+                
+                // Calculate element start and end points
+                const elementStartX = element.x;
+                const elementStartY = element.y;
+                const elementEndX = element.x + wallUnitX * elementWidth;
+                const elementEndY = element.y + wallUnitY * elementWidth;
 
         // Draw extension lines
         this.ctx.beginPath();
-                // From internal start
-                this.ctx.moveTo(internalStart.x, internalStart.y);
-                this.ctx.lineTo(internalStart.x + nx * offset, internalStart.y + ny * offset);
-                // From door start
-                this.ctx.moveTo(doorStartX, doorStartY);
-                this.ctx.lineTo(doorStartX + nx * offset, doorStartY + ny * offset);
-                // From door end
-                this.ctx.moveTo(doorEndX, doorEndY);
-                this.ctx.lineTo(doorEndX + nx * offset, doorEndY + ny * offset);
-                // From internal end
-                this.ctx.moveTo(internalEnd.x, internalEnd.y);
-                this.ctx.lineTo(internalEnd.x + nx * offset, internalEnd.y + ny * offset);
-        this.ctx.stroke();
+                if (index === 0) {
+                    // From internal start to first element
+                    this.ctx.moveTo(internalStart.x, internalStart.y);
+                    this.ctx.lineTo(internalStart.x + nx * offset, internalStart.y + ny * offset);
+                }
+                // From element start
+                this.ctx.moveTo(elementStartX, elementStartY);
+                this.ctx.lineTo(elementStartX + nx * offset, elementStartY + ny * offset);
+                // From element end
+                this.ctx.moveTo(elementEndX, elementEndY);
+                this.ctx.lineTo(elementEndX + nx * offset, elementEndY + ny * offset);
+                if (index === elements.length - 1) {
+                    // From last element to internal end
+                    this.ctx.moveTo(internalEnd.x, internalEnd.y);
+                    this.ctx.lineTo(internalEnd.x + nx * offset, internalEnd.y + ny * offset);
+                }
+                this.ctx.stroke();
 
-                this.ctx.setLineDash([]);
-
-                // Function to draw dimension text with arrows
-                const drawDimensionText = (start, end, offset, value) => {
-                    const midX = (start.x + end.x) / 2;
-                    const midY = (start.y + end.y) / 2;
-
-        // Draw dimension line
-        this.ctx.beginPath();
-                    this.ctx.moveTo(start.x + nx * offset, start.y + ny * offset);
-                    this.ctx.lineTo(end.x + nx * offset, end.y + ny * offset);
-        this.ctx.stroke();
-
-        // Draw arrows
-        const arrowSize = 6;
-                    const angle = Math.atan2(end.y - start.y, end.x - start.x);
-                    
-                    // Draw arrows at both ends
-                    this.drawArrow(start.x + nx * offset, start.y + ny * offset, angle, arrowSize);
-                    this.drawArrow(end.x + nx * offset, end.y + ny * offset, angle + Math.PI, arrowSize);
-
-                    // Draw text
-                    this.ctx.font = '12px Arial';
-                    this.ctx.fillStyle = '#333';
-                    this.ctx.textAlign = 'center';
-                    this.ctx.textBaseline = 'bottom';
-
-                    let textAngle = angle;
-                    if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
-                        textAngle += Math.PI;
-                    }
-
-                    const text = `${Math.round(value)} cm`;
-                    const textWidth = this.ctx.measureText(text).width + 4;
-                    const textHeight = 16;
-
-                    this.ctx.save();
-                    this.ctx.translate(midX + nx * offset, midY + ny * offset);
-                    this.ctx.rotate(textAngle);
-
-                    // Draw text background
-                    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-                    this.ctx.fillRect(-textWidth / 2, 0, textWidth, -textHeight);
-
-                    // Draw text
-                    this.ctx.fillStyle = '#333';
-                    this.ctx.fillText(text, 0, -2);
-
-                    this.ctx.restore();
-                };
-
-                // Calculate and draw left segment
+                // Draw segment before element
                 const leftSegment = Math.sqrt(
-                    Math.pow(doorStartX - internalStart.x, 2) +
-                    Math.pow(doorStartY - internalStart.y, 2)
+                    Math.pow(elementStartX - lastEndX, 2) +
+                    Math.pow(elementStartY - lastEndY, 2)
                 );
                 if (leftSegment > 0) {
-                    drawDimensionText(
-                        internalStart,
-                        { x: doorStartX, y: doorStartY },
+                    this.drawDimensionText(
+                        { x: lastEndX, y: lastEndY },
+                        { x: elementStartX, y: elementStartY },
                         offset,
                         leftSegment
                     );
                 }
 
-                // Draw door segment
-                drawDimensionText(
-                    { x: doorStartX, y: doorStartY },
-                    { x: doorEndX, y: doorEndY },
+                // Draw element width
+                this.drawDimensionText(
+                    { x: elementStartX, y: elementStartY },
+                    { x: elementEndX, y: elementEndY },
                     offset,
-                    door.width
+                    elementWidth
                 );
 
-                // Calculate and draw right segment
-                const rightSegment = Math.sqrt(
-                    Math.pow(internalEnd.x - doorEndX, 2) +
-                    Math.pow(internalEnd.y - doorEndY, 2)
-                );
-                if (rightSegment > 0) {
-                    drawDimensionText(
-                        { x: doorEndX, y: doorEndY },
-                        internalEnd,
-                        offset,
-                        rightSegment
-                    );
-                }
+                // Update last end point
+                lastEndX = elementEndX;
+                lastEndY = elementEndY;
             });
+
+            // Draw final segment if needed
+            const finalSegment = Math.sqrt(
+                Math.pow(internalEnd.x - lastEndX, 2) +
+                Math.pow(internalEnd.y - lastEndY, 2)
+            );
+            if (finalSegment > 0) {
+                this.drawDimensionText(
+                    { x: lastEndX, y: lastEndY },
+                    internalEnd,
+                    offset,
+                    finalSegment
+                );
+            }
+
+            this.ctx.setLineDash([]);
         } else {
-            // For walls without doors, draw the total internal dimension
+            // For walls without doors or windows, draw the total internal dimension
             const dx = internalEnd.x - internalStart.x;
             const dy = internalEnd.y - internalStart.y;
             const length = Math.sqrt(dx * dx + dy * dy);
@@ -1453,21 +1510,6 @@ export default class WallDrawingManager {
             // Draw the total dimension line
             this.drawTotalDimension(internalStart, internalEnd, wall.thickness, length);
         }
-    }
-
-    drawArrow(x, y, angle, size) {
-        this.ctx.beginPath();
-        this.ctx.moveTo(x, y);
-        this.ctx.lineTo(
-            x + Math.cos(angle + Math.PI * 0.75) * size,
-            y + Math.sin(angle + Math.PI * 0.75) * size
-        );
-        this.ctx.moveTo(x, y);
-        this.ctx.lineTo(
-            x + Math.cos(angle - Math.PI * 0.75) * size,
-            y + Math.sin(angle - Math.PI * 0.75) * size
-        );
-        this.ctx.stroke();
     }
 
     drawTotalDimension(start, end, thickness, length) {
@@ -1501,10 +1543,10 @@ export default class WallDrawingManager {
         this.drawArrow(start.x + nx * offset, start.y + ny * offset, angle, 6);
         this.drawArrow(end.x + nx * offset, end.y + ny * offset, angle + Math.PI, 6);
 
-        // Draw text
+        // Draw text with 1cm precision
         const midX = (start.x + end.x) / 2;
         const midY = (start.y + end.y) / 2;
-        const text = `${Math.round(length)} cm`;
+        const text = `${length.toFixed(1)} cm`;
 
         this.ctx.font = '12px Arial';
         this.ctx.fillStyle = '#333';
@@ -1532,6 +1574,71 @@ export default class WallDrawingManager {
         this.ctx.fillText(text, 0, -2);
         
         this.ctx.restore();
+    }
+
+    drawDimensionText(start, end, offset, value) {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        if (length === 0) return;
+
+        const nx = -dy / length;
+        const ny = dx / length;
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(start.x + nx * offset, start.y + ny * offset);
+        this.ctx.lineTo(end.x + nx * offset, end.y + ny * offset);
+        this.ctx.stroke();
+
+        const arrowSize = 6;
+        const angle = Math.atan2(dy, dx);
+        this.drawArrow(start.x + nx * offset, start.y + ny * offset, angle, arrowSize);
+        this.drawArrow(end.x + nx * offset, end.y + ny * offset, angle + Math.PI, arrowSize);
+
+        this.ctx.font = '12px Arial';
+        this.ctx.fillStyle = '#333';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'bottom';
+
+        const midX = (start.x + end.x) / 2;
+        const midY = (start.y + end.y) / 2;
+        let textAngle = angle;
+        if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
+            textAngle += Math.PI;
+        }
+
+        // Convert value to mm and format with current unit
+        const valueInMM = value * 10; // Convert from internal units to mm
+        const text = formatMeasurement(valueInMM, this.store.state.project.unit);
+        const textWidth = this.ctx.measureText(text).width + 4;
+        const textHeight = 16;
+
+        this.ctx.save();
+        this.ctx.translate(midX + nx * offset, midY + ny * offset);
+        this.ctx.rotate(textAngle);
+
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        this.ctx.fillRect(-textWidth / 2, 0, textWidth, -textHeight);
+
+        this.ctx.fillStyle = '#333';
+        this.ctx.fillText(text, 0, -2);
+
+        this.ctx.restore();
+    }
+
+    drawArrow(x, y, angle, size) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, y);
+        this.ctx.lineTo(
+            x + Math.cos(angle + Math.PI * 0.75) * size,
+            y + Math.sin(angle + Math.PI * 0.75) * size
+        );
+        this.ctx.moveTo(x, y);
+        this.ctx.lineTo(
+            x + Math.cos(angle - Math.PI * 0.75) * size,
+            y + Math.sin(angle - Math.PI * 0.75) * size
+        );
+        this.ctx.stroke();
     }
 
     calculateInternalPoints(wall, startConnections, endConnections) {
@@ -1716,9 +1823,8 @@ export default class WallDrawingManager {
 
     drawTemporaryWall() {
         const endPoint = this.magnetPoint || this.currentPoint;
-        const wallThickness = this.store.getters['walls/defaultThickness'] / 10; // Adjusted thickness conversion
+        const wallThickness = this.store.getters['walls/defaultThickness'] / 10;
 
-        // Draw the temporary wall
         this.ctx.strokeStyle = 'rgba(50, 50, 200, 0.6)';
         this.ctx.lineWidth = wallThickness;
 
@@ -1727,23 +1833,19 @@ export default class WallDrawingManager {
         this.ctx.lineTo(endPoint.x, endPoint.y);
         this.ctx.stroke();
 
-        // Draw dimension
         const dx = endPoint.x - this.startPoint.x;
         const dy = endPoint.y - this.startPoint.y;
         const length = Math.sqrt(dx * dx + dy * dy);
 
         if (length > 20) {
-            const lengthInMeters = (length / 100).toFixed(2);
+            const lengthInMM = length * 10; // Convert to mm
             const midPoint = {
                 x: (this.startPoint.x + endPoint.x) / 2,
                 y: (this.startPoint.y + endPoint.y) / 2
             };
 
-            // Calculate normal vector for offset direction
             const nx = -dy / length;
             const ny = dx / length;
-
-            // Offset for dimension line
             const offset = 15 + wallThickness / 2;
 
             this.ctx.font = '12px Arial';
@@ -1751,8 +1853,9 @@ export default class WallDrawingManager {
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
 
-            // Background
-            const textWidth = this.ctx.measureText(lengthInMeters + ' m').width;
+            const text = formatMeasurement(lengthInMM, this.store.state.project.unit);
+            const textWidth = this.ctx.measureText(text).width;
+
             this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             this.ctx.fillRect(
                 midPoint.x + nx * offset - textWidth / 2 - 2,
@@ -1761,10 +1864,9 @@ export default class WallDrawingManager {
                 16
             );
 
-            // Text
             this.ctx.fillStyle = '#3366cc';
             this.ctx.fillText(
-                `${lengthInMeters} m`,
+                text,
                 midPoint.x + nx * offset,
                 midPoint.y + ny * offset
             );
@@ -1996,6 +2098,92 @@ export default class WallDrawingManager {
         }
     }
 
+    updateWindowsOnWall(wall, originalStart, originalEnd) {
+        // Find all walls that need their windows updated
+        const wallsToUpdate = new Set();
+        wallsToUpdate.add(wall);
+
+        // Add connected walls that might have windows
+        const startConnectedWalls = this.findWallsConnectedToPoint(wall.start);
+        const endConnectedWalls = this.findWallsConnectedToPoint(wall.end);
+        startConnectedWalls.forEach(w => wallsToUpdate.add(w));
+        endConnectedWalls.forEach(w => wallsToUpdate.add(w));
+
+        // Update windows on all affected walls
+        const windows = this.store.state.windows.windows;
+        const updatedWindows = windows.map(window => {
+            const windowWall = this.walls.find(w => w.id === window.wallId);
+            if (windowWall && wallsToUpdate.has(windowWall)) {
+                // Get connected walls for the window's wall to calculate internal dimensions
+                const wallStartConnections = this.findWallsConnectedToPoint(windowWall.start);
+                const wallEndConnections = this.findWallsConnectedToPoint(windowWall.end);
+
+                // Calculate internal points for the wall with the window
+                const internalPoints = this.calculateInternalPoints(windowWall, wallStartConnections, wallEndConnections);
+                if (!internalPoints) return window;
+
+                const { internalStart, internalEnd } = internalPoints;
+
+                // Calculate internal wall length
+                const internalDx = internalEnd.x - internalStart.x;
+                const internalDy = internalEnd.y - internalStart.y;
+                const internalLength = Math.sqrt(internalDx * internalDx + internalDy * internalDy);
+
+                // Calculate wall direction vector
+                const wallDx = windowWall.end.x - windowWall.start.x;
+                const wallDy = windowWall.end.y - windowWall.start.y;
+                const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
+                const wallUnitX = wallDx / wallLength;
+                const wallUnitY = wallDy / wallLength;
+
+                // Calculate the window's relative position along the internal wall
+                const windowToStartX = window.x - internalStart.x;
+                const windowToStartY = window.y - internalStart.y;
+                const relativePosition = (windowToStartX * internalDx + windowToStartY * internalDy) / 
+                                      (internalLength * internalLength);
+
+                // Ensure window stays within wall bounds
+                let adjustedPosition = relativePosition;
+                if (relativePosition < 0) {
+                    adjustedPosition = 0;
+                } else if (relativePosition + window.width / internalLength > 1) {
+                    adjustedPosition = 1 - window.width / internalLength;
+                }
+
+                // Calculate new window position based on internal dimensions
+                const newX = internalStart.x + wallUnitX * (adjustedPosition * internalLength);
+                const newY = internalStart.y + wallUnitY * (adjustedPosition * internalLength);
+
+                // Calculate new angle based on wall direction
+                const newAngle = Math.atan2(wallDy, wallDx);
+
+                // Calculate new segments
+                const leftSegment = adjustedPosition * internalLength;
+                const rightSegment = internalLength - (leftSegment + window.width);
+
+                return {
+                    ...window,
+                    x: newX,
+                    y: newY,
+                    angle: newAngle,
+                    leftSegment,
+                    rightSegment
+                };
+            }
+            return window;
+        });
+
+        // Update windows in store if any changes were made
+        if (windows.length !== updatedWindows.length || updatedWindows.some((window, i) => 
+            window.x !== windows[i].x || 
+            window.y !== windows[i].y || 
+            window.angle !== windows[i].angle ||
+            window.leftSegment !== windows[i].leftSegment ||
+            window.rightSegment !== windows[i].rightSegment)) {
+            this.store.commit('windows/updateWindows', updatedWindows);
+        }
+    }
+
     constrainMovement(wall, point) {
         const isHorizontal = this.isWallMoreHorizontal(wall);
         const dx = point.x - (wall.start.x + wall.end.x) / 2;
@@ -2036,8 +2224,9 @@ export default class WallDrawingManager {
                     connectedWall.end = wall.start;
                 }
                 
-                // Update doors on the connected wall
+                // Update doors and windows on the connected wall
                 this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
+                this.updateWindowsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
             });
 
             // Update connected walls at end point
@@ -2051,55 +2240,36 @@ export default class WallDrawingManager {
                     connectedWall.end = wall.end;
                 }
                 
-                // Update doors on the connected wall
+                // Update doors and windows on the connected wall
                 this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
+                this.updateWindowsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
             });
 
-            // Update doors on the moved wall
+            // Update doors and windows on the moved wall
             this.updateDoorsOnWall(wall, originalStart, originalEnd);
+            this.updateWindowsOnWall(wall, originalStart, originalEnd);
         } else {
-            // Moving from an endpoint - use the existing endpoint movement logic
-            // Move the wall
-            wall.start.x += movement.x;
-            wall.start.y += movement.y;
-            wall.end.x += movement.x;
-            wall.end.y += movement.y;
+            // Moving from an endpoint
+            const sharedPoint = this.draggedWall.sharedPoint;
+            sharedPoint.x = point.x;
+            sharedPoint.y = point.y;
 
-            // Find walls connected to both endpoints
-            const startConnectedWalls = this.findWallsConnectedToPoint(wall.start).filter(w => w.id !== wall.id);
-            const endConnectedWalls = this.findWallsConnectedToPoint(wall.end).filter(w => w.id !== wall.id);
-
-            // Update connected walls and their doors
-            startConnectedWalls.forEach(connectedWall => {
+            // Update all walls connected to this point
+            sharedPoint.connectedWalls.forEach(connection => {
+                const connectedWall = connection.wall;
                 const originalConnectedStart = { ...connectedWall.start };
                 const originalConnectedEnd = { ...connectedWall.end };
-                
-                if (this.distance(connectedWall.start, originalStart) < 1) {
-                    connectedWall.start = wall.start;
-                } else if (this.distance(connectedWall.end, originalStart) < 1) {
-                    connectedWall.end = wall.start;
-                }
-                
-                // Update doors on the connected wall
-                this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
-            });
 
-            endConnectedWalls.forEach(connectedWall => {
-                const originalConnectedStart = { ...connectedWall.start };
-                const originalConnectedEnd = { ...connectedWall.end };
-                
-                if (this.distance(connectedWall.start, originalEnd) < 1) {
-                    connectedWall.start = wall.end;
-                } else if (this.distance(connectedWall.end, originalEnd) < 1) {
-                    connectedWall.end = wall.end;
+                if (connection.isStart) {
+                    connectedWall.start = sharedPoint;
+                } else {
+                    connectedWall.end = sharedPoint;
                 }
-                
-                // Update doors on the connected wall
-                this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
-            });
 
-            // Update doors on the moved wall
-            this.updateDoorsOnWall(wall, originalStart, originalEnd);
+                // Update doors and windows on each connected wall
+                this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
+                this.updateWindowsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
+            });
         }
 
         return movement;
@@ -2516,8 +2686,37 @@ export default class WallDrawingManager {
             // Redraw the canvas
             this.draw();
             console.log('Door added and canvas redrawn');
+        } else if (this.store.state.project.currentTool === 'window' && this.windowManager.windowPreview) {
+            console.log('Window preview exists:', this.windowManager.windowPreview);
+            // Add the window if we have a valid preview
+            const { x, y, width, thickness, angle, wall, leftSegment, rightSegment } = this.windowManager.windowPreview;
+            
+            console.log('Adding window with config:', {
+                x, y, width, thickness, angle, wallId: wall.id,
+                leftSegment, rightSegment
+            });
+
+            this.store.commit('windows/addWindow', {
+                x,
+                y,
+                width,
+                thickness,
+                angle,
+                wallId: wall.id,
+                leftSegment,
+                rightSegment
+            });
+
+            // Reset preview after placing the window
+            this.windowManager.windowPreview = null;
+            this.windowManager.windowMagnetWall = null;
+            this.windowManager.windowMagnetPoint = null;
+            
+            // Redraw the canvas
+            this.draw();
+            console.log('Window added and canvas redrawn');
         } else {
-            console.log('Click not handled - Tool:', this.store.state.project.currentTool, 'Door preview:', !!this.doorPreview);
+            console.log('Click not handled - Tool:', this.store.state.project.currentTool, 'Door preview:', !!this.doorPreview, 'Window preview:', !!this.windowManager.windowPreview);
         }
     }
 
@@ -2525,7 +2724,7 @@ export default class WallDrawingManager {
         const width = this.canvas.width;
         const height = this.canvas.height;
 
-        // Small grid lines
+        // Small grid lines (10cm)
         this.ctx.strokeStyle = '#eee';
         this.ctx.lineWidth = 1.5;
 
@@ -2545,7 +2744,7 @@ export default class WallDrawingManager {
             this.ctx.stroke();
         }
 
-        // Draw larger grid lines (10x size) with darker color
+        // Draw larger grid lines (100cm) with darker color
         const LARGE_GRID_SIZE = GRID_SIZE * 10;
         this.ctx.strokeStyle = '#aaa';
         this.ctx.lineWidth = 1;

@@ -1,4 +1,6 @@
 // store/modules/project.js
+import { convertToMM } from '../../utils/unitConversion';
+
 export const project = {
     namespaced: true,
     state: {
@@ -8,6 +10,7 @@ export const project = {
         menuOpen: false,
         unit: 'cm',
         scale: 1, // 1 unit = 1 cm
+        wallThickness: 100, // in mm
     },
     mutations: {
         setCurrentTool(state, tool) {
@@ -84,6 +87,9 @@ export const project = {
         },
         deleteRoom({ commit }, id) {
             commit('removeRoom', id);
+        },
+        updateUnit({ commit, state }, newUnit) {
+            commit('setUnit', newUnit);
         }
     },
     getters: {
@@ -96,6 +102,7 @@ export const project = {
         getRooms: state => state.elements.filter(el => el.type === 'room'),
         getDoors: state => state.elements.filter(el => el.type === 'door'),
         getWindows: state => state.elements.filter(el => el.type === 'window'),
-        getBalconies: state => state.elements.filter(el => el.type === 'balcony')
+        getBalconies: state => state.elements.filter(el => el.type === 'balcony'),
+        defaultThickness: state => state.wallThickness
     }
 };

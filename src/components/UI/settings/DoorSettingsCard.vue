@@ -24,19 +24,10 @@
           type="number" 
           v-model.number="doorHeight"
           :min="180"
-          :max="300"
+          :max="maxDoorHeight"
           @input="validateAndUpdate"
         />
         <span class="error" v-if="errors.height">{{ errors.height }}</span>
-      </div>
-
-      <div class="setting-group">
-        <label>Door Type</label>
-        <select v-model="doorType">
-          <option value="single">Single Door</option>
-          <option value="double">Double Door</option>
-          <option value="sliding">Sliding Door</option>
-        </select>
       </div>
 
       <div class="setting-group">
@@ -44,6 +35,14 @@
         <select v-model="openDirection">
           <option value="left">Left</option>
           <option value="right">Right</option>
+        </select>
+      </div>
+
+      <div class="setting-group">
+        <label>Opening Orientation</label>
+        <select v-model="openOrientation">
+          <option value="inward">Open Inward</option>
+          <option value="outward">Open Outward</option>
         </select>
       </div>
     </div>
@@ -55,7 +54,8 @@ import { ref, computed, watch } from 'vue';
 import { useStore } from 'vuex';
 import { 
   DEFAULT_DOOR_CONFIG,
-  DOOR_TYPES,
+  OPENING_DIRECTIONS,
+  OPENING_ORIENTATIONS,
   validateDoorDimensions
 } from '../../../utils/doors';
 
@@ -68,16 +68,18 @@ export default {
     // Reactive state
     const doorWidth = ref(DEFAULT_DOOR_CONFIG.width);
     const doorHeight = ref(DEFAULT_DOOR_CONFIG.height);
-    const doorType = ref(DEFAULT_DOOR_CONFIG.type);
     const openDirection = ref(DEFAULT_DOOR_CONFIG.openDirection);
+    const openOrientation = ref(DEFAULT_DOOR_CONFIG.openOrientation);
     const errors = ref({ width: null, height: null });
 
     // Computed properties
     const isVisible = computed(() => store.state.project.currentTool === 'door');
+    const wallHeight = computed(() => store.state.walls.defaultHeight);
+    const maxDoorHeight = computed(() => Math.floor(wallHeight.value / 10));
 
     // Methods
     const validateAndUpdate = () => {
-      const validation = validateDoorDimensions(doorWidth.value, doorHeight.value);
+      const validation = validateDoorDimensions(doorWidth.value, doorHeight.value, wallHeight.value);
       errors.value = validation.errors;
       
       if (validation.isValid) {
@@ -89,8 +91,8 @@ export default {
       store.commit('doors/updateConfig', {
         width: doorWidth.value,
         height: doorHeight.value,
-        type: doorType.value,
-        openDirection: openDirection.value
+        openDirection: openDirection.value,
+        openOrientation: openOrientation.value
       });
     };
 
@@ -99,17 +101,23 @@ export default {
     };
 
     // Watch for changes
-    watch([doorType, openDirection], () => {
+    watch([openDirection, openOrientation], () => {
       updateDoorConfig();
+    });
+
+    // Watch for wall height changes
+    watch(wallHeight, () => {
+      validateAndUpdate();
     });
 
     return {
       doorWidth,
       doorHeight,
-      doorType,
       openDirection,
+      openOrientation,
       errors,
       isVisible,
+      maxDoorHeight,
       validateAndUpdate,
       close
     };

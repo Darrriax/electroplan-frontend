@@ -1,4 +1,6 @@
 // DoorManager.js - Handles door drawing and manipulation
+import { formatMeasurement } from '../unitConversion';
+
 export default class DoorManager {
     constructor(ctx, store) {
         this.ctx = ctx;
@@ -167,36 +169,31 @@ export default class DoorManager {
 
         // Draw left segment
         if (leftSegment > 0) {
-            this.drawSegmentDimension(-leftSegment, 0, offset, `${Math.round(leftSegment)} cm`);
+            const leftText = formatMeasurement(leftSegment * 10, this.store.state.project.unit);
+            this.drawSegmentDimension(-leftSegment, 0, offset, leftText);
         }
 
         // Draw door width
-        this.drawSegmentDimension(0, doorWidth, offset, `${Math.round(doorWidth)} cm`);
+        const doorText = formatMeasurement(doorWidth * 10, this.store.state.project.unit);
+        this.drawSegmentDimension(0, doorWidth, offset, doorText);
 
         // Draw right segment
         if (rightSegment > 0) {
-            this.drawSegmentDimension(doorWidth, doorWidth + rightSegment, offset, `${Math.round(rightSegment)} cm`);
+            const rightText = formatMeasurement(rightSegment * 10, this.store.state.project.unit);
+            this.drawSegmentDimension(doorWidth, doorWidth + rightSegment, offset, rightText);
         }
 
         this.ctx.restore();
     }
 
     drawSegmentDimension(start, end, offset, text) {
-        // Extension lines
-        this.ctx.beginPath();
-        this.ctx.moveTo(start, -thickness/2);
-        this.ctx.lineTo(start, -offset);
-        this.ctx.moveTo(end, -thickness/2);
-        this.ctx.lineTo(end, -offset);
-        this.ctx.stroke();
-
-        // Dimension line
+        // Draw extension lines
         this.ctx.beginPath();
         this.ctx.moveTo(start, -offset);
         this.ctx.lineTo(end, -offset);
         this.ctx.stroke();
 
-        // Text with background
+        // Draw text with background
         const textWidth = this.ctx.measureText(text).width;
         const midPoint = (start + end) / 2;
         
