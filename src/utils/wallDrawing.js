@@ -1543,10 +1543,11 @@ export default class WallDrawingManager {
         this.drawArrow(start.x + nx * offset, start.y + ny * offset, angle, 6);
         this.drawArrow(end.x + nx * offset, end.y + ny * offset, angle + Math.PI, 6);
 
-        // Draw text with 1cm precision
+        // Draw text with proper unit conversion
         const midX = (start.x + end.x) / 2;
         const midY = (start.y + end.y) / 2;
-        const text = `${length.toFixed(1)} cm`;
+        const lengthInMM = length * 10; // Convert to mm
+        const text = formatMeasurement(lengthInMM, this.store.state.project.unit);
 
         this.ctx.font = '12px Arial';
         this.ctx.fillStyle = '#333';
@@ -2210,8 +2211,12 @@ export default class WallDrawingManager {
             wall.end.y += movement.y;
 
             // Find all connected walls at both endpoints
-            const startConnectedWalls = this.findWallsConnectedToPoint(wall.start).filter(w => w.id !== wall.id);
-            const endConnectedWalls = this.findWallsConnectedToPoint(wall.end).filter(w => w.id !== wall.id);
+            const startConnectedWalls = this.findWallsConnectedToPoint(originalStart).filter(w => w.id !== wall.id);
+            const endConnectedWalls = this.findWallsConnectedToPoint(originalEnd).filter(w => w.id !== wall.id);
+
+            // Create shared points for better connection maintenance
+            const startSharedPoint = { x: wall.start.x, y: wall.start.y, connectedWalls: [] };
+            const endSharedPoint = { x: wall.end.x, y: wall.end.y, connectedWalls: [] };
 
             // Update connected walls at start point
             startConnectedWalls.forEach(connectedWall => {
@@ -2219,9 +2224,11 @@ export default class WallDrawingManager {
                 const originalConnectedEnd = { ...connectedWall.end };
                 
                 if (this.distance(connectedWall.start, originalStart) < 1) {
-                    connectedWall.start = wall.start;
+                    connectedWall.start = startSharedPoint;
+                    startSharedPoint.connectedWalls.push({ wall: connectedWall, isStart: true });
                 } else if (this.distance(connectedWall.end, originalStart) < 1) {
-                    connectedWall.end = wall.start;
+                    connectedWall.end = startSharedPoint;
+                    startSharedPoint.connectedWalls.push({ wall: connectedWall, isStart: false });
                 }
                 
                 // Update doors and windows on the connected wall
@@ -2235,15 +2242,23 @@ export default class WallDrawingManager {
                 const originalConnectedEnd = { ...connectedWall.end };
                 
                 if (this.distance(connectedWall.start, originalEnd) < 1) {
-                    connectedWall.start = wall.end;
+                    connectedWall.start = endSharedPoint;
+                    endSharedPoint.connectedWalls.push({ wall: connectedWall, isStart: true });
                 } else if (this.distance(connectedWall.end, originalEnd) < 1) {
-                    connectedWall.end = wall.end;
+                    connectedWall.end = endSharedPoint;
+                    endSharedPoint.connectedWalls.push({ wall: connectedWall, isStart: false });
                 }
                 
                 // Update doors and windows on the connected wall
                 this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
                 this.updateWindowsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
             });
+
+            // Update the moved wall's connections
+            wall.start = startSharedPoint;
+            wall.end = endSharedPoint;
+            startSharedPoint.connectedWalls.push({ wall, isStart: true });
+            endSharedPoint.connectedWalls.push({ wall, isStart: false });
 
             // Update doors and windows on the moved wall
             this.updateDoorsOnWall(wall, originalStart, originalEnd);
