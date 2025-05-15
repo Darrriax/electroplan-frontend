@@ -440,27 +440,47 @@ export default class WindowManager {
         if (!internalPoints) return window;
 
         const { internalStart, internalEnd } = internalPoints;
-        const internalLength = this.distance(internalStart, internalEnd);
 
-        // Calculate the relative position of the window on the wall (0 to 1)
-        const wallLength = this.distance(wall.start, wall.end);
-        const windowDistanceFromStart = this.distance(wall.start, window.position);
-        const relativePosition = windowDistanceFromStart / wallLength;
+        // Calculate internal wall length
+        const internalDx = internalEnd.x - internalStart.x;
+        const internalDy = internalEnd.y - internalStart.y;
+        const internalLength = Math.sqrt(internalDx * internalDx + internalDy * internalDy);
 
-        // Calculate new window position based on relative position
-        const newX = wall.start.x + (wall.end.x - wall.start.x) * relativePosition;
-        const newY = wall.start.y + (wall.end.y - wall.start.y) * relativePosition;
+        // Calculate wall direction vector
+        const wallDx = wall.end.x - wall.start.x;
+        const wallDy = wall.end.y - wall.start.y;
+        const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
+        const wallUnitX = wallDx / wallLength;
+        const wallUnitY = wallDy / wallLength;
 
-        // Calculate wall angle for window rotation
-        const wallAngle = Math.atan2(wall.end.y - wall.start.y, wall.end.x - wall.start.x);
+        // Calculate the window's relative position along the internal wall
+        const windowToStartX = window.position.x - internalStart.x;
+        const windowToStartY = window.position.y - internalStart.y;
+        const relativePosition = (windowToStartX * internalDx + windowToStartY * internalDy) / 
+                              (internalLength * internalLength);
 
-        // Calculate new segments while maintaining proportions
-        const leftSegment = relativePosition * internalLength;
+        // Ensure window stays within wall bounds
+        let adjustedPosition = relativePosition;
+        if (relativePosition < 0) {
+            adjustedPosition = 0;
+        } else if (relativePosition + window.width / internalLength > 1) {
+            adjustedPosition = 1 - window.width / internalLength;
+        }
+
+        // Calculate new window position based on internal dimensions
+        const newX = internalStart.x + wallUnitX * (adjustedPosition * internalLength);
+        const newY = internalStart.y + wallUnitY * (adjustedPosition * internalLength);
+
+        // Calculate new angle based on wall direction
+        const newAngle = Math.atan2(wallDy, wallDx);
+
+        // Calculate new segments
+        const leftSegment = adjustedPosition * internalLength;
         const rightSegment = internalLength - (leftSegment + window.width);
 
         // Update window properties
         window.position = { x: newX, y: newY };
-        window.angle = wallAngle * (180 / Math.PI);
+        window.angle = newAngle;
         window.leftSegment = leftSegment;
         window.rightSegment = rightSegment;
 

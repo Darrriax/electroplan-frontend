@@ -332,16 +332,26 @@ export default class WallDrawingManager {
                 sharedPoint.x = point.x;
                 sharedPoint.y = point.y;
 
+                // Update all walls connected to this point
                 sharedPoint.connectedWalls.forEach(connection => {
+                    const connectedWall = connection.wall;
+                    const originalConnectedStart = { ...connectedWall.start };
+                    const originalConnectedEnd = { ...connectedWall.end };
+
                     if (connection.isStart) {
-                        connection.wall.start = sharedPoint;
+                        connectedWall.start = sharedPoint;
                     } else {
-                        connection.wall.end = sharedPoint;
+                        connectedWall.end = sharedPoint;
                     }
+
+                    // Update doors and windows on each connected wall
+                    this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
+                    this.updateWindowsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
                 });
 
-                // Update doors on this wall after endpoint movement
+                // Update doors and windows on the dragged wall
                 this.updateDoorsOnWall(wall, originalStart, originalEnd);
+                this.updateWindowsOnWall(wall, originalStart, originalEnd);
             }
 
             // Recalculate rooms after wall movement
@@ -371,12 +381,16 @@ export default class WallDrawingManager {
         this.magnetIsEnd = null;
 
         // Only check for magnet points if we're using the wall tool
-        if (this.store.state.project.currentTool === 'wall') {
-            const MAGNET_THRESHOLD = 20; // Magnetization threshold in pixels
-            let minDistance = MAGNET_THRESHOLD;
+        if (this.store.state.project.currentTool === 'wall' || (this.draggedWall && (this.draggedWall.point === 'start' || this.draggedWall.point === 'end'))) {
+            const ENDPOINT_MAGNET_THRESHOLD = 30; // Increased threshold for endpoints
+            const WALL_MAGNET_THRESHOLD = 20; // Regular threshold for wall edges
+            let minDistance = ENDPOINT_MAGNET_THRESHOLD;
 
             // First, check for corner points (wall endpoints)
             for (const wall of this.walls) {
+                // Skip the wall being dragged if we're dragging
+                if (this.draggedWall && wall === this.draggedWall.wall) continue;
+
                 // Check start point
                 const startDistance = this.distance(point, wall.start);
                 if (startDistance < minDistance) {
@@ -420,11 +434,14 @@ export default class WallDrawingManager {
                         const distToProjection = this.distance(point, projection);
 
                         // If close enough to the wall and projection is on the wall segment
-                        if (distToProjection < MAGNET_THRESHOLD && this.isPointOnWallSegment(projection, wall)) {
-                            this.magnetPoint = projection;
-                            this.magnetPointWall = wall;
-                            this.magnetIsEnd = null; // Not at an endpoint
-                            minDistance = distToProjection;
+                        if (distToProjection < WALL_MAGNET_THRESHOLD && this.isPointOnWallSegment(projection, wall)) {
+                            // Only use wall projection if we haven't found a closer endpoint
+                            if (!this.magnetPoint) {
+                                this.magnetPoint = projection;
+                                this.magnetPointWall = wall;
+                                this.magnetIsEnd = null; // Not at an endpoint
+                                minDistance = distToProjection;
+                            }
                         }
                     }
                 }
@@ -433,10 +450,13 @@ export default class WallDrawingManager {
             // If no corner was found within threshold, check for wall edges
             if (!this.magnetPoint) {
                 for (const wall of this.walls) {
+                    // Skip the wall being dragged if we're dragging
+                    if (this.draggedWall && wall === this.draggedWall.wall) continue;
+
                     const snapPoint = this.getPointOnWall(point, wall);
                     if (snapPoint) {
                         const distanceToWall = this.distance(point, snapPoint);
-                        if (distanceToWall < minDistance) {
+                        if (distanceToWall < WALL_MAGNET_THRESHOLD) {
                             this.magnetPoint = snapPoint;
                             this.magnetPointWall = wall;
                             this.magnetIsEnd = null;
@@ -591,7 +611,7 @@ export default class WallDrawingManager {
         // Only create wall if start and end points are different enough
         if (this.distance(this.startPoint, endPoint) > 5) {
             // Create a new wall
-            const wallThickness = this.store.getters['walls/defaultThickness'] / 10; // Adjusted thickness conversion
+            const wallThickness = this.store.getters['walls/defaultThickness'] / 10;
             const newWall = {
                 id: Date.now().toString(),
                 start: { ...this.startPoint },
@@ -599,28 +619,59 @@ export default class WallDrawingManager {
                 thickness: wallThickness
             };
 
+            // Check for nearby endpoints to connect to
+            const ENDPOINT_SNAP_THRESHOLD = 30;
+            let startConnected = false;
+            let endConnected = false;
+
+            for (const wall of this.walls) {
+                // Check start point connections
+                if (!startConnected) {
+                    if (this.distance(newWall.start, wall.start) < ENDPOINT_SNAP_THRESHOLD) {
+                        newWall.start = wall.start;
+                        startConnected = true;
+                    } else if (this.distance(newWall.start, wall.end) < ENDPOINT_SNAP_THRESHOLD) {
+                        newWall.start = wall.end;
+                        startConnected = true;
+                    }
+                }
+
+                // Check end point connections
+                if (!endConnected) {
+                    if (this.distance(newWall.end, wall.start) < ENDPOINT_SNAP_THRESHOLD) {
+                        newWall.end = wall.start;
+                        endConnected = true;
+                    } else if (this.distance(newWall.end, wall.end) < ENDPOINT_SNAP_THRESHOLD) {
+                        newWall.end = wall.end;
+                        endConnected = true;
+                    }
+                }
+
+                if (startConnected && endConnected) break;
+            }
+
             // Connect walls if needed
-                if (this.startConnection) {
-                    const splitWall = this.connectionManager.connectWalls(newWall, this.startConnection);
-                    if (splitWall) {
-                        this.walls.push(splitWall);
-                    }
+            if (this.startConnection) {
+                const splitWall = this.connectionManager.connectWalls(newWall, this.startConnection);
+                if (splitWall) {
+                    this.walls.push(splitWall);
                 }
+            }
 
-                if (this.magnetPointWall && this.magnetPoint) {
-                    const splitWall = this.connectionManager.connectWalls(newWall, {
-                        wall: this.magnetPointWall,
-                        point: this.magnetPoint,
-                        isEnd: this.magnetIsEnd
-                    }, true); // End point connection
+            if (this.magnetPointWall && this.magnetPoint) {
+                const splitWall = this.connectionManager.connectWalls(newWall, {
+                    wall: this.magnetPointWall,
+                    point: this.magnetPoint,
+                    isEnd: this.magnetIsEnd
+                }, true);
 
-                    if (splitWall) {
-                        this.walls.push(splitWall);
-                    }
+                if (splitWall) {
+                    this.walls.push(splitWall);
                 }
+            }
 
-                // Add the wall to our collection
-                this.walls.push(newWall);
+            // Add the wall to our collection
+            this.walls.push(newWall);
 
             // Update rooms
             this.detectRooms();
@@ -1901,20 +1952,52 @@ export default class WallDrawingManager {
     }
 
     drawMagnetPoint() {
+        if (!this.magnetPoint) return;
+
         // Draw a visual indicator for magnetic point
         this.ctx.fillStyle = '#3366cc';
         this.ctx.beginPath();
         this.ctx.arc(this.magnetPoint.x, this.magnetPoint.y, 5, 0, Math.PI * 2);
         this.ctx.fill();
 
-        // Highlight the connection area
+        // Highlight the connection area with a larger, animated circle
         this.ctx.strokeStyle = '#3366cc';
         this.ctx.lineWidth = 2;
+        
+        // Create pulsing effect
+        const time = Date.now() % 1000; // 1 second cycle
+        const scale = 1 + 0.3 * Math.sin(time * Math.PI / 500); // Scale varies between 0.7 and 1.3
+        
         this.ctx.setLineDash([5, 3]);
         this.ctx.beginPath();
-        this.ctx.arc(this.magnetPoint.x, this.magnetPoint.y, 10, 0, Math.PI * 2);
+        this.ctx.arc(this.magnetPoint.x, this.magnetPoint.y, 12 * scale, 0, Math.PI * 2);
         this.ctx.stroke();
         this.ctx.setLineDash([]);
+
+        // If this is an endpoint connection, draw additional visual cues
+        if (this.magnetIsEnd !== null) {
+            // Draw a larger highlight for endpoint connections
+            this.ctx.strokeStyle = 'rgba(51, 102, 204, 0.3)';
+            this.ctx.lineWidth = 4;
+            this.ctx.beginPath();
+            this.ctx.arc(this.magnetPoint.x, this.magnetPoint.y, 20, 0, Math.PI * 2);
+            this.ctx.stroke();
+
+            // Draw connection lines
+            this.ctx.strokeStyle = '#3366cc';
+            this.ctx.lineWidth = 1;
+            this.ctx.setLineDash([3, 3]);
+            
+            // Draw cross lines to emphasize the connection point
+            const crossSize = 8;
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.magnetPoint.x - crossSize, this.magnetPoint.y - crossSize);
+            this.ctx.lineTo(this.magnetPoint.x + crossSize, this.magnetPoint.y + crossSize);
+            this.ctx.moveTo(this.magnetPoint.x - crossSize, this.magnetPoint.y + crossSize);
+            this.ctx.lineTo(this.magnetPoint.x + crossSize, this.magnetPoint.y - crossSize);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
     }
 
     // Store interaction
