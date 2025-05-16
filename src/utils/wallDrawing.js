@@ -607,15 +607,16 @@ export default class WallDrawingManager {
         }
 
         const endPoint = this.magnetPoint || this.currentPoint;
+        const alignedEndPoint = this.alignWallToNearestAngle(this.startPoint, endPoint);
 
         // Only create wall if start and end points are different enough
-        if (this.distance(this.startPoint, endPoint) > 5) {
+        if (this.distance(this.startPoint, alignedEndPoint) > 5) {
             // Create a new wall
             const wallThickness = this.store.getters['walls/defaultThickness'] / 10;
             const newWall = {
                 id: Date.now().toString(),
                 start: { ...this.startPoint },
-                end: { ...endPoint },
+                end: { ...alignedEndPoint },
                 thickness: wallThickness
             };
 
@@ -1875,25 +1876,30 @@ export default class WallDrawingManager {
 
     drawTemporaryWall() {
         const endPoint = this.magnetPoint || this.currentPoint;
+        const alignedEndPoint = this.alignWallToNearestAngle(this.startPoint, endPoint);
         const wallThickness = this.store.getters['walls/defaultThickness'] / 10;
 
+        // Draw alignment indicator first
+        this.drawAlignmentIndicator(this.startPoint, endPoint, alignedEndPoint);
+
+        // Draw the temporary wall using the aligned endpoint
         this.ctx.strokeStyle = 'rgba(50, 50, 200, 0.6)';
         this.ctx.lineWidth = wallThickness;
 
         this.ctx.beginPath();
         this.ctx.moveTo(this.startPoint.x, this.startPoint.y);
-        this.ctx.lineTo(endPoint.x, endPoint.y);
+        this.ctx.lineTo(alignedEndPoint.x, alignedEndPoint.y);
         this.ctx.stroke();
 
-        const dx = endPoint.x - this.startPoint.x;
-        const dy = endPoint.y - this.startPoint.y;
+        const dx = alignedEndPoint.x - this.startPoint.x;
+        const dy = alignedEndPoint.y - this.startPoint.y;
         const length = Math.sqrt(dx * dx + dy * dy);
 
         if (length > 20) {
             const lengthInMM = length * 10; // Convert to mm
             const midPoint = {
-                x: (this.startPoint.x + endPoint.x) / 2,
-                y: (this.startPoint.y + endPoint.y) / 2
+                x: (this.startPoint.x + alignedEndPoint.x) / 2,
+                y: (this.startPoint.y + alignedEndPoint.y) / 2
             };
 
             const nx = -dy / length;
@@ -2927,5 +2933,114 @@ export default class WallDrawingManager {
         }
 
         return null;
+    }
+
+    // Add new method for wall alignment
+    alignWallToNearestAngle(startPoint, endPoint) {
+        const dx = endPoint.x - startPoint.x;
+        const dy = endPoint.y - startPoint.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        
+        if (length === 0) return endPoint;
+
+        // Calculate current angle in degrees (0-360)
+        let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+        if (angle < 0) angle += 360;
+
+        // Define snap angles (0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°)
+        const snapAngles = [0, 45, 90, 135, 180, 225, 270, 315];
+        const SNAP_THRESHOLD = 10; // Degrees
+
+        // Find the closest snap angle
+        let closestAngle = angle;
+        let minDiff = SNAP_THRESHOLD;
+
+        for (const snapAngle of snapAngles) {
+            const diff = Math.min(
+                Math.abs(angle - snapAngle),
+                Math.abs(angle - (snapAngle + 360))
+            );
+            
+            if (diff < minDiff) {
+                closestAngle = snapAngle;
+                minDiff = diff;
+            }
+        }
+
+        // If we're close enough to a snap angle, align the wall
+        if (minDiff < SNAP_THRESHOLD) {
+            // Convert angle back to radians
+            const alignedAngle = closestAngle * Math.PI / 180;
+            
+            // Calculate new endpoint
+            return {
+                x: startPoint.x + length * Math.cos(alignedAngle),
+                y: startPoint.y + length * Math.sin(alignedAngle)
+            };
+        }
+
+        return endPoint;
+    }
+
+    // Add new method to draw alignment indicators
+    drawAlignmentIndicator(startPoint, endPoint, alignedPoint) {
+        if (!alignedPoint || (endPoint.x === alignedPoint.x && endPoint.y === alignedPoint.y)) return;
+
+        // Draw the alignment line
+        this.ctx.save();
+        this.ctx.strokeStyle = 'rgba(51, 102, 204, 0.5)';
+        this.ctx.lineWidth = 1;
+        this.ctx.setLineDash([5, 3]);
+
+        // Calculate angle for the alignment line
+        const dx = alignedPoint.x - startPoint.x;
+        const dy = alignedPoint.y - startPoint.y;
+        const angle = Math.atan2(dy, dx);
+        
+        // Extend the line in both directions
+        const lineLength = 1000; // Length of alignment guide
+        const extendedStart = {
+            x: startPoint.x - Math.cos(angle) * lineLength,
+            y: startPoint.y - Math.sin(angle) * lineLength
+        };
+        const extendedEnd = {
+            x: startPoint.x + Math.cos(angle) * lineLength,
+            y: startPoint.y + Math.sin(angle) * lineLength
+        };
+
+        // Draw extended alignment line
+        this.ctx.beginPath();
+        this.ctx.moveTo(extendedStart.x, extendedStart.y);
+        this.ctx.lineTo(extendedEnd.x, extendedEnd.y);
+        this.ctx.stroke();
+
+        // Draw angle indicator
+        const angleInDegrees = (angle * 180 / Math.PI + 360) % 360;
+        const angleText = `${Math.round(angleInDegrees)}°`;
+        
+        // Position the angle text
+        const textRadius = 40;
+        const textX = startPoint.x + Math.cos(angle) * textRadius;
+        const textY = startPoint.y + Math.sin(angle) * textRadius;
+
+        this.ctx.font = '12px Arial';
+        const textWidth = this.ctx.measureText(angleText).width;
+        
+        // Draw text background
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        this.ctx.fillRect(
+            textX - textWidth/2 - 4,
+            textY - 8,
+            textWidth + 8,
+            16
+        );
+
+        // Draw text
+        this.ctx.fillStyle = '#3366cc';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(angleText, textX, textY);
+
+        this.ctx.restore();
     }
 }

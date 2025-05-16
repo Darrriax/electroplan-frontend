@@ -47,9 +47,12 @@ export default class WindowManager {
             if (internalLength < windowConfig.width) continue;
 
             const magnetDistance = this.distanceToLine(point, wall.start, wall.end);
-            if (magnetDistance < 20 && magnetDistance < minDistance) { // Magnetization threshold
+            if (magnetDistance < 20) { // Magnetization threshold
                 const projection = this.projectPointOnLine(point, wall.start, wall.end);
                 
+                // Only proceed if the projected point is actually on the wall segment
+                if (!this.isPointOnWallSegment(projection, wall)) continue;
+
                 const wallDx = wall.end.x - wall.start.x;
                 const wallDy = wall.end.y - wall.start.y;
                 const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
@@ -62,47 +65,42 @@ export default class WindowManager {
                     y: projection.y - (windowConfig.width / 2) * wallUnitY
                 };
 
+                // Verify that the entire window would be on the wall
+                const windowStart = {
+                    x: windowCenter.x,
+                    y: windowCenter.y
+                };
+                const windowEnd = {
+                    x: windowCenter.x + windowConfig.width * wallUnitX,
+                    y: windowCenter.y + windowConfig.width * wallUnitY
+                };
+
+                // Skip if either end of the window would be off the wall
+                if (!this.isPointOnWallSegment(windowStart, wall) || 
+                    !this.isPointOnWallSegment(windowEnd, wall)) {
+                    continue;
+                }
+
                 // Calculate distances from internal points
                 const centerToStartX = windowCenter.x - internalStart.x;
                 const centerToStartY = windowCenter.y - internalStart.y;
-                const leftSegment = Math.sqrt(centerToStartX * centerToStartX + centerToStartY * centerToStartY);
+                const leftSegment = (centerToStartX * internalDx + centerToStartY * internalDy) / internalLength;
                 
                 const centerToEndX = internalEnd.x - (windowCenter.x + windowConfig.width * wallUnitX);
                 const centerToEndY = internalEnd.y - (windowCenter.y + windowConfig.width * wallUnitY);
                 const rightSegment = Math.sqrt(centerToEndX * centerToEndX + centerToEndY * centerToEndY);
 
-                // Adjust position if window would extend beyond internal dimensions
-                let adjustedWindowCenter = { ...windowCenter };
-                let adjustedLeftSegment = leftSegment;
-                let adjustedRightSegment = rightSegment;
-
-                // If window would extend beyond internal start
-                if (leftSegment < 0) {
-                    adjustedWindowCenter = {
-                        x: internalStart.x,
-                        y: internalStart.y
+                // Only update if this is the closest valid wall
+                if (magnetDistance < minDistance) {
+                    bestWall = wall;
+                    bestMagnetPoint = windowCenter;
+                    minDistance = magnetDistance;
+                    bestInternalPoints = internalPoints;
+                    bestSegments = {
+                        leftSegment,
+                        rightSegment
                     };
-                    adjustedLeftSegment = 0;
-                    adjustedRightSegment = internalLength - windowConfig.width;
                 }
-                // If window would extend beyond internal end
-                else if (rightSegment < 0) {
-                    adjustedWindowCenter = {
-                        x: internalEnd.x - windowConfig.width * wallUnitX,
-                        y: internalEnd.y - windowConfig.width * wallUnitY
-                    };
-                    adjustedLeftSegment = internalLength - windowConfig.width;
-                    adjustedRightSegment = 0;
-                }
-
-                bestWall = wall;
-                bestMagnetPoint = adjustedWindowCenter;
-                minDistance = magnetDistance;
-                bestInternalPoints = internalPoints;
-                bestSegments = {
-                    leftSegment: adjustedLeftSegment,
-                    rightSegment: adjustedRightSegment
-                };
             }
         }
 
@@ -498,5 +496,20 @@ export default class WindowManager {
 
         // Update windows in store
         this.store.commit('windows/updateWindows', updatedWindows);
+    }
+
+    isPointOnWallSegment(point, wall) {
+        const dx = wall.end.x - wall.start.x;
+        const dy = wall.end.y - wall.start.y;
+        const wallLength = Math.sqrt(dx * dx + dy * dy);
+        
+        // Calculate distances from point to both wall endpoints
+        const d1 = this.distance(point, wall.start);
+        const d2 = this.distance(point, wall.end);
+        
+        // Point is on segment if sum of distances to endpoints equals wall length
+        // Add small epsilon for floating point precision
+        const epsilon = 0.1;
+        return Math.abs(d1 + d2 - wallLength) < epsilon;
     }
 } 

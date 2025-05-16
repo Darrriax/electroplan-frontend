@@ -11,6 +11,44 @@ export const project = {
         unit: 'cm',
         scale: 1, // 1 unit = 1 cm
         wallThickness: 100, // in mm
+        activeMode: 'original-plan', // Default mode
+        modes: {
+            'original-plan': {
+                label: 'Original Plan',
+                icon: 'fa-solid fa-layer-group',
+                tools: [
+                    { name: 'wall', label: 'Wall', icon: 'fa-solid fa-grip-lines-vertical' },
+                    { name: 'door', label: 'Door', icon: 'fa-solid fa-door-open' },
+                    { name: 'window', label: 'Windows', icon: 'fa-solid fa-window-maximize' }
+                ]
+            },
+            'power-sockets': {
+                label: 'Power Sockets',
+                icon: 'fa-solid fa-plug',
+                tools: [
+                    { name: 'standard-socket', label: 'Standard 220V socket', icon: 'fa-solid fa-plug' },
+                    { name: 'waterproof-socket', label: 'Waterproof 220V socket', icon: 'fa-solid fa-plug' },
+                    { name: 'switchboard', label: 'Electrical switchboard', icon: 'fa-solid fa-solar-panel' }
+                ]
+            },
+            'lighting': {
+                label: 'Lighting',
+                icon: 'fa-solid fa-lightbulb',
+                tools: [
+                    { name: 'ceiling-light', label: 'Ceiling light', icon: 'fa-solid fa-lightbulb' },
+                    { name: 'wall-light', label: 'Wall light', icon: 'fa-solid fa-lightbulb' }
+                ]
+            },
+            'switches': {
+                label: 'Switches',
+                icon: 'fa-solid fa-toggle-on',
+                tools: [
+                    { name: 'single-switch', label: 'Single switch', icon: 'fa-solid fa-toggle-on' },
+                    { name: 'double-switch', label: 'Double switch', icon: 'fa-solid fa-toggle-on' },
+                    { name: 'triple-switch', label: 'Triple switch', icon: 'fa-solid fa-toggle-on' }
+                ]
+            }
+        }
     },
     mutations: {
         setCurrentTool(state, tool) {
@@ -51,6 +89,9 @@ export const project = {
         },
         removeRoom(state, id) {
             state.rooms = state.rooms.filter(room => room.id !== id);
+        },
+        setActiveMode(state, mode) {
+            state.activeMode = mode;
         }
     },
     actions: {
@@ -90,6 +131,9 @@ export const project = {
         },
         updateUnit({ commit, state }, newUnit) {
             commit('setUnit', newUnit);
+        },
+        setMode({ commit }, mode) {
+            commit('setActiveMode', mode);
         }
     },
     getters: {
@@ -103,6 +147,9 @@ export const project = {
         getDoors: state => state.elements.filter(el => el.type === 'door'),
         getWindows: state => state.elements.filter(el => el.type === 'window'),
         getBalconies: state => state.elements.filter(el => el.type === 'balcony'),
-        defaultThickness: state => state.wallThickness
+        defaultThickness: state => state.wallThickness,
+        currentMode: state => state.activeMode,
+        currentTools: state => state.modes[state.activeMode]?.tools || [],
+        isActiveMode: state => mode => state.activeMode === mode
     }
 };

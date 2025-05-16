@@ -44,20 +44,43 @@ export default class DoorManager {
                 const wallUnitX = wallDx / wallLength;
                 const wallUnitY = wallDy / wallLength;
 
-                const doorCenter = {
-                    x: projection.x - (doorConfig.width / 2) * wallUnitX,
-                    y: projection.y - (doorConfig.width / 2) * wallUnitY
-                };
+                // Calculate distance from internal start to projected point
+                const projToStartX = projection.x - internalStart.x;
+                const projToStartY = projection.y - internalStart.y;
+                const distanceFromStart = Math.sqrt(projToStartX * projToStartX + projToStartY * projToStartY);
 
+                // Calculate door center position
+                let doorCenter;
+                const minMargin = 10;
+
+                if (distanceFromStart < doorConfig.width / 2 + minMargin) {
+                    // Near start - place door at minimum distance from start
+                    doorCenter = {
+                        x: internalStart.x + (doorConfig.width / 2 + minMargin) * wallUnitX,
+                        y: internalStart.y + (doorConfig.width / 2 + minMargin) * wallUnitY
+                    };
+                } else if (distanceFromStart > internalLength - doorConfig.width / 2 - minMargin) {
+                    // Near end - place door at minimum distance from end
+                    doorCenter = {
+                        x: internalEnd.x - (doorConfig.width / 2 + minMargin) * wallUnitX,
+                        y: internalEnd.y - (doorConfig.width / 2 + minMargin) * wallUnitY
+                    };
+                } else {
+                    // Middle - center door on projected point
+                    doorCenter = projection;
+                }
+
+                // Calculate final segments
                 const centeredDistanceFromStart = Math.sqrt(
                     Math.pow(doorCenter.x - internalStart.x, 2) + 
                     Math.pow(doorCenter.y - internalStart.y, 2)
                 );
                 
-                const distanceFromEnd = internalLength - (centeredDistanceFromStart + doorConfig.width);
+                const distanceFromEnd = internalLength - centeredDistanceFromStart;
 
-                const minMargin = 10;
-                if (centeredDistanceFromStart >= minMargin && distanceFromEnd >= minMargin) {
+                // Only proceed if we have valid margins on both sides
+                if (centeredDistanceFromStart >= minMargin && 
+                    distanceFromEnd >= doorConfig.width + minMargin) {
                     this.doorMagnetWall = wall;
                     this.doorMagnetPoint = doorCenter;
                     
@@ -70,8 +93,8 @@ export default class DoorManager {
                         thickness: wall.thickness,
                         angle: wallAngle,
                         wall: wall,
-                        leftSegment: centeredDistanceFromStart,
-                        rightSegment: distanceFromEnd,
+                        leftSegment: centeredDistanceFromStart - doorConfig.width / 2,
+                        rightSegment: distanceFromEnd - doorConfig.width / 2,
                         internalStart,
                         internalEnd
                     };
