@@ -1,10 +1,10 @@
 // SocketManager.js - Handles socket drawing and manipulation
 import { formatMeasurement } from '../unitConversion';
+import WallMountedObjectManager from './WallMountedObjectManager';
 
-export default class SocketManager {
+export default class SocketManager extends WallMountedObjectManager {
     constructor(ctx, store) {
-        this.ctx = ctx;
-        this.store = store;
+        super(ctx, store);
         this.panOffset = { x: 0, y: 0 };
         this.zoom = 1;
         this.lastMousePoint = null;
@@ -23,6 +23,18 @@ export default class SocketManager {
         this.screenToWorld = this.screenToWorld.bind(this);
         this.worldToScreen = this.worldToScreen.bind(this);
         this.handleClick = this.handleClick.bind(this);
+        this.draw = this.draw.bind(this);
+
+        // Subscribe to store changes
+        this.unsubscribe = this.store.subscribe((mutation) => {
+            if (mutation.type === 'sockets/updateObjects') {
+                this.syncWithStore();
+                this.draw();
+            }
+        });
+
+        // Initial sync with store
+        this.syncWithStore();
     }
 
     updateTransform(panOffset, zoom) {
@@ -612,5 +624,223 @@ export default class SocketManager {
         }
 
         this.ctx.restore();
+    }
+
+    // Implement abstract methods
+    drawObject(type, size) {
+        switch (type) {
+            case 'standard':
+                this.drawStandardSocket(size);
+                break;
+            case 'waterproof':
+                this.drawWaterproofSocket(size);
+                break;
+            case 'single-switch':
+                this.drawSingleSwitch(size);
+                break;
+            case 'double-switch':
+                this.drawDoubleSwitch(size);
+                break;
+            case 'triple-switch':
+                this.drawTripleSwitch(size);
+                break;
+            case 'wall-light':
+                this.drawWallLight(size);
+                break;
+            default:
+                this.drawStandardSocket(size);
+        }
+    }
+
+    getCurrentObjectConfig() {
+        return this.store.state.sockets.currentConfig;
+    }
+
+    getActiveMode() {
+        return 'power-sockets';
+    }
+
+    // Socket type drawing methods
+    drawStandardSocket(size) {
+        const halfSize = size / 2;
+        
+        // Draw socket outline
+        this.ctx.beginPath();
+        this.ctx.rect(-halfSize, -halfSize, size, size);
+        this.ctx.stroke();
+
+        // Draw socket holes
+        const holeSize = size / 6;
+        const holeSpacing = size / 4;
+        
+        // Left hole
+        this.ctx.beginPath();
+        this.ctx.arc(-holeSpacing, 0, holeSize, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        // Right hole
+        this.ctx.beginPath();
+        this.ctx.arc(holeSpacing, 0, holeSize, 0, Math.PI * 2);
+        this.ctx.fill();
+    }
+
+    drawWaterproofSocket(size) {
+        const halfSize = size / 2;
+        
+        // Draw outer waterproof cover
+        this.ctx.beginPath();
+        this.ctx.rect(-halfSize, -halfSize, size, size);
+        this.ctx.stroke();
+
+        // Draw inner socket outline
+        const innerMargin = size / 8;
+        this.ctx.beginPath();
+        this.ctx.rect(
+            -halfSize + innerMargin,
+            -halfSize + innerMargin,
+            size - 2 * innerMargin,
+            size - 2 * innerMargin
+        );
+        this.ctx.stroke();
+
+        // Draw socket holes
+        const holeSize = size / 8;
+        const holeSpacing = size / 5;
+        
+        // Left hole
+        this.ctx.beginPath();
+        this.ctx.arc(-holeSpacing, 0, holeSize, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        // Right hole
+        this.ctx.beginPath();
+        this.ctx.arc(holeSpacing, 0, holeSize, 0, Math.PI * 2);
+        this.ctx.fill();
+    }
+
+    drawSingleSwitch(size) {
+        const halfSize = size / 2;
+        
+        // Draw switch outline
+        this.ctx.beginPath();
+        this.ctx.rect(-halfSize, -halfSize, size, size);
+        this.ctx.stroke();
+
+        // Draw switch lever
+        const leverSize = size * 0.6;
+        const leverWidth = size * 0.2;
+        
+        this.ctx.beginPath();
+        this.ctx.rect(-leverWidth/2, -leverSize/2, leverWidth, leverSize);
+        this.ctx.fill();
+    }
+
+    drawDoubleSwitch(size) {
+        const halfSize = size / 2;
+        
+        // Draw switch outline
+        this.ctx.beginPath();
+        this.ctx.rect(-halfSize, -halfSize, size, size);
+        this.ctx.stroke();
+
+        // Draw switch levers
+        const leverSize = size * 0.6;
+        const leverWidth = size * 0.15;
+        const leverSpacing = size * 0.3;
+        
+        // Left lever
+        this.ctx.beginPath();
+        this.ctx.rect(-leverSpacing - leverWidth/2, -leverSize/2, leverWidth, leverSize);
+        this.ctx.fill();
+        
+        // Right lever
+        this.ctx.beginPath();
+        this.ctx.rect(leverSpacing - leverWidth/2, -leverSize/2, leverWidth, leverSize);
+        this.ctx.fill();
+    }
+
+    drawTripleSwitch(size) {
+        const halfSize = size / 2;
+        
+        // Draw switch outline
+        this.ctx.beginPath();
+        this.ctx.rect(-halfSize, -halfSize, size, size);
+        this.ctx.stroke();
+
+        // Draw switch levers
+        const leverSize = size * 0.6;
+        const leverWidth = size * 0.12;
+        const leverSpacing = size * 0.25;
+        
+        // Left lever
+        this.ctx.beginPath();
+        this.ctx.rect(-leverSpacing - leverWidth/2, -leverSize/2, leverWidth, leverSize);
+        this.ctx.fill();
+        
+        // Center lever
+        this.ctx.beginPath();
+        this.ctx.rect(-leverWidth/2, -leverSize/2, leverWidth, leverSize);
+        this.ctx.fill();
+        
+        // Right lever
+        this.ctx.beginPath();
+        this.ctx.rect(leverSpacing - leverWidth/2, -leverSize/2, leverWidth, leverSize);
+        this.ctx.fill();
+    }
+
+    drawWallLight(size) {
+        const halfSize = size / 2;
+        
+        // Draw light fixture base
+        this.ctx.beginPath();
+        this.ctx.rect(-halfSize, -halfSize/2, size, size/4);
+        this.ctx.stroke();
+
+        // Draw light bulb
+        const bulbRadius = size * 0.3;
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, bulbRadius, 0, Math.PI * 2);
+        this.ctx.stroke();
+
+        // Draw light rays
+        const rayLength = size * 0.2;
+        const rayCount = 8;
+        const angleStep = (Math.PI * 2) / rayCount;
+
+        for (let i = 0; i < rayCount; i++) {
+            const angle = i * angleStep;
+            const innerX = Math.cos(angle) * bulbRadius;
+            const innerY = Math.sin(angle) * bulbRadius;
+            const outerX = Math.cos(angle) * (bulbRadius + rayLength);
+            const outerY = Math.sin(angle) * (bulbRadius + rayLength);
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(innerX, innerY);
+            this.ctx.lineTo(outerX, outerY);
+            this.ctx.stroke();
+        }
+    }
+
+    // Add method to sync with store
+    syncWithStore() {
+        // Get sockets from store
+        const storeSockets = this.store.state.sockets.objects;
+        
+        // Update local sockets array
+        this.sockets = storeSockets.map(socket => ({
+            ...socket,
+            size: socket.size || 8 // Ensure size is set (default to 8cm)
+        }));
+
+        // Trigger redraw
+        this.draw();
+    }
+
+    // Add cleanup method
+    cleanup() {
+        // Unsubscribe from store when component is destroyed
+        if (this.unsubscribe) {
+            this.unsubscribe();
+        }
     }
 } 

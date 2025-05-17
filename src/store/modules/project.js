@@ -5,12 +5,11 @@ export const project = {
     namespaced: true,
     state: {
         rooms: [],
-        elements: [], // Contains walls, rooms, and other elements
+        elements: [], // Contains rooms and other elements (except walls, which are now in walls store)
         currentTool: null,
         menuOpen: false,
         unit: 'cm',
         scale: 1, // 1 unit = 1 cm
-        wallThickness: 100, // in mm
         activeMode: 'original-plan', // Default mode
         modes: {
             'original-plan': {
@@ -53,9 +52,6 @@ export const project = {
         setCurrentTool(state, tool) {
             state.currentTool = tool;
         },
-        setWallThickness(state, thickness) {
-            state.wallThickness = thickness;
-        },
         setUnit(state, unit) {
             state.unit = unit;
         },
@@ -97,9 +93,6 @@ export const project = {
         setTool({ commit }, tool) {
             commit('setCurrentTool', tool);
         },
-        updateWallThickness({ commit }, thickness) {
-            commit('setWallThickness', thickness);
-        },
         changeUnit({ commit }, unit) {
             commit('setUnit', unit);
         },
@@ -137,16 +130,13 @@ export const project = {
     },
     getters: {
         getCurrentTool: state => state.currentTool,
-        getWallThickness: state => state.wallThickness,
         getUnit: state => state.unit,
         isMenuOpen: state => state.menuOpen,
         getAllElements: state => state.elements,
-        getWalls: state => state.elements.filter(el => el.type === 'wall'),
         getRooms: state => state.elements.filter(el => el.type === 'room'),
         getDoors: state => state.elements.filter(el => el.type === 'door'),
         getWindows: state => state.elements.filter(el => el.type === 'window'),
         getBalconies: state => state.elements.filter(el => el.type === 'balcony'),
-        defaultThickness: state => state.wallThickness,
         currentMode: state => state.activeMode,
         currentTools: state => state.modes[state.activeMode]?.tools || [],
         isActiveMode: state => mode => state.activeMode === mode

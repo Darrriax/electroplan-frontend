@@ -1,7 +1,7 @@
-// ObjectManager.js - Handles wall-mounted objects (sockets, switches, lamps)
+// WallMountedObjectManager.js - Base class for wall-mounted objects
 import { formatMeasurement } from '../unitConversion';
 
-export default class ObjectManager {
+export default class WallMountedObjectManager {
     constructor(ctx, store) {
         this.ctx = ctx;
         this.store = store;
@@ -23,18 +23,9 @@ export default class ObjectManager {
         this.screenToWorld = this.screenToWorld.bind(this);
         this.worldToScreen = this.worldToScreen.bind(this);
         this.handleClick = this.handleClick.bind(this);
-
-        // Subscribe to store changes
-        this.unsubscribe = this.store.subscribe((mutation) => {
-            if (mutation.type === 'sockets/updateObjects') {
-                this.syncWithStore();
-            }
-        });
-
-        // Initial sync with store
-        this.syncWithStore();
     }
 
+    // Common methods from ObjectManager.js
     updateTransform(panOffset, zoom) {
         this.panOffset = panOffset || { x: 0, y: 0 };
         this.zoom = zoom || 1;
@@ -91,51 +82,9 @@ export default class ObjectManager {
         });
     }
 
-    getCurrentObjectConfig() {
-        const currentTool = this.store.state.project.currentTool;
-        
-        // Return configuration based on tool type
-        switch (currentTool) {
-            case 'standard-socket':
-                return {
-                    type: 'socket',
-                    size: 80, // 8cm = 80mm
-                    heightFromFloor: this.store.state.sockets.currentConfig.heightFromFloor
-                };
-            case 'wall-light':
-                return {
-                    type: 'wall-light',
-                    size: 150, // 15cm = 150mm
-                    heightFromFloor: this.store.state.lights.currentConfig.heightFromFloor
-                };
-            case 'single-switch':
-            case 'double-switch':
-            case 'triple-switch':
-                return {
-                    type: currentTool,
-                    size: 80, // 8cm = 80mm
-                    heightFromFloor: this.store.state.switches.currentConfig.heightFromFloor
-                };
-            default:
-                return null;
-        }
-    }
-
-    getStoreModuleForType(type) {
-        // Map object types to their store modules
-        const moduleMap = {
-            'socket': 'sockets',
-            'wall-light': 'lights',
-            'single-switch': 'switches',
-            'double-switch': 'switches',
-            'triple-switch': 'switches'
-        };
-        return moduleMap[type];
-    }
-
     updateObjectPreview(mouseEvent, walls) {
         // Only update preview if in power-sockets mode
-        if (this.store.state.project.activeMode !== 'power-sockets') {
+        if (this.store.state.project.activeMode !== this.getActiveMode()) {
             this.clearPreview();
             return;
         }
@@ -160,8 +109,6 @@ export default class ObjectManager {
         this.objectPreview = null;
         this.magnetWall = null;
         this.magnetPoint = null;
-
-        let foundWall = false;
 
         // Get current object config
         const objectConfig = this.getCurrentObjectConfig();
@@ -219,8 +166,6 @@ export default class ObjectManager {
 
             // Check if point is close enough to either face
             if (Math.min(distanceToTopFace, distanceToBottomFace) < magnetThreshold) {
-                foundWall = true;
-
                 // Determine which face is closer
                 const isTopFaceCloser = distanceToTopFace < distanceToBottomFace;
                 const wallSide = isTopFaceCloser ? 1 : -1;
@@ -232,8 +177,8 @@ export default class ObjectManager {
                 // Calculate object position offset from wall face
                 const edgeOffset = objectSize / 2;
                 const objectCenter = {
-                    x: projection.x + normalX * (edgeOffset) * wallSide,
-                    y: projection.y + normalY * (edgeOffset) * wallSide
+                    x: projection.x + normalX * edgeOffset * wallSide,
+                    y: projection.y + normalY * edgeOffset * wallSide
                 };
 
                 // Calculate distance from internal start to projection
@@ -298,7 +243,7 @@ export default class ObjectManager {
         }
 
         // If not near any wall, show object at mouse position
-        if (!foundWall) {
+        if (!this.magnetWall) {
             const objectConfig = this.getCurrentObjectConfig();
             this.objectPreview = {
                 x: point.x,
@@ -335,10 +280,10 @@ export default class ObjectManager {
         this.ctx.rotate(angle);
 
         // Draw object based on type
-        this.drawObjectByType(type, sizeInCm);
+        this.drawObject(type, sizeInCm);
 
         // Draw dimensions if magnetized to a wall
-        if (isMagnetized && wall && this.store.state.project.activeMode === 'power-sockets') {
+        if (isMagnetized && wall) {
             const dimensionOffset = (wallSide * 20) / this.zoom;
             this.drawObjectDimensions(leftSegment, rightSegment, sizeInCm, dimensionOffset);
         }
@@ -346,219 +291,62 @@ export default class ObjectManager {
         this.ctx.restore();
     }
 
-    drawObjectByType(type, size) {
-        const scaledSize = size;
-        switch (type) {
-            case 'socket':
-                // Draw socket as a square
-                this.ctx.beginPath();
-                this.ctx.rect(-scaledSize/2, -scaledSize/2, scaledSize, scaledSize);
-                this.ctx.fill();
-                this.ctx.stroke();
-                break;
-            case 'wall-light':
-                // Draw wall light as a circle
-                this.ctx.beginPath();
-                this.ctx.arc(0, 0, scaledSize/2, 0, Math.PI * 2);
-                this.ctx.fill();
-                this.ctx.stroke();
-                break;
-            case 'single-switch':
-            case 'double-switch':
-            case 'triple-switch':
-                // Draw switch as a rectangle
-                this.ctx.beginPath();
-                this.ctx.rect(-scaledSize/2, -scaledSize/2, scaledSize, scaledSize * 1.5);
-                this.ctx.fill();
-                this.ctx.stroke();
-                break;
-        }
+    // Methods that should be implemented by child classes
+    drawObject(type, size) {
+        throw new Error('drawObject method must be implemented by child class');
     }
 
-    drawObjectDimensions(leftSegment, rightSegment, objectSize, offset) {
-        this.ctx.save();
-        
-        // Set styles with zoom-adjusted properties
-        this.ctx.strokeStyle = '#666';
-        this.ctx.fillStyle = '#666';
-        this.ctx.lineWidth = 1 / this.zoom;
-        this.ctx.setLineDash([4 / this.zoom, 4 / this.zoom]);
-        this.ctx.font = `${12 / this.zoom}px Arial`;
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-
-        // Draw extension lines
-        this.ctx.beginPath();
-        this.ctx.moveTo(-leftSegment - objectSize/2, 0);
-        this.ctx.lineTo(-leftSegment - objectSize/2, offset);
-        this.ctx.moveTo(rightSegment + objectSize/2, 0);
-        this.ctx.lineTo(rightSegment + objectSize/2, offset);
-        this.ctx.stroke();
-
-        // Draw dimension lines and text
-        if (leftSegment > 0) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(-leftSegment - objectSize/2, offset);
-            this.ctx.lineTo(-objectSize/2, offset);
-            this.ctx.stroke();
-
-            const leftText = formatMeasurement(leftSegment * 10, this.store.state.project.unit);
-            // Add white background for text
-            const leftTextWidth = (this.ctx.measureText(leftText).width);
-            const textPadding = 2 / this.zoom;
-            const textHeight = 16 / this.zoom;
-            
-            this.ctx.fillStyle = 'white';
-            this.ctx.fillRect(
-                -leftSegment/2 - objectSize/2 - leftTextWidth/2 - textPadding,
-                offset - textHeight/2,
-                leftTextWidth + textPadding * 2,
-                textHeight
-            );
-            this.ctx.fillStyle = '#666';
-            this.ctx.fillText(leftText, -leftSegment/2 - objectSize/2, offset);
-        }
-
-        // Object width
-        this.ctx.beginPath();
-        this.ctx.moveTo(-objectSize/2, offset);
-        this.ctx.lineTo(objectSize/2, offset);
-        this.ctx.stroke();
-
-        const sizeText = formatMeasurement(objectSize * 10, this.store.state.project.unit);
-        // Add white background for text
-        const sizeTextWidth = (this.ctx.measureText(sizeText).width);
-        const textPadding = 2 / this.zoom;
-        const textHeight = 16 / this.zoom;
-        
-        this.ctx.fillStyle = 'white';
-        this.ctx.fillRect(
-            -sizeTextWidth/2 - textPadding,
-            offset - textHeight/2,
-            sizeTextWidth + textPadding * 2,
-            textHeight
-        );
-        this.ctx.fillStyle = '#666';
-        this.ctx.fillText(sizeText, 0, offset);
-
-        if (rightSegment > 0) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(objectSize/2, offset);
-            this.ctx.lineTo(rightSegment + objectSize/2, offset);
-            this.ctx.stroke();
-
-            const rightText = formatMeasurement(rightSegment * 10, this.store.state.project.unit);
-            // Add white background for text
-            const rightTextWidth = (this.ctx.measureText(rightText).width);
-            
-            this.ctx.fillStyle = 'white';
-            this.ctx.fillRect(
-                rightSegment/2 + objectSize/2 - rightTextWidth/2 - textPadding,
-                offset - textHeight/2,
-                rightTextWidth + textPadding * 2,
-                textHeight
-            );
-            this.ctx.fillStyle = '#666';
-            this.ctx.fillText(rightText, rightSegment/2 + objectSize/2, offset);
-        }
-
-        this.ctx.restore();
+    getCurrentObjectConfig() {
+        throw new Error('getCurrentObjectConfig method must be implemented by child class');
     }
 
-    draw() {
-        // Save current context state
-        this.ctx.save();
-
-        // Draw all placed objects first
-        this.objects.forEach(object => {
-            this.drawObject(object);
-        });
-
-        // Draw preview if in power-sockets mode
-        if (this.store.state.project.activeMode === 'power-sockets' && this.objectPreview) {
-            this.drawObjectPreview();
-        }
-
-        // Restore context state
-        this.ctx.restore();
-    }
-
-    drawObject(object) {
-        const { x, y, size, angle, wall, leftSegment, rightSegment, wallSide, type, heightFromFloor } = object;
-
-        // Save current context state
-        this.ctx.save();
-        
-        // Apply global canvas transformations first
-        this.ctx.translate(this.panOffset.x, this.panOffset.y);
-        this.ctx.scale(this.zoom, this.zoom);
-
-        // Move to object position and rotate
-        this.ctx.translate(x, y);
-        this.ctx.rotate(angle);
-
-        // Set base styles with zoom-adjusted line width
-        this.ctx.fillStyle = '#000000';
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 1 / this.zoom;
-
-        // Convert size from mm to cm for display
-        const sizeInCm = size / 10;
-        
-        // Draw the object
-        this.drawObjectByType(type, sizeInCm);
-
-        // Only draw dimensions if in power-sockets mode
-        if (wall && this.store.state.project.activeMode === 'power-sockets') {
-            const dimensionOffset = (wallSide * 20) / this.zoom;
-            this.drawObjectDimensions(leftSegment, rightSegment, sizeInCm, dimensionOffset);
-            
-            // Draw height from floor with proper scaling
-            const heightValue = formatMeasurement(heightFromFloor, this.store.state.project.unit);
-            const heightText = `H = ${heightValue}`;
-            
-            this.ctx.font = `${12 / this.zoom}px Arial`;
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            
-            // Measure text for background
-            const textWidth = this.ctx.measureText(heightText).width;
-            const padding = 4 / this.zoom;
-            const rectWidth = textWidth + (padding * 2);
-            const rectHeight = 20 / this.zoom;
-            const radius = 4 / this.zoom;
-            const yOffset = 35 / this.zoom;
-            
-            // Draw background
-            this.ctx.fillStyle = 'white';
-            this.ctx.strokeStyle = '#000000';
-            this.ctx.lineWidth = 1 / this.zoom;
-            
-            // Draw rounded rectangle
-            this.ctx.beginPath();
-            this.ctx.moveTo(-rectWidth/2 + radius, -yOffset - rectHeight);
-            this.ctx.lineTo(rectWidth/2 - radius, -yOffset - rectHeight);
-            this.ctx.arcTo(rectWidth/2, -yOffset - rectHeight, rectWidth/2, -yOffset - rectHeight + radius, radius);
-            this.ctx.lineTo(rectWidth/2, -yOffset);
-            this.ctx.arcTo(rectWidth/2, -yOffset, rectWidth/2 - radius, -yOffset, radius);
-            this.ctx.lineTo(-rectWidth/2 + radius, -yOffset);
-            this.ctx.arcTo(-rectWidth/2, -yOffset, -rectWidth/2, -yOffset - radius, radius);
-            this.ctx.lineTo(-rectWidth/2, -yOffset - rectHeight + radius);
-            this.ctx.arcTo(-rectWidth/2, -yOffset - rectHeight, -rectWidth/2 + radius, -yOffset - rectHeight, radius);
-            this.ctx.closePath();
-            
-            this.ctx.fill();
-            this.ctx.stroke();
-            
-            // Draw text
-            this.ctx.fillStyle = '#666';
-            this.ctx.fillText(heightText, 0, -yOffset - rectHeight/2);
-        }
-
-        this.ctx.restore();
+    getActiveMode() {
+        throw new Error('getActiveMode method must be implemented by child class');
     }
 
     // Helper methods
+    distance(p1, p2) {
+        return Math.sqrt(
+            Math.pow(p2.x - p1.x, 2) + 
+            Math.pow(p2.y - p1.y, 2)
+        );
+    }
+
+    distanceToLine(point, lineStart, lineEnd) {
+        const dx = lineEnd.x - lineStart.x;
+        const dy = lineEnd.y - lineStart.y;
+
+        if (dx === 0 && dy === 0) {
+            return this.distance(point, lineStart);
+        }
+
+        const t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / (dx * dx + dy * dy);
+
+        if (t < 0) return this.distance(point, lineStart);
+        if (t > 1) return this.distance(point, lineEnd);
+
+        const projection = {
+            x: lineStart.x + t * dx,
+            y: lineStart.y + t * dy
+        };
+
+        return this.distance(point, projection);
+    }
+
+    projectPointOnLine(point, lineStart, lineEnd) {
+        const dx = lineEnd.x - lineStart.x;
+        const dy = lineEnd.y - lineStart.y;
+
+        if (dx === 0 && dy === 0) return { ...lineStart };
+
+        const t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / (dx * dx + dy * dy);
+
+        return {
+            x: lineStart.x + t * dx,
+            y: lineStart.y + t * dy
+        };
+    }
+
     findWallsConnectedToPoint(point, walls) {
         return walls.filter(wall => 
             (Math.abs(wall.start.x - point.x) < 1 && Math.abs(wall.start.y - point.y) < 1) ||
@@ -654,51 +442,6 @@ export default class ObjectManager {
         }
     }
 
-    distanceToLine(point, lineStart, lineEnd) {
-        const dx = lineEnd.x - lineStart.x;
-        const dy = lineEnd.y - lineStart.y;
-
-        if (dx === 0 && dy === 0) {
-            return Math.sqrt(
-                Math.pow(point.x - lineStart.x, 2) + 
-                Math.pow(point.y - lineStart.y, 2)
-            );
-        }
-
-        const t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / (dx * dx + dy * dy);
-
-        if (t < 0) return this.distance(point, lineStart);
-        if (t > 1) return this.distance(point, lineEnd);
-
-        const projection = {
-            x: lineStart.x + t * dx,
-            y: lineStart.y + t * dy
-        };
-
-        return this.distance(point, projection);
-    }
-
-    projectPointOnLine(point, lineStart, lineEnd) {
-        const dx = lineEnd.x - lineStart.x;
-        const dy = lineEnd.y - lineStart.y;
-
-        if (dx === 0 && dy === 0) return { ...lineStart };
-
-        const t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / (dx * dx + dy * dy);
-
-        return {
-            x: lineStart.x + t * dx,
-            y: lineStart.y + t * dy
-        };
-    }
-
-    distance(p1, p2) {
-        return Math.sqrt(
-            Math.pow(p2.x - p1.x, 2) + 
-            Math.pow(p2.y - p1.y, 2)
-        );
-    }
-
     shouldUpdatePreview(point) {
         if (!this.lastMousePoint) return true;
         
@@ -715,26 +458,93 @@ export default class ObjectManager {
         this.magnetPoint = null;
     }
 
-    // Add method to sync with store
-    syncWithStore() {
-        // Get objects from store
-        const storeObjects = this.store.state.sockets.objects;
+    drawObjectDimensions(leftSegment, rightSegment, objectSize, offset) {
+        this.ctx.save();
         
-        // Update local objects array
-        this.objects = storeObjects.map(object => ({
-            ...object,
-            size: object.size || 8 // Ensure size is set (default to 8cm)
-        }));
+        // Set styles with zoom-adjusted properties
+        this.ctx.strokeStyle = '#666';
+        this.ctx.fillStyle = '#666';
+        this.ctx.lineWidth = 1 / this.zoom;
+        this.ctx.setLineDash([4 / this.zoom, 4 / this.zoom]);
+        this.ctx.font = `${12 / this.zoom}px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
 
-        // Trigger redraw
-        this.draw();
-    }
+        // Draw extension lines
+        this.ctx.beginPath();
+        this.ctx.moveTo(-leftSegment - objectSize/2, 0);
+        this.ctx.lineTo(-leftSegment - objectSize/2, offset);
+        this.ctx.moveTo(rightSegment + objectSize/2, 0);
+        this.ctx.lineTo(rightSegment + objectSize/2, offset);
+        this.ctx.stroke();
 
-    // Add cleanup method
-    cleanup() {
-        // Unsubscribe from store when component is destroyed
-        if (this.unsubscribe) {
-            this.unsubscribe();
+        // Draw dimension lines and text
+        if (leftSegment > 0) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(-leftSegment - objectSize/2, offset);
+            this.ctx.lineTo(-objectSize/2, offset);
+            this.ctx.stroke();
+
+            const leftText = formatMeasurement(leftSegment * 10, this.store.state.project.unit);
+            // Add white background for text
+            const leftTextWidth = (this.ctx.measureText(leftText).width);
+            const textPadding = 2 / this.zoom;
+            const textHeight = 16 / this.zoom;
+            
+            this.ctx.fillStyle = 'white';
+            this.ctx.fillRect(
+                -leftSegment/2 - objectSize/2 - leftTextWidth/2 - textPadding,
+                offset - textHeight/2,
+                leftTextWidth + textPadding * 2,
+                textHeight
+            );
+            this.ctx.fillStyle = '#666';
+            this.ctx.fillText(leftText, -leftSegment/2 - objectSize/2, offset);
         }
+
+        // Object width
+        this.ctx.beginPath();
+        this.ctx.moveTo(-objectSize/2, offset);
+        this.ctx.lineTo(objectSize/2, offset);
+        this.ctx.stroke();
+
+        const sizeText = formatMeasurement(objectSize * 10, this.store.state.project.unit);
+        // Add white background for text
+        const sizeTextWidth = (this.ctx.measureText(sizeText).width);
+        const textPadding = 2 / this.zoom;
+        const textHeight = 16 / this.zoom;
+        
+        this.ctx.fillStyle = 'white';
+        this.ctx.fillRect(
+            -sizeTextWidth/2 - textPadding,
+            offset - textHeight/2,
+            sizeTextWidth + textPadding * 2,
+            textHeight
+        );
+        this.ctx.fillStyle = '#666';
+        this.ctx.fillText(sizeText, 0, offset);
+
+        if (rightSegment > 0) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(objectSize/2, offset);
+            this.ctx.lineTo(rightSegment + objectSize/2, offset);
+            this.ctx.stroke();
+
+            const rightText = formatMeasurement(rightSegment * 10, this.store.state.project.unit);
+            // Add white background for text
+            const rightTextWidth = (this.ctx.measureText(rightText).width);
+            
+            this.ctx.fillStyle = 'white';
+            this.ctx.fillRect(
+                rightSegment/2 + objectSize/2 - rightTextWidth/2 - textPadding,
+                offset - textHeight/2,
+                rightTextWidth + textPadding * 2,
+                textHeight
+            );
+            this.ctx.fillStyle = '#666';
+            this.ctx.fillText(rightText, rightSegment/2 + objectSize/2, offset);
+        }
+
+        this.ctx.restore();
     }
 } 

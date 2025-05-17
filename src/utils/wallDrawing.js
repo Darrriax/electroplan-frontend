@@ -582,6 +582,100 @@ export default class WallDrawingManager {
 
         // Existing mouse up logic
         if (this.draggedWall) {
+            // Update walls in the walls store after dragging
+            const wallsToSave = this.walls.map(wall => ({
+                id: wall.id,
+                start: { x: wall.start.x, y: wall.start.y },
+                end: { x: wall.end.x, y: wall.end.y },
+                thickness: wall.thickness * 10 // Convert back to mm
+            }));
+            this.store.dispatch('walls/saveWalls', wallsToSave);
+
+            // Update sockets in store after wall dragging
+            const sockets = this.store.state.sockets.objects;
+            const updatedSockets = sockets.map(socket => {
+                const socketWall = this.walls.find(w => w.id === socket.wallId);
+                if (socketWall) {
+                    // Get connected walls for the socket's wall to calculate internal dimensions
+                    const wallStartConnections = this.findWallsConnectedToPoint(socketWall.start);
+                    const wallEndConnections = this.findWallsConnectedToPoint(socketWall.end);
+
+                    // Calculate internal points for the wall with the socket
+                    const internalPoints = this.calculateInternalPoints(socketWall, wallStartConnections, wallEndConnections);
+                    if (!internalPoints) return socket;
+
+                    const { internalStart, internalEnd } = internalPoints;
+
+                    // Calculate internal wall length and direction
+                    const internalDx = internalEnd.x - internalStart.x;
+                    const internalDy = internalEnd.y - internalStart.y;
+                    const internalLength = Math.sqrt(internalDx * internalDx + internalDy * internalDy);
+
+                    // Calculate wall direction vector
+                    const wallDx = socketWall.end.x - socketWall.start.x;
+                    const wallDy = socketWall.end.y - socketWall.start.y;
+                    const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
+                    const wallUnitX = wallDx / wallLength;
+                    const wallUnitY = wallDy / wallLength;
+
+                    // Calculate normal vector (perpendicular to wall)
+                    const normalX = -wallDy / wallLength;
+                    const normalY = wallDx / wallLength;
+
+                    // Calculate the socket's relative position along the internal wall
+                    const socketToStartX = socket.x - internalStart.x;
+                    const socketToStartY = socket.y - internalStart.y;
+                    const relativePosition = (socketToStartX * internalDx + socketToStartY * internalDy) / 
+                                          (internalLength * internalLength);
+
+                    // Ensure socket stays within wall bounds
+                    let adjustedPosition = relativePosition;
+                    if (relativePosition < socket.size/2/internalLength) {
+                        adjustedPosition = socket.size/2/internalLength;
+                    } else if (relativePosition > 1 - socket.size/2/internalLength) {
+                        adjustedPosition = 1 - socket.size/2/internalLength;
+                    }
+
+                    // Calculate new socket position
+                    const newX = internalStart.x + wallUnitX * (adjustedPosition * internalLength);
+                    const newY = internalStart.y + wallUnitY * (adjustedPosition * internalLength);
+
+                    // Calculate wall offset based on which side the socket is on
+                    const wallOffset = socket.wallSide * (socket.size / 2);
+
+                    // Calculate final socket position with offset from wall
+                    const finalX = newX + normalX * wallOffset;
+                    const finalY = newY + normalY * wallOffset;
+
+                    // Calculate new angle based on wall direction
+                    const newAngle = Math.atan2(wallDy, wallDx);
+
+                    // Calculate new segments
+                    const leftSegment = adjustedPosition * internalLength - socket.size/2;
+                    const rightSegment = internalLength - (adjustedPosition * internalLength + socket.size/2);
+
+                    return {
+                        ...socket,
+                        x: finalX,
+                        y: finalY,
+                        angle: newAngle,
+                        leftSegment,
+                        rightSegment
+                    };
+                }
+                return socket;
+            });
+
+            // Update sockets in store if any changes were made
+            if (sockets.length !== updatedSockets.length || updatedSockets.some((socket, i) => 
+                socket.x !== sockets[i].x || 
+                socket.y !== sockets[i].y || 
+                socket.angle !== sockets[i].angle ||
+                socket.leftSegment !== sockets[i].leftSegment ||
+                socket.rightSegment !== sockets[i].rightSegment)) {
+                this.store.commit('sockets/updateObjects', updatedSockets);
+            }
+
             this.draggedWall = null;
             this.canvas.style.cursor = 'default';
             return;
@@ -678,7 +772,31 @@ export default class WallDrawingManager {
             this.detectRooms();
 
             // Save to store
-            this.saveWallsToStore();
+            const wallsToSave = this.walls.map(wall => ({
+                id: wall.id,
+                start: { x: wall.start.x, y: wall.start.y },
+                end: { x: wall.end.x, y: wall.end.y },
+                thickness: wall.thickness * 10 // Convert back to mm
+            }));
+            this.store.dispatch('walls/saveWalls', wallsToSave);
+
+            // Notify about wall changes to update attached objects
+            this.store.dispatch('sockets/updateSocketsOnWallChange', {
+                walls: wallsToSave,
+                originalWalls: this.walls
+            });
+
+            // Convert rooms to elements format and save to project store
+            const roomElements = this.rooms.map(room => ({
+                id: room.id,
+                type: 'room',
+                path: room.path,
+                area: room.area,
+                color: room.color
+            }));
+
+            // Update project store with only room elements
+            this.store.commit('project/setElements', roomElements);
         }
 
         // Reset drawing state
@@ -2007,15 +2125,24 @@ export default class WallDrawingManager {
 
     // Store interaction
     saveWallsToStore() {
-        // Convert walls and rooms to the format expected by store
-        const wallElements = this.walls.map(wall => ({
+        // Convert walls to the format expected by walls store
+        const wallsToSave = this.walls.map(wall => ({
             id: wall.id,
-            type: 'wall',
             start: { x: wall.start.x, y: wall.start.y },
             end: { x: wall.end.x, y: wall.end.y },
             thickness: wall.thickness * 10 // Convert back to mm with adjusted ratio
         }));
 
+        // Save walls to the walls store
+        this.store.dispatch('walls/saveWalls', wallsToSave);
+
+        // Notify about wall changes to update attached objects
+        this.store.dispatch('sockets/updateSocketsOnWallChange', {
+            walls: wallsToSave,
+            originalWalls: this.walls
+        });
+
+        // Convert rooms to elements format and save to project store
         const roomElements = this.rooms.map(room => ({
             id: room.id,
             type: 'room',
@@ -2024,11 +2151,8 @@ export default class WallDrawingManager {
             color: room.color
         }));
 
-        const elements = [...wallElements, ...roomElements];
-
-        // Add to history and update current state
-        this.store.commit('history/addToHistory', elements);
-        this.store.commit('project/setElements', elements);
+        // Update project store with only room elements
+        this.store.commit('project/setElements', roomElements);
     }
 
     undo() {
@@ -2049,30 +2173,25 @@ export default class WallDrawingManager {
 
     // Load data from store
     loadFromStore() {
+        // Load walls from walls store
+        const walls = this.store.getters['walls/getAllWalls'];
+        this.walls = walls.map(wall => ({
+            id: wall.id,
+            start: { x: wall.start.x, y: wall.start.y },
+            end: { x: wall.end.x, y: wall.end.y },
+            thickness: wall.thickness / 10 // Convert mm to canvas units with adjusted ratio
+        }));
+
+        // Load rooms from project store
         const elements = this.store.state.project.elements || [];
-
-        // Reset collections
-        this.walls = [];
-        this.rooms = [];
-
-        // Process elements
-        elements.forEach(element => {
-            if (element.type === 'wall') {
-                this.walls.push({
-                    id: element.id,
-                    start: { x: element.start.x, y: element.start.y },
-                    end: { x: element.end.x, y: element.end.y },
-                    thickness: element.thickness / 10 // Convert mm to canvas units with adjusted ratio
-                });
-            } else if (element.type === 'room') {
-                this.rooms.push({
-                    id: element.id,
-                    path: element.path,
-                    area: element.area,
-                    color: element.color
-                });
-            }
-        });
+        this.rooms = elements
+            .filter(element => element.type === 'room')
+            .map(room => ({
+                id: room.id,
+                path: room.path,
+                area: room.area,
+                color: room.color
+            }));
 
         this.draw();
     }
@@ -2273,6 +2392,103 @@ export default class WallDrawingManager {
         }
     }
 
+    updateSocketsOnWall(wall, originalStart, originalEnd) {
+        // Find all walls that need their sockets updated
+        const wallsToUpdate = new Set();
+        wallsToUpdate.add(wall);
+
+        // Add connected walls that might have sockets
+        const startConnectedWalls = this.findWallsConnectedToPoint(wall.start);
+        const endConnectedWalls = this.findWallsConnectedToPoint(wall.end);
+        startConnectedWalls.forEach(w => wallsToUpdate.add(w));
+        endConnectedWalls.forEach(w => wallsToUpdate.add(w));
+
+        // Update sockets on all affected walls
+        const sockets = this.store.state.sockets.objects;
+        const updatedSockets = sockets.map(socket => {
+            const socketWall = this.walls.find(w => w.id === socket.wallId);
+            if (socketWall && wallsToUpdate.has(socketWall)) {
+                // Get connected walls for the socket's wall to calculate internal dimensions
+                const wallStartConnections = this.findWallsConnectedToPoint(socketWall.start);
+                const wallEndConnections = this.findWallsConnectedToPoint(socketWall.end);
+
+                // Calculate internal points for the wall with the socket
+                const internalPoints = this.calculateInternalPoints(socketWall, wallStartConnections, wallEndConnections);
+                if (!internalPoints) return socket;
+
+                const { internalStart, internalEnd } = internalPoints;
+
+                // Calculate internal wall length and direction
+                const internalDx = internalEnd.x - internalStart.x;
+                const internalDy = internalEnd.y - internalStart.y;
+                const internalLength = Math.sqrt(internalDx * internalDx + internalDy * internalDy);
+
+                // Calculate wall direction vector
+                const wallDx = socketWall.end.x - socketWall.start.x;
+                const wallDy = socketWall.end.y - socketWall.start.y;
+                const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
+                const wallUnitX = wallDx / wallLength;
+                const wallUnitY = wallDy / wallLength;
+
+                // Calculate normal vector (perpendicular to wall)
+                const normalX = -wallDy / wallLength;
+                const normalY = wallDx / wallLength;
+
+                // Calculate the socket's relative position along the internal wall
+                const socketToStartX = socket.x - internalStart.x;
+                const socketToStartY = socket.y - internalStart.y;
+                const relativePosition = (socketToStartX * internalDx + socketToStartY * internalDy) / 
+                                      (internalLength * internalLength);
+
+                // Ensure socket stays within wall bounds
+                let adjustedPosition = relativePosition;
+                if (relativePosition < socket.size/2/internalLength) {
+                    adjustedPosition = socket.size/2/internalLength;
+                } else if (relativePosition > 1 - socket.size/2/internalLength) {
+                    adjustedPosition = 1 - socket.size/2/internalLength;
+                }
+
+                // Calculate new socket position
+                const newX = internalStart.x + wallUnitX * (adjustedPosition * internalLength);
+                const newY = internalStart.y + wallUnitY * (adjustedPosition * internalLength);
+
+                // Calculate wall offset based on which side the socket is on
+                const wallOffset = socket.wallSide * (socket.size / 2);
+
+                // Calculate final socket position with offset from wall
+                const finalX = newX + normalX * wallOffset;
+                const finalY = newY + normalY * wallOffset;
+
+                // Calculate new angle based on wall direction
+                const newAngle = Math.atan2(wallDy, wallDx);
+
+                // Calculate new segments
+                const leftSegment = adjustedPosition * internalLength - socket.size/2;
+                const rightSegment = internalLength - (adjustedPosition * internalLength + socket.size/2);
+
+                return {
+                    ...socket,
+                    x: finalX,
+                    y: finalY,
+                    angle: newAngle,
+                    leftSegment,
+                    rightSegment
+                };
+            }
+            return socket;
+        });
+
+        // Update sockets in store if any changes were made
+        if (sockets.length !== updatedSockets.length || updatedSockets.some((socket, i) => 
+            socket.x !== sockets[i].x || 
+            socket.y !== sockets[i].y || 
+            socket.angle !== sockets[i].angle ||
+            socket.leftSegment !== sockets[i].leftSegment ||
+            socket.rightSegment !== sockets[i].rightSegment)) {
+            this.store.commit('sockets/updateObjects', updatedSockets);
+        }
+    }
+
     constrainMovement(wall, point) {
         const isHorizontal = this.isWallMoreHorizontal(wall);
         const dx = point.x - (wall.start.x + wall.end.x) / 2;
@@ -2319,9 +2535,10 @@ export default class WallDrawingManager {
                     startSharedPoint.connectedWalls.push({ wall: connectedWall, isStart: false });
                 }
                 
-                // Update doors and windows on the connected wall
+                // Update doors, windows, and sockets on the connected wall
                 this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
                 this.updateWindowsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
+                this.updateSocketsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
             });
 
             // Update connected walls at end point
@@ -2337,9 +2554,10 @@ export default class WallDrawingManager {
                     endSharedPoint.connectedWalls.push({ wall: connectedWall, isStart: false });
                 }
                 
-                // Update doors and windows on the connected wall
+                // Update doors, windows, and sockets on the connected wall
                 this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
                 this.updateWindowsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
+                this.updateSocketsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
             });
 
             // Update the moved wall's connections
@@ -2348,9 +2566,22 @@ export default class WallDrawingManager {
             startSharedPoint.connectedWalls.push({ wall, isStart: true });
             endSharedPoint.connectedWalls.push({ wall, isStart: false });
 
-            // Update doors and windows on the moved wall
+            // Update doors, windows, and sockets on the moved wall
             this.updateDoorsOnWall(wall, originalStart, originalEnd);
             this.updateWindowsOnWall(wall, originalStart, originalEnd);
+            this.updateSocketsOnWall(wall, originalStart, originalEnd);
+
+            // Update sockets in store immediately
+            const wallsToSave = this.walls.map(w => ({
+                id: w.id,
+                start: { x: w.start.x, y: w.start.y },
+                end: { x: w.end.x, y: w.end.y },
+                thickness: w.thickness * 10
+            }));
+            this.store.dispatch('sockets/updateSocketsOnWallChange', {
+                walls: wallsToSave,
+                originalWalls: this.walls
+            });
         } else {
             // Moving from an endpoint
             const sharedPoint = this.draggedWall.sharedPoint;
@@ -2369,9 +2600,22 @@ export default class WallDrawingManager {
                     connectedWall.end = sharedPoint;
                 }
 
-                // Update doors and windows on each connected wall
+                // Update doors, windows, and sockets on each connected wall
                 this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
                 this.updateWindowsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
+                this.updateSocketsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
+            });
+
+            // Update sockets in store immediately
+            const wallsToSave = this.walls.map(w => ({
+                id: w.id,
+                start: { x: w.start.x, y: w.start.y },
+                end: { x: w.end.x, y: w.end.y },
+                thickness: w.thickness * 10
+            }));
+            this.store.dispatch('sockets/updateSocketsOnWallChange', {
+                walls: wallsToSave,
+                originalWalls: this.walls
             });
         }
 

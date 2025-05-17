@@ -20,12 +20,28 @@ export const walls = {
 
             state.walls.push({
                 id: uuidv4(),
+                type: 'wall',
                 ...wall,
                 length,
                 thickness: wall.thickness || state.defaultThickness,
                 height: wall.height || state.defaultHeight,
                 connectedWalls: []
             });
+        },
+
+        updateWall(state, { id, updates }) {
+            const index = state.walls.findIndex(wall => wall.id === id);
+            if (index !== -1) {
+                state.walls[index] = { ...state.walls[index], ...updates };
+            }
+        },
+
+        removeWall(state, id) {
+            state.walls = state.walls.filter(wall => wall.id !== id);
+        },
+
+        setWalls(state, walls) {
+            state.walls = walls;
         },
 
         updateDefaultThickness(state, thickness) {
@@ -49,6 +65,18 @@ export const walls = {
             return wall;
         },
 
+        updateWall({ commit }, { id, updates }) {
+            commit('updateWall', { id, updates });
+        },
+
+        deleteWall({ commit }, id) {
+            commit('removeWall', id);
+        },
+
+        saveWalls({ commit }, walls) {
+            commit('setWalls', walls);
+        },
+
         updateDefaultThickness({ commit }, thickness) {
             commit('updateDefaultThickness', thickness);
         },
@@ -59,6 +87,8 @@ export const walls = {
     },
 
     getters: {
+        getAllWalls: state => state.walls,
+        getWallById: state => id => state.walls.find(wall => wall.id === id),
         defaultThickness: state => state.defaultThickness,
         defaultHeight: state => state.defaultHeight
     }

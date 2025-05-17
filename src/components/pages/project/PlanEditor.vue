@@ -166,8 +166,25 @@ export default {
     onWheel(event) {
       event.preventDefault();
       if (this.drawingManager) {
+        // Get mouse position in screen coordinates
+        const rect = this.$refs.canvas.getBoundingClientRect();
+        const mouseX = event.clientX - rect.left;
+        const mouseY = event.clientY - rect.top;
+
+        // Get mouse position in world coordinates before zoom
+        const worldX = (mouseX - this.drawingManager.panOffset.x) / this.drawingManager.zoom;
+        const worldY = (mouseY - this.drawingManager.panOffset.y) / this.drawingManager.zoom;
+
+        // Calculate new zoom
         const delta = event.deltaY > 0 ? 0.9 : 1.1;
-        this.drawingManager.zoom = Math.min(Math.max(0.1, this.drawingManager.zoom * delta), 5);
+        const newZoom = Math.min(Math.max(0.1, this.drawingManager.zoom * delta), 5);
+
+        // Calculate new offset to keep mouse position fixed
+        this.drawingManager.panOffset.x = mouseX - worldX * newZoom;
+        this.drawingManager.panOffset.y = mouseY - worldY * newZoom;
+        
+        // Apply new zoom
+        this.drawingManager.zoom = newZoom;
         
         // Update object manager transform
         if (this.objectManager) {
@@ -230,17 +247,20 @@ export default {
       }
     }
   },
-  beforeUnmount() {
-    // Clean up event listeners
+  beforeDestroy() {
+    // Remove event listeners
     window.removeEventListener('resize', this.resizeCanvas);
     window.removeEventListener('keydown', this.handleKeyboard);
     if (this.$refs.canvas) {
       this.$refs.canvas.removeEventListener('mousemove', this.handleCanvasMouseMove);
     }
 
-    // Clean up drawing manager
+    // Cleanup managers
     if (this.drawingManager) {
       this.drawingManager.cleanup();
+    }
+    if (this.objectManager) {
+      this.objectManager.cleanup();
     }
   },
   watch: {
