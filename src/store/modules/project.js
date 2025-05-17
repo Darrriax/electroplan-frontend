@@ -26,8 +26,7 @@ export const project = {
                 label: 'Power Sockets',
                 icon: 'fa-solid fa-plug',
                 tools: [
-                    { name: 'standard-socket', label: 'Standard 220V socket', icon: 'fa-solid fa-plug' },
-                    { name: 'waterproof-socket', label: 'Waterproof 220V socket', icon: 'fa-solid fa-plug' },
+                    { name: 'standard-socket', label: 'Sockets', icon: 'fa-solid fa-plug' },
                     { name: 'switchboard', label: 'Electrical switchboard', icon: 'fa-solid fa-solar-panel' }
                 ]
             },

@@ -970,38 +970,28 @@ export default class WallDrawingManager {
             }
         });
 
-        // For each unique path, calculate area and create room
+        // Create rooms from unique paths
         uniquePaths.forEach((path, index) => {
-            const area = this.calculatePolygonArea(path);
-            if (area > 0) { // Only positive areas (clockwise paths)
-                // Check if this room already existed (to maintain label position)
-                const existingRoom = oldRooms.find(room =>
-                    this.arePathsEquivalent(room.path, path)
-                );
+            const color = ROOM_COLORS[index % ROOM_COLORS.length];
 
-                const color = ROOM_COLORS[index % ROOM_COLORS.length];
+            // Check if this room already existed (to maintain label position)
+            const existingRoom = oldRooms.find(room =>
+                this.arePathsEquivalent(room.path, path)
+            );
 
-                if (existingRoom) {
-                    // Keep the same ID and labelPosition if room existed before
-                    this.rooms.push({
-                        id: existingRoom.id,
-                        path,
-                        area: (area / 100).toFixed(2), // Convert to square meters
-                        color,
-                        labelPosition: existingRoom.labelPosition
-                    });
-                } else {
-                    // Calculate centroid for new room
-                    const centroid = this.calculatePolygonCentroid(path);
-
-                    this.rooms.push({
-                        id: `room_${Date.now()}_${index}`,
-                        path,
-                        area: (area / 100).toFixed(2), // Convert to square meters
-                        color,
-                        labelPosition: centroid
-                    });
-                }
+            if (existingRoom) {
+                // Keep the same ID and labelPosition if room existed before
+                this.rooms.push({
+                    id: existingRoom.id,
+                    path,
+                    color
+                });
+            } else {
+                this.rooms.push({
+                    id: `room_${Date.now()}_${index}`,
+                    path,
+                    color
+                });
             }
         });
     }
@@ -1426,10 +1416,19 @@ export default class WallDrawingManager {
             // If wall has doors, always show internal dimensions
             wall.hideDimension = false;
         }
-        this.drawWallDimension(wall);
+
+        // Only show wall dimensions in original-plan mode
+        if (this.store.state.project.activeMode === 'original-plan') {
+            this.drawWallDimension(wall);
+        }
     }
 
     drawWallDimension(wall) {
+        // Skip drawing dimensions if we're not in original-plan mode
+        if (this.store.state.project.activeMode !== 'original-plan') {
+            return;
+        }
+
         // Find connected walls at both ends
         const startConnections = this.findWallsConnectedToPoint(wall.start);
         const endConnections = this.findWallsConnectedToPoint(wall.end);

@@ -149,8 +149,8 @@ export default class WindowManager {
         this.ctx.fill();
         this.ctx.stroke();
 
-        // Draw dimensions for window preview
-        if (wall) {
+        // Draw dimensions only in original-plan mode
+        if (wall && this.store.state.project.activeMode === 'original-plan') {
             wall.hideDimension = true;
             this.drawWindowSegmentDimensions(leftSegment, rightSegment, width, thickness);
         }

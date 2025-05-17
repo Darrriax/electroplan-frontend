@@ -136,8 +136,8 @@ export default class DoorManager {
         
         this.ctx.stroke();
 
-        // Draw dimensions
-        if (this.doorMagnetWall) {
+        // Draw dimensions only in original-plan mode
+        if (wall && this.store.state.project.activeMode === 'original-plan') {
             wall.hideDimension = true;
             this.drawDoorSegmentDimensions(leftSegment, rightSegment, width, thickness);
         }
