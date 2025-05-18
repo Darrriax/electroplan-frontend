@@ -1,4 +1,4 @@
-import {AccountApi} from "../../api/api";
+import {AccountApi} from "../../api/api.js";
 import {decryptData, encryptData} from "../../mixins/encryption.js";
 import * as state from "./user.js";
 import router from "../../router/index.js";

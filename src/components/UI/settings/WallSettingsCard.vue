@@ -20,7 +20,7 @@
 
       <div class="preset-grid">
         <button
-            v-for="preset in thicknessPresets"
+            v-for="preset in convertedThicknessPresets"
             :key="preset.value"
             :class="['preset-button', { active: isThicknessPresetActive(preset.value) }]"
             @click="setThickness(preset.value)"
@@ -46,7 +46,7 @@
 
       <div class="preset-grid">
         <button
-            v-for="preset in heightPresets"
+            v-for="preset in convertedHeightPresets"
             :key="preset.value"
             :class="['preset-button', { active: isHeightPresetActive(preset.value) }]"
             @click="setHeight(preset.value)"
@@ -77,20 +77,20 @@ export default {
   data() {
     return {
       thicknessPresets: [
-        { value: 50, display: '5' },
-        { value: 80, display: '8' },
-        { value: 100, display: '10' },
-        { value: 120, display: '12' },
-        { value: 150, display: '15' },
-        { value: 200, display: '20' }
+        { value: 50, display: '50' },
+        { value: 80, display: '80' },
+        { value: 100, display: '100' },
+        { value: 120, display: '120' },
+        { value: 150, display: '150' },
+        { value: 200, display: '200' }
       ],
       heightPresets: [
-        { value: 2400, display: '2.4' },
-        { value: 2600, display: '2.6' },
-        { value: 2800, display: '2.8' },
-        { value: 3000, display: '3.0' },
-        { value: 3200, display: '3.2' },
-        { value: 3400, display: '3.4' }
+        { value: 2400, display: '2400' },
+        { value: 2600, display: '2600' },
+        { value: 2800, display: '2800' },
+        { value: 3000, display: '3000' },
+        { value: 3200, display: '3200' },
+        { value: 3400, display: '3400' }
       ],
       stepMap: {
         mm: { thickness: 10, height: 100 },
@@ -106,6 +106,18 @@ export default {
     },
     displayHeight() {
       return `${this.convertToCurrentUnit(this.defaultHeight)} ${this.unit}`
+    },
+    convertedThicknessPresets() {
+      return this.thicknessPresets.map(preset => ({
+        value: preset.value,
+        display: `${this.convertToCurrentUnit(preset.value)}`
+      }))
+    },
+    convertedHeightPresets() {
+      return this.heightPresets.map(preset => ({
+        value: preset.value,
+        display: `${this.convertToCurrentUnit(preset.value)}`
+      }))
     }
   },
   methods: {

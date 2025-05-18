@@ -15,6 +15,39 @@
             @update:thickness="updateWallThickness"
             class="wall-settings"
         />
+        <DoorSettingsCard
+            v-if="isDoorToolActive"
+            :width="doorWidth"
+            :height="doorHeight"
+            :unit="unit"
+            @update:width="updateDoorWidth"
+            @update:height="updateDoorHeight"
+            @update:opening-direction="updateDoorOpeningDirection"
+            @update:opening-side="updateDoorOpeningSide"
+            class="door-settings"
+        />
+        <WindowSettingsCard
+            v-if="isWindowToolActive"
+            :width="windowWidth"
+            :height="windowHeight"
+            :floor-height="windowFloorHeight"
+            :unit="unit"
+            @update:width="updateWindowWidth"
+            @update:height="updateWindowHeight"
+            @update:floor-height="updateWindowFloorHeight"
+            class="window-settings"
+        />
+        <PanelSettingsCard
+            v-if="isPanelToolActive"
+            :width="panelWidth"
+            :height="panelHeight"
+            :floor-height="panelFloorHeight"
+            :unit="unit"
+            @update:width="updatePanelWidth"
+            @update:height="updatePanelHeight"
+            @update:floor-height="updatePanelFloorHeight"
+            class="panel-settings"
+        />
         <div class="editor-canvas-container">
           <canvas ref="canvas" class="editor-canvas" @contextmenu="onContextMenu" @wheel="onWheel"></canvas>
         </div>
@@ -30,13 +63,19 @@ import ObjectManagerFactory from '../../../utils/ObjectManagerFactory';
 import { mapState, mapGetters, mapActions } from 'vuex';
 import ToolSidebar from "../../UI/elements/ToolSidebar.vue";
 import WallSettingsCard from "../../UI/settings/WallSettingsCard.vue";
+import DoorSettingsCard from "../../UI/settings/DoorSettingsCard.vue";
+import WindowSettingsCard from "../../UI/settings/WindowSettingsCard.vue";
+import PanelSettingsCard from "../../UI/settings/PanelSettingsCard.vue";
 
 export default {
   name: 'PlanEditor',
   components: {
     ProjectLayout,
     ToolSidebar,
-    WallSettingsCard
+    WallSettingsCard,
+    DoorSettingsCard,
+    WindowSettingsCard,
+    PanelSettingsCard
   },
   data() {
     return {
@@ -47,7 +86,15 @@ export default {
       mousePosition: { x: 0, y: 0 },
       canvasWidth: 0,
       canvasHeight: 0,
-      resizeObserver: null
+      resizeObserver: null,
+      doorWidth: 800,
+      doorHeight: 2100,
+      windowWidth: 1000,
+      windowHeight: 1200,
+      windowFloorHeight: 1000,
+      panelWidth: 300,
+      panelHeight: 210,
+      panelFloorHeight: 1200
     };
   },
   computed: {
@@ -62,6 +109,15 @@ export default {
     }),
     isWallToolActive() {
       return this.currentTool === 'wall';
+    },
+    isDoorToolActive() {
+      return this.currentTool === 'door';
+    },
+    isWindowToolActive() {
+      return this.currentTool === 'window';
+    },
+    isPanelToolActive() {
+      return this.currentTool === 'panel';
     }
   },
   watch: {
@@ -276,6 +332,80 @@ export default {
         this.redraw();
       }
     },
+    updateDoorWidth(width) {
+      this.doorWidth = width;
+      if (this.objectManager && this.isDoorToolActive) {
+        // Update the object manager with new width
+        this.objectManager.setTool('door'); // Reinitialize the preview
+        this.objectManager.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
+      }
+    },
+    updateDoorHeight(height) {
+      this.doorHeight = height;
+      if (this.objectManager && this.isDoorToolActive) {
+        // Update the object manager with new height
+        this.objectManager.setTool('door'); // Reinitialize the preview
+        this.objectManager.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
+      }
+    },
+    updateDoorOpeningDirection(direction) {
+      if (this.objectManager && this.isDoorToolActive) {
+        // Update the object manager with new direction
+        this.objectManager.setTool('door'); // Reinitialize the preview
+        this.objectManager.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
+      }
+    },
+    updateDoorOpeningSide(side) {
+      if (this.objectManager && this.isDoorToolActive) {
+        // Update the object manager with new side
+        this.objectManager.setTool('door'); // Reinitialize the preview
+        this.objectManager.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
+      }
+    },
+    updateWindowWidth(width) {
+      this.windowWidth = width;
+      if (this.objectManager) {
+        this.objectManager.updateDimensions({ width });
+      }
+    },
+    updateWindowHeight(height) {
+      this.windowHeight = height;
+      if (this.objectManager) {
+        this.objectManager.updateDimensions({ height });
+      }
+    },
+    updateWindowFloorHeight(height) {
+      this.windowFloorHeight = height;
+      if (this.objectManager) {
+        this.objectManager.updateWindowProperties({ floorHeight: height });
+      }
+    },
+    updatePanelWidth(width) {
+      this.panelWidth = width;
+      if (this.objectManager) {
+        this.objectManager.updateDimensions({ width });
+      }
+    },
+    updatePanelHeight(height) {
+      this.panelHeight = height;
+      if (this.objectManager) {
+        this.objectManager.updateDimensions({ height });
+      }
+    },
+    updatePanelFloorHeight(height) {
+      this.panelFloorHeight = height;
+      if (this.objectManager) {
+        this.objectManager.updateDimensions({ floorHeight: height });
+      }
+    },
     beforeUnmount() {
       // Clean up event listeners
       window.removeEventListener('keydown', this.handleKeyboard);
@@ -327,6 +457,27 @@ export default {
 }
 
 .wall-settings {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+}
+
+.door-settings {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+}
+
+.window-settings {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+}
+
+.panel-settings {
   position: absolute;
   top: 20px;
   right: 20px;
