@@ -1,14 +1,13 @@
 // wallDrawing.js - Core drawing functionality for walls
 import WallConnectionManager from './wallConnection.js';
-import WindowManager from './drawing/WindowManager.js';
-import { formatMeasurement } from './unitConversion';
+import CanvasTransformManager from './CanvasTransformManager.js';
 
 // Constants
 const GRID_SIZE = 10; // Grid size in pixels
 const ROOM_COLORS = [
-    '#FFFFFF', // White
+    'rgba(255, 255, 255, 0.3)', // Semi-transparent white
 ];
-const WALL_FILL_COLOR = '#DCDCDC'; // Light gray fill for walls (opaque)
+const WALL_FILL_COLOR = 'rgba(220, 220, 220, 0.8)'; // Light gray fill for walls
 const WALL_STROKE_COLOR = '#333'; // Dark gray stroke for walls
 const TEMP_WALL_FILL_COLOR = 'rgba(200, 220, 255, 0.6)'; // Light blue for temp walls
 const TEMP_WALL_STROKE_COLOR = '#3366cc'; // Blue stroke for temp walls
@@ -17,6 +16,18 @@ const TEMP_WALL_STROKE_COLOR = '#3366cc'; // Blue stroke for temp walls
 const ALIGNMENT_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315]; // Angles for alignment in degrees
 const ALIGNMENT_TOLERANCE = 5; // Degrees of tolerance for alignment
 const ALIGNMENT_LINE_LENGTH = 1000; // Length of alignment guide lines
+const ALIGNMENT_SNAP_THRESHOLD = 5; // Degrees of tolerance for alignment
+
+// Add new constants for control points
+const CONTROL_POINT_VISUAL_SIZE = {
+    END: 6,      // Visual size of end points
+    MIDDLE: 8    // Visual size of middle point
+};
+
+const CONTROL_POINT_HIT_AREA = {
+    END: 15,     // Hit area for end points (larger than visual)
+    MIDDLE: 20   // Hit area for middle point (larger than visual)
+};
 
 export default class WallDrawingManager {
     constructor(canvas, store) {
@@ -26,26 +37,20 @@ export default class WallDrawingManager {
 
         // Create managers
         this.connectionManager = new WallConnectionManager();
-        this.windowManager = new WindowManager(this.ctx, store);
+        this.transformManager = new CanvasTransformManager(canvas);
 
         // Wall drawing state
         this.isDrawing = false;
-        this.isPanning = false;
         this.startPoint = null;
         this.currentPoint = null;
         this.magnetPoint = null;
-        this.panOffset = { x: 0, y: 0 };
-        this.lastPanPosition = null;
-        this.zoom = 1;
+        this.magnetPointWall = null;
         this.walls = [];
         this.rooms = [];
         this.selectedWall = null;
-
-        // Door dragging state
-        this.selectedDoor = null;
-        this.isDraggingDoor = false;
-        this.doorMagnetPoint = null;
-        this.doorMagnetWall = null;
+        this.alignmentGuides = null;
+        this.angleDisplay = null;
+        this.dragState = null;
 
         // Binding methods
         this.onMouseDown = this.onMouseDown.bind(this);
@@ -55,6 +60,19 @@ export default class WallDrawingManager {
         // Initialize
         this.setupCanvas();
         this.attachEvents();
+    }
+
+    // Getters for transform state (used by other components)
+    get panOffset() {
+        return this.transformManager.panOffset;
+    }
+
+    get zoom() {
+        return this.transformManager.zoom;
+    }
+
+    set zoom(value) {
+        this.transformManager.zoom = value;
     }
 
     setupCanvas() {
@@ -89,602 +107,163 @@ export default class WallDrawingManager {
     // Event handlers
     onMouseDown(e) {
         if (!this.store.state.project.currentTool) {
-            const point = this.getMousePos(e);
+            // Handle panning with left mouse button
+            if (e.button === 0) {
+                const point = this.transformManager.getMousePos(e, false);
             
-            // Check if we're clicking on a door
-            const clickedDoor = this.getDoorAtPoint(point);
-            if (clickedDoor) {
-                if (this.selectedDoor === clickedDoor) {
-                    // If clicking the same door, start dragging
-                    this.isDraggingDoor = true;
-                    this.canvas.style.cursor = 'move';
-                } else {
-                    // If clicking a different door, just select it
-                    this.selectedDoor = clickedDoor;
-                    this.selectedWall = null; // Deselect wall when selecting a door
-                    this.canvas.style.cursor = 'pointer';
-                }
-                this.draw();
-                return;
-            } else if (!this.isDraggingDoor) {
-                // Deselect door if clicking elsewhere (but not while dragging)
-                this.selectedDoor = null;
-            }
-            
-            // First check if we're clicking control points of the selected wall
+                // Check if clicking on a wall or control point
             if (this.selectedWall) {
                 const controlPoints = this.getWallControlPoints(this.selectedWall);
-                const clickRadius = 10;
-                
-                if (this.distance(point, controlPoints.start) < clickRadius) {
-                    const sharedPoint = this.findSharedPoint(this.selectedWall.start);
-                    this.draggedWall = { wall: this.selectedWall, point: 'start', sharedPoint, originalPosition: { ...this.selectedWall.start } };
-                    this.canvas.style.cursor = 'pointer';
+                    
+                    // Check if clicking on control points with different hit areas
+                    if (this.isNearPoint(point, controlPoints.start, CONTROL_POINT_HIT_AREA.END)) {
+                        this.dragState = { 
+                            type: 'start', 
+                            wall: this.selectedWall,
+                            originalPoint: { ...controlPoints.start }
+                        };
                     return;
-                } else if (this.distance(point, controlPoints.end) < clickRadius) {
-                    const sharedPoint = this.findSharedPoint(this.selectedWall.end);
-                    this.draggedWall = { wall: this.selectedWall, point: 'end', sharedPoint, originalPosition: { ...this.selectedWall.end } };
-                    this.canvas.style.cursor = 'pointer';
+                    }
+                    if (this.isNearPoint(point, controlPoints.middle, CONTROL_POINT_HIT_AREA.MIDDLE)) {
+                        this.dragState = { 
+                            type: 'middle', 
+                            wall: this.selectedWall,
+                            originalPoint: { ...controlPoints.middle }
+                        };
                     return;
-                } else if (this.distance(point, controlPoints.middle) < clickRadius) {
-                    this.draggedWall = { wall: this.selectedWall, point: 'middle', originalStart: { ...this.selectedWall.start }, originalEnd: { ...this.selectedWall.end } };
-                    this.canvas.style.cursor = 'move';
+                    }
+                    if (this.isNearPoint(point, controlPoints.end, CONTROL_POINT_HIT_AREA.END)) {
+                        this.dragState = { 
+                            type: 'end', 
+                            wall: this.selectedWall,
+                            originalPoint: { ...controlPoints.end }
+                        };
                     return;
                 }
             }
 
-            // If not clicking control points, check for wall selection
+                // Check if clicking on a wall
             const clickedWall = this.getWallAtPoint(point);
             if (clickedWall) {
                 this.selectedWall = clickedWall;
                 this.draw();
                 return;
             } else {
+                    // If clicking on empty space, clear selection
                 this.selectedWall = null;
                 this.draw();
             }
 
-            // Handle panning
-            if (e.button === 0) {
-                this.isPanning = true;
-                const rect = this.canvas.getBoundingClientRect();
-                this.lastPanPosition = {
-                    x: e.clientX - rect.left,
-                    y: e.clientY - rect.top
-                };
-                this.canvas.style.cursor = 'grabbing';
+                this.transformManager.startPan(e);
+                return;
             }
         } else if (e.button === 2) { // Right mouse button
-            this.isPanning = true;
-            const rect = this.canvas.getBoundingClientRect();
-            this.lastPanPosition = {
-                x: e.clientX - rect.left,
-                y: e.clientY - rect.top
-            };
-            this.canvas.style.cursor = 'grabbing';
+            this.transformManager.startPan(e);
             return;
         }
 
         if (this.store.state.project.currentTool !== 'wall') return;
 
-        // Cancel drawing if right mouse button is clicked
-        if (e.button === 2) {
-            this.isDrawing = false;
-            this.startPoint = null;
-            this.alignmentGuides = null;
-            this.angleDisplay = null;
-            this.draw();
-            return;
-        }
-
-        const point = this.getMousePos(e);
+        const point = this.transformManager.getMousePos(e);
         this.isDrawing = true;
 
         // If we have a magnet point, use it as the start point
         this.startPoint = this.magnetPoint || point;
 
-        // If there's a magnet point and it's on a wall, prepare for wall connection
-        if (this.magnetPoint && this.magnetPointWall) {
-            // This will be used later to connect walls
-            this.startConnection = {
-                wall: this.magnetPointWall,
-                point: this.magnetPoint,
-                isEnd: this.magnetIsEnd
-            };
-        } else {
-            this.startConnection = null;
-        }
-
         // Initialize alignment guides
         this.calculateAlignmentGuides(this.startPoint);
-
-        // Initialize angle display if we're starting from an existing wall
-        if (this.startConnection) {
-            this.initAngleDisplay(this.startConnection.wall);
-        }
-
-        this.draw();
     }
 
     onMouseMove(e) {
-        const point = this.getMousePos(e);
-
-        // Update cursor for door selection/dragging
-        if (!this.store.state.project.currentTool && !this.isDraggingDoor) {
-            const doorUnderCursor = this.getDoorAtPoint(point);
-            if (doorUnderCursor) {
-                this.canvas.style.cursor = this.selectedDoor === doorUnderCursor ? 'move' : 'pointer';
-            }
-        }
-
-        // Handle door dragging
-        if (this.isDraggingDoor && this.selectedDoor) {
-            // Find suitable walls for door placement
-            let bestWall = null;
-            let bestMagnetPoint = null;
-            let minDistance = Infinity;
-
-            for (const wall of this.walls) {
-                const magnetDistance = this.distanceToLine(point, wall.start, wall.end);
-                if (magnetDistance < 20 && magnetDistance < minDistance) { // Magnetization threshold
-                    // Calculate internal dimensions
-                    const startConnections = this.findWallsConnectedToPoint(wall.start);
-                    const endConnections = this.findWallsConnectedToPoint(wall.end);
-                    const internalPoints = this.calculateInternalPoints(wall, startConnections, endConnections);
-                    
-                    if (!internalPoints) continue;
-
-                    const { internalStart, internalEnd } = internalPoints;
-                    const internalLength = Math.sqrt(
-                        Math.pow(internalEnd.x - internalStart.x, 2) + 
-                        Math.pow(internalEnd.y - internalStart.y, 2)
-                    );
-
-                    // Skip if wall is too short for the door
-                    if (internalLength < this.selectedDoor.width) continue;
-
-                    // Calculate projection point on wall
-                    const projection = this.projectPointOnLine(point, wall.start, wall.end);
-                    
-                    // Calculate wall direction vector
-                    const wallDx = wall.end.x - wall.start.x;
-                    const wallDy = wall.end.y - wall.start.y;
-                    const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
-                    const wallUnitX = wallDx / wallLength;
-                    const wallUnitY = wallDy / wallLength;
-
-                    // Move projection point back by half door width to center the door
-                    const doorCenter = {
-                        x: projection.x - (this.selectedDoor.width / 2) * wallUnitX,
-                        y: projection.y - (this.selectedDoor.width / 2) * wallUnitY
-                    };
-
-                    // Calculate distances for centered door position
-                    const centerToStartX = doorCenter.x - internalStart.x;
-                    const centerToStartY = doorCenter.y - internalStart.y;
-                    const internalDx = internalEnd.x - internalStart.x;
-                    const internalDy = internalEnd.y - internalStart.y;
-                    const internalUnitX = internalDx / internalLength;
-                    const internalUnitY = internalDy / internalLength;
-                    const centeredDistanceFromStart = (centerToStartX * internalUnitX + centerToStartY * internalUnitY);
-                    
-                    // Ensure door fits within internal wall length
-                    if (centeredDistanceFromStart >= 0 && centeredDistanceFromStart + this.selectedDoor.width <= internalLength) {
-                        bestWall = wall;
-                        bestMagnetPoint = doorCenter;
-                        minDistance = magnetDistance;
-                    }
-                }
-            }
-
-            if (bestWall) {
-                this.doorMagnetWall = bestWall;
-                this.doorMagnetPoint = bestMagnetPoint;
-
-                // Calculate wall angle
-                const wallDx = bestWall.end.x - bestWall.start.x;
-                const wallDy = bestWall.end.y - bestWall.start.y;
-                const wallAngle = Math.atan2(wallDy, wallDx);
-
-                // Update door preview position and angle
-                this.selectedDoor.x = bestMagnetPoint.x;
-                this.selectedDoor.y = bestMagnetPoint.y;
-                this.selectedDoor.angle = wallAngle;
-                this.selectedDoor.wallId = bestWall.id;
-
-                // Calculate and update segments
-                const startConnections = this.findWallsConnectedToPoint(bestWall.start);
-                const endConnections = this.findWallsConnectedToPoint(bestWall.end);
-                const internalPoints = this.calculateInternalPoints(bestWall, startConnections, endConnections);
-                
-                if (internalPoints) {
-                    const { internalStart, internalEnd } = internalPoints;
-                    const internalDx = internalEnd.x - internalStart.x;
-                    const internalDy = internalEnd.y - internalStart.y;
-                    const internalLength = Math.sqrt(internalDx * internalDx + internalDy * internalDy);
-                    
-                    const doorToStartX = this.selectedDoor.x - internalStart.x;
-                    const doorToStartY = this.selectedDoor.y - internalStart.y;
-                    const leftSegment = (doorToStartX * internalDx + doorToStartY * internalDy) / internalLength;
-                    
-                    this.selectedDoor.leftSegment = leftSegment;
-                    this.selectedDoor.rightSegment = internalLength - (leftSegment + this.selectedDoor.width);
-                }
-            }
-
-            this.draw();
-            return;
-        }
-
-        // Existing mouse move logic
-        if (this.draggedWall) {
-            // Store original positions before any changes
-            const wall = this.draggedWall.wall;
-            const originalStart = { ...wall.start };
-            const originalEnd = { ...wall.end };
+        // Handle wall dragging
+        if (this.dragState && this.selectedWall) {
+            const point = this.transformManager.getMousePos(e, false);
             
-            if (this.draggedWall.point === 'middle') {
-                // Apply constrained movement and adjust adjacent walls
-                this.constrainMovement(wall, point);
-            } else if (this.draggedWall.point === 'start' || this.draggedWall.point === 'end') {
-                // Handle endpoint dragging
-                const sharedPoint = this.draggedWall.sharedPoint;
-                sharedPoint.x = point.x;
-                sharedPoint.y = point.y;
-
-                // Update all walls connected to this point
-                sharedPoint.connectedWalls.forEach(connection => {
-                    const connectedWall = connection.wall;
-                    const originalConnectedStart = { ...connectedWall.start };
-                    const originalConnectedEnd = { ...connectedWall.end };
-
-                    if (connection.isStart) {
-                        connectedWall.start = sharedPoint;
-                    } else {
-                        connectedWall.end = sharedPoint;
-                    }
-
-                    // Update doors and windows on each connected wall
-                    this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
-                    this.updateWindowsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
-                });
-
-                // Update doors and windows on the dragged wall
-                this.updateDoorsOnWall(wall, originalStart, originalEnd);
-                this.updateWindowsOnWall(wall, originalStart, originalEnd);
+            switch (this.dragState.type) {
+                case 'start':
+                    this.moveWallStart(this.selectedWall, point);
+                    break;
+                case 'end':
+                    this.moveWallEnd(this.selectedWall, point);
+                    break;
+                case 'middle':
+                    this.moveEntireWall(this.selectedWall, point);
+                    break;
             }
-
-            // Recalculate rooms after wall movement
+            
+            // Detect rooms after any wall movement
             this.detectRooms();
             this.draw();
             return;
         }
 
-        if (this.isPanning && this.lastPanPosition) {
-            const rect = this.canvas.getBoundingClientRect();
-            const currentX = e.clientX - rect.left;
-            const currentY = e.clientY - rect.top;
-            
-            this.panOffset.x += currentX - this.lastPanPosition.x;
-            this.panOffset.y += currentY - this.lastPanPosition.y;
-            
-            this.lastPanPosition = { x: currentX, y: currentY };
+        // Handle panning
+        if (this.transformManager.updatePan(e)) {
             this.draw();
             return;
         }
 
-        this.currentPoint = point;
+        const mousePos = this.transformManager.getMousePos(e);
+        this.currentPoint = {
+            x: mousePos.x,
+            y: mousePos.y
+        };
 
-        // Check if we should snap to existing walls or corners
+        // Check if we should snap to existing walls
         this.magnetPoint = null;
         this.magnetPointWall = null;
-        this.magnetIsEnd = null;
 
         // Only check for magnet points if we're using the wall tool
-        if (this.store.state.project.currentTool === 'wall' || (this.draggedWall && (this.draggedWall.point === 'start' || this.draggedWall.point === 'end'))) {
-            const ENDPOINT_MAGNET_THRESHOLD = 30; // Increased threshold for endpoints
-            const WALL_MAGNET_THRESHOLD = 20; // Regular threshold for wall edges
-            let minDistance = ENDPOINT_MAGNET_THRESHOLD;
+        if (this.store.state.project.currentTool === 'wall') {
+            // Get wall thickness for magnetization calculations
+            const wallThickness = this.store.getters['walls/defaultThickness'] / 100;
 
-            // First, check for corner points (wall endpoints)
+            // Check if we need to snap to existing walls
             for (const wall of this.walls) {
-                // Skip the wall being dragged if we're dragging
-                if (this.draggedWall && wall === this.draggedWall.wall) continue;
-
-                // Check start point
-                const startDistance = this.distance(point, wall.start);
-                if (startDistance < minDistance) {
+                // Check if point is near wall start or end
+                if (this.distance(this.currentPoint, wall.start) < 10 / this.zoom) {
                     this.magnetPoint = { ...wall.start };
                     this.magnetPointWall = wall;
                     this.magnetIsEnd = false;
-                    minDistance = startDistance;
+                    break;
                 }
-
-                // Check end point
-                const endDistance = this.distance(point, wall.end);
-                if (endDistance < minDistance) {
+                if (this.distance(this.currentPoint, wall.end) < 10 / this.zoom) {
                     this.magnetPoint = { ...wall.end };
                     this.magnetPointWall = wall;
                     this.magnetIsEnd = true;
-                    minDistance = endDistance;
+                    break;
                 }
 
-                // If we're drawing a wall (have a start point)
-                if (this.isDrawing && this.startPoint) {
-                    // Check if the current line is nearly perpendicular to existing walls
-                    const currentAngle = Math.atan2(
-                        point.y - this.startPoint.y,
-                        point.x - this.startPoint.x
-                    );
-
-                    const wallAngle = Math.atan2(
-                        wall.end.y - wall.start.y,
-                        wall.end.x - wall.start.x
-                    );
-
-                    // Calculate angle difference
-                    let angleDiff = Math.abs(currentAngle - wallAngle);
-                    angleDiff = Math.min(angleDiff, Math.PI - angleDiff);
-
-                    // If nearly perpendicular (90 degrees ± tolerance)
-                    const PERPENDICULAR_TOLERANCE = Math.PI / 36; // ±5 degrees
-                    if (Math.abs(angleDiff - Math.PI/2) < PERPENDICULAR_TOLERANCE) {
-                        // Project point onto wall line
-                        const projection = this.projectPointOnLine(point, wall.start, wall.end);
-                        const distToProjection = this.distance(point, projection);
-
-                        // If close enough to the wall and projection is on the wall segment
-                        if (distToProjection < WALL_MAGNET_THRESHOLD && this.isPointOnWallSegment(projection, wall)) {
-                            // Only use wall projection if we haven't found a closer endpoint
-                            if (!this.magnetPoint) {
-                                this.magnetPoint = projection;
-                                this.magnetPointWall = wall;
-                                this.magnetIsEnd = null; // Not at an endpoint
-                                minDistance = distToProjection;
-                            }
-                        }
-                    }
+                // Check if point is near wall edges
+                const snapPoint = this.getPointOnWall(this.currentPoint, wall);
+                if (snapPoint) {
+                    this.magnetPoint = snapPoint;
+                    this.magnetPointWall = wall;
+                    this.magnetIsEnd = null;
+                    break;
                 }
             }
 
-            // If no corner was found within threshold, check for wall edges
-            if (!this.magnetPoint) {
-                for (const wall of this.walls) {
-                    // Skip the wall being dragged if we're dragging
-                    if (this.draggedWall && wall === this.draggedWall.wall) continue;
-
-                    const snapPoint = this.getPointOnWall(point, wall);
-                    if (snapPoint) {
-                        const distanceToWall = this.distance(point, snapPoint);
-                        if (distanceToWall < WALL_MAGNET_THRESHOLD) {
-                            this.magnetPoint = snapPoint;
-                            this.magnetPointWall = wall;
-                            this.magnetIsEnd = null;
-                            minDistance = distanceToWall;
-                        }
-                    }
-                }
+            // Update angle display if we're drawing
+            if (this.isDrawing && this.angleDisplay) {
+                this.updateAngleDisplay(this.currentPoint);
             }
-        }
-
-        // Update angle display if we're drawing
-        if (this.isDrawing && this.angleDisplay) {
-            this.updateAngleDisplay(this.magnetPoint || point);
-        }
-
-        // Update cursor based on what's under it
-        if (!this.draggedWall && !this.isPanning && !this.store.state.project.currentTool) {
-            if (this.selectedWall) {
-                const controlPoints = this.getWallControlPoints(this.selectedWall);
-                const clickRadius = 10;
-                
-                if (this.distance(point, controlPoints.start) < clickRadius ||
-                    this.distance(point, controlPoints.end) < clickRadius) {
-                    this.canvas.style.cursor = 'pointer';
-                } else if (this.distance(point, controlPoints.middle) < clickRadius) {
-                    this.canvas.style.cursor = 'move';
-                } else {
-                    const wallUnderCursor = this.getWallAtPoint(point);
-                    this.canvas.style.cursor = wallUnderCursor ? 'pointer' : 'default';
-                }
-            } else {
-                const wallUnderCursor = this.getWallAtPoint(point);
-                this.canvas.style.cursor = wallUnderCursor ? 'pointer' : 'default';
-            }
-        }
-
-        if (this.store.state.project.currentTool === 'door') {
-            this.updateDoorPreview(point);
-        }
-
-        // Update window preview if in window placement mode
-        if (this.store.state.project.currentTool === 'window') {
-            this.windowManager.updateWindowPreview(point, this.walls);
         }
 
         this.draw();
     }
 
-    isPointOnWallSegment(point, wall) {
-        const wallLength = this.distance(wall.start, wall.end);
-        const distanceFromStart = this.distance(point, wall.start);
-        const distanceFromEnd = this.distance(point, wall.end);
-        
-        // Allow for some floating point imprecision
-        return Math.abs(distanceFromStart + distanceFromEnd - wallLength) < 0.1;
-    }
-
-    updateConnectedWalls(wall, newPoint, isStart, updatedWalls) {
-        const connectedWalls = this.walls.filter(otherWall => 
-            !updatedWalls.has(otherWall.id) && 
-            this.connectionManager.isWallsConnected(wall, otherWall)
-        );
-
-        connectedWalls.forEach(connectedWall => {
-            // Check which point of the connected wall needs to be updated
-            if (this.connectionManager.pointsAreEqual(
-                isStart ? wall.start : wall.end,
-                connectedWall.start
-            )) {
-                connectedWall.start = { ...newPoint };
-                updatedWalls.add(connectedWall.id);
-                this.updateConnectedWalls(connectedWall, newPoint, true, updatedWalls);
-            }
-            
-            if (this.connectionManager.pointsAreEqual(
-                isStart ? wall.start : wall.end,
-                connectedWall.end
-            )) {
-                connectedWall.end = { ...newPoint };
-                updatedWalls.add(connectedWall.id);
-                this.updateConnectedWalls(connectedWall, newPoint, false, updatedWalls);
-            }
-        });
-    }
-
-    updateConnectedWallsFromMiddle(wall, dx, dy, updatedWalls) {
-        const connectedWalls = this.walls.filter(otherWall => 
-            !updatedWalls.has(otherWall.id) && 
-            this.connectionManager.isWallsConnected(wall, otherWall)
-        );
-
-        connectedWalls.forEach(connectedWall => {
-            // Move the connected wall
-            connectedWall.start.x += dx;
-            connectedWall.start.y += dy;
-            connectedWall.end.x += dx;
-            connectedWall.end.y += dy;
-            
-            updatedWalls.add(connectedWall.id);
-            this.updateConnectedWallsFromMiddle(connectedWall, dx, dy, updatedWalls);
-        });
-    }
-
     onMouseUp(e) {
-        // Handle door dragging end
-        if (this.isDraggingDoor && this.selectedDoor) {
-            if (this.doorMagnetWall) {
-                // Update the door in the store
-                const updatedDoors = this.store.state.doors.doors.map(door => 
-                    door === this.selectedDoor ? { ...this.selectedDoor } : door
-                );
-                this.store.commit('doors/updateDoors', updatedDoors);
-            }
-            
-            this.isDraggingDoor = false;
-            this.selectedDoor = null;
-            this.doorMagnetWall = null;
-            this.doorMagnetPoint = null;
-            this.canvas.style.cursor = 'default';
-            this.draw();
-            return;
-        }
-
-        // Existing mouse up logic
-        if (this.draggedWall) {
-            // Update walls in the walls store after dragging
-            const wallsToSave = this.walls.map(wall => ({
-                id: wall.id,
-                start: { x: wall.start.x, y: wall.start.y },
-                end: { x: wall.end.x, y: wall.end.y },
-                thickness: wall.thickness * 10 // Convert back to mm
-            }));
-            this.store.dispatch('walls/saveWalls', wallsToSave);
-
-            // Update sockets in store after wall dragging
-            const sockets = this.store.state.sockets.objects;
-            const updatedSockets = sockets.map(socket => {
-                const socketWall = this.walls.find(w => w.id === socket.wallId);
-                if (socketWall) {
-                    // Get connected walls for the socket's wall to calculate internal dimensions
-                    const wallStartConnections = this.findWallsConnectedToPoint(socketWall.start);
-                    const wallEndConnections = this.findWallsConnectedToPoint(socketWall.end);
-
-                    // Calculate internal points for the wall with the socket
-                    const internalPoints = this.calculateInternalPoints(socketWall, wallStartConnections, wallEndConnections);
-                    if (!internalPoints) return socket;
-
-                    const { internalStart, internalEnd } = internalPoints;
-
-                    // Calculate internal wall length and direction
-                    const internalDx = internalEnd.x - internalStart.x;
-                    const internalDy = internalEnd.y - internalStart.y;
-                    const internalLength = Math.sqrt(internalDx * internalDx + internalDy * internalDy);
-
-                    // Calculate wall direction vector
-                    const wallDx = socketWall.end.x - socketWall.start.x;
-                    const wallDy = socketWall.end.y - socketWall.start.y;
-                    const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
-                    const wallUnitX = wallDx / wallLength;
-                    const wallUnitY = wallDy / wallLength;
-
-                    // Calculate normal vector (perpendicular to wall)
-                    const normalX = -wallDy / wallLength;
-                    const normalY = wallDx / wallLength;
-
-                    // Calculate the socket's relative position along the internal wall
-                    const socketToStartX = socket.x - internalStart.x;
-                    const socketToStartY = socket.y - internalStart.y;
-                    const relativePosition = (socketToStartX * internalDx + socketToStartY * internalDy) / 
-                                          (internalLength * internalLength);
-
-                    // Ensure socket stays within wall bounds
-                    let adjustedPosition = relativePosition;
-                    if (relativePosition < socket.size/2/internalLength) {
-                        adjustedPosition = socket.size/2/internalLength;
-                    } else if (relativePosition > 1 - socket.size/2/internalLength) {
-                        adjustedPosition = 1 - socket.size/2/internalLength;
-                    }
-
-                    // Calculate new socket position
-                    const newX = internalStart.x + wallUnitX * (adjustedPosition * internalLength);
-                    const newY = internalStart.y + wallUnitY * (adjustedPosition * internalLength);
-
-                    // Calculate wall offset based on which side the socket is on
-                    const wallOffset = socket.wallSide * (socket.size / 2);
-
-                    // Calculate final socket position with offset from wall
-                    const finalX = newX + normalX * wallOffset;
-                    const finalY = newY + normalY * wallOffset;
-
-                    // Calculate new angle based on wall direction
-                    const newAngle = Math.atan2(wallDy, wallDx);
-
-                    // Calculate new segments
-                    const leftSegment = adjustedPosition * internalLength - socket.size/2;
-                    const rightSegment = internalLength - (adjustedPosition * internalLength + socket.size/2);
-
-                    return {
-                        ...socket,
-                        x: finalX,
-                        y: finalY,
-                        angle: newAngle,
-                        leftSegment,
-                        rightSegment
-                    };
-                }
-                return socket;
-            });
-
-            // Update sockets in store if any changes were made
-            if (sockets.length !== updatedSockets.length || updatedSockets.some((socket, i) => 
-                socket.x !== sockets[i].x || 
-                socket.y !== sockets[i].y || 
-                socket.angle !== sockets[i].angle ||
-                socket.leftSegment !== sockets[i].leftSegment ||
-                socket.rightSegment !== sockets[i].rightSegment)) {
-                this.store.commit('sockets/updateObjects', updatedSockets);
-            }
-
-            this.draggedWall = null;
-            this.canvas.style.cursor = 'default';
+        if (this.dragState) {
+            this.dragState = null;
+            // Detect rooms after finishing wall movement
+            this.detectRooms();
+            this.saveWallsToStore();
             return;
         }
         
-        if (this.isPanning) {
-            this.isPanning = false;
-            this.lastPanPosition = null;
-            this.canvas.style.cursor = 'default';
+        if (this.transformManager.isPanning) {
+            this.transformManager.endPan();
             return;
         }
 
@@ -701,137 +280,90 @@ export default class WallDrawingManager {
         }
 
         const endPoint = this.magnetPoint || this.currentPoint;
-        const alignedEndPoint = this.alignWallToNearestAngle(this.startPoint, endPoint);
 
         // Only create wall if start and end points are different enough
-        if (this.distance(this.startPoint, alignedEndPoint) > 5) {
-            // Create a new wall
+        if (this.distance(this.startPoint, endPoint) > 5) {
+            // Create a new wall with precise coordinates
             const wallThickness = this.store.getters['walls/defaultThickness'] / 10;
             const newWall = {
                 id: Date.now().toString(),
-                start: { ...this.startPoint },
-                end: { ...alignedEndPoint },
+                start: { 
+                    x: this.startPoint.x,
+                    y: this.startPoint.y
+                },
+                end: { 
+                    x: endPoint.x,
+                    y: endPoint.y
+                },
                 thickness: wallThickness
             };
 
-            // Check for nearby endpoints to connect to
-            const ENDPOINT_SNAP_THRESHOLD = 30;
-            let startConnected = false;
-            let endConnected = false;
-
-            for (const wall of this.walls) {
-                // Check start point connections
-                if (!startConnected) {
-                    if (this.distance(newWall.start, wall.start) < ENDPOINT_SNAP_THRESHOLD) {
-                        newWall.start = wall.start;
-                        startConnected = true;
-                    } else if (this.distance(newWall.start, wall.end) < ENDPOINT_SNAP_THRESHOLD) {
-                        newWall.start = wall.end;
-                        startConnected = true;
+            // Check for intersections with existing walls
+            for (const existingWall of this.walls) {
+                const intersection = this.findWallIntersectionPoint(newWall, existingWall);
+                if (intersection) {
+                    // Split the existing wall at the intersection point
+                    this.splitWallAtPoint(existingWall, intersection, newWall);
                     }
                 }
 
-                // Check end point connections
-                if (!endConnected) {
-                    if (this.distance(newWall.end, wall.start) < ENDPOINT_SNAP_THRESHOLD) {
-                        newWall.end = wall.start;
-                        endConnected = true;
-                    } else if (this.distance(newWall.end, wall.end) < ENDPOINT_SNAP_THRESHOLD) {
-                        newWall.end = wall.end;
-                        endConnected = true;
-                    }
-                }
-
-                if (startConnected && endConnected) break;
-            }
-
-            // Connect walls if needed
-            if (this.startConnection) {
-                const splitWall = this.connectionManager.connectWalls(newWall, this.startConnection);
-                if (splitWall) {
-                    this.walls.push(splitWall);
-                }
-            }
-
-            if (this.magnetPointWall && this.magnetPoint) {
-                const splitWall = this.connectionManager.connectWalls(newWall, {
-                    wall: this.magnetPointWall,
-                    point: this.magnetPoint,
-                    isEnd: this.magnetIsEnd
-                }, true);
-
-                if (splitWall) {
-                    this.walls.push(splitWall);
-                }
-            }
-
-            // Add the wall to our collection
-            this.walls.push(newWall);
-
-            // Update rooms
+                this.walls.push(newWall);
+            // Detect rooms after adding a new wall
             this.detectRooms();
-
-            // Save to store
-            const wallsToSave = this.walls.map(wall => ({
-                id: wall.id,
-                start: { x: wall.start.x, y: wall.start.y },
-                end: { x: wall.end.x, y: wall.end.y },
-                thickness: wall.thickness * 10 // Convert back to mm
-            }));
-            this.store.dispatch('walls/saveWalls', wallsToSave);
-
-            // Notify about wall changes to update attached objects
-            this.store.dispatch('sockets/updateSocketsOnWallChange', {
-                walls: wallsToSave,
-                originalWalls: this.walls
-            });
-
-            // Convert rooms to elements format and save to project store
-            const roomElements = this.rooms.map(room => ({
-                id: room.id,
-                type: 'room',
-                path: room.path,
-                area: room.area,
-                color: room.color
-            }));
-
-            // Update project store with only room elements
-            this.store.commit('project/setElements', roomElements);
+            this.saveWallsToStore();
         }
 
         // Reset drawing state
         this.isDrawing = false;
         this.startPoint = null;
-        this.startConnection = null;
         this.alignmentGuides = null;
         this.angleDisplay = null;
-
         this.draw();
     }
 
-    // Calculate the coordinates of a rectangle given start, end points and thickness
-    calculateWallRectangle(start, end, thickness) {
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
-        const length = Math.sqrt(dx * dx + dy * dy);
+    draw() {
+        // Clear canvas
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Avoid division by zero
-        if (length < 0.001) return null;
+        // Apply transformations
+        this.transformManager.applyTransform();
 
-        // Calculate the unit normal vector (perpendicular to wall)
-        const nx = -dy / length;
-        const ny = dx / length;
+        // Draw grid
+        this.drawGrid();
 
-        // Calculate half thickness
-        const halfThick = thickness / 2;
+        // Draw rooms
+        this.drawRooms();
 
-        // Calculate the four corners of the rectangle
-        return [
-            { x: start.x + nx * halfThick, y: start.y + ny * halfThick },
-            { x: end.x + nx * halfThick, y: end.y + ny * halfThick },
-            { x: end.x - nx * halfThick, y: end.y - ny * halfThick },
-            { x: start.x - nx * halfThick, y: start.y - ny * halfThick }
-        ];
+        // Draw existing walls
+        this.drawWalls();
+
+        // Draw alignment guides if we're in drawing mode
+        if (this.isDrawing && this.alignmentGuides) {
+            this.drawAlignmentGuides();
+        }
+
+        // Draw angle display if we're drawing from an existing wall
+        if (this.isDrawing && this.angleDisplay && this.angleDisplay.angle) {
+            this.drawAngleIndicator();
+        }
+
+        // Draw wall being created if in drawing mode
+        if (this.isDrawing && this.startPoint && this.currentPoint) {
+            this.drawTemporaryWall();
+        }
+
+        // Draw magnet indicator (if we're hovering near an existing wall)
+        if (this.magnetPoint && this.store.state.project.currentTool === 'wall') {
+            this.drawMagnetPoint();
+        }
+
+        // Draw wall preview cursor if wall tool is active
+        if (this.store.state.project.currentTool === 'wall' && !this.isDrawing) {
+            this.drawWallPreview();
+        }
+
+        // Restore canvas state
+        this.transformManager.restoreTransform();
     }
 
     drawWalls() {
@@ -841,14 +373,7 @@ export default class WallDrawingManager {
                 const rect = this.calculateWallRectangle(wall.start, wall.end, wall.thickness);
                 if (!rect) return;
                 this.drawSimpleWall(wall, rect);
-                
-                // Check if this wall has any doors
-                const doors = this.store.state.doors.doors.filter(door => door.wallId === wall.id);
-                if (doors.length > 0) {
-                    // If wall has doors, always show internal dimensions
-                    wall.hideDimension = false;
-                }
-                this.drawWallDimension(wall);
+                this.drawWallDimension(wall); // Add dimension to all walls
             }
         });
 
@@ -857,23 +382,32 @@ export default class WallDrawingManager {
             const rect = this.calculateWallRectangle(this.selectedWall.start, this.selectedWall.end, this.selectedWall.thickness);
             if (rect) {
                 this.drawSimpleWall(this.selectedWall, rect);
-                
-                // Check if selected wall has any doors
-                const doors = this.store.state.doors.doors.filter(door => door.wallId === this.selectedWall.id);
-                if (doors.length > 0) {
-                    // If wall has doors, always show internal dimensions
-                    this.selectedWall.hideDimension = false;
-                }
-                this.drawWallDimension(this.selectedWall);
+                this.drawWallDimension(this.selectedWall); // Add dimension to selected wall
                 this.drawWallControlPoints(this.selectedWall);
+                
+                // Draw angles with connected walls at both ends
+                const startConnections = this.findWallsConnectedToPoint(this.selectedWall.start)
+                    .filter(w => w.id !== this.selectedWall.id);
+                const endConnections = this.findWallsConnectedToPoint(this.selectedWall.end)
+                    .filter(w => w.id !== this.selectedWall.id);
+
+                // Draw angles at start point
+                startConnections.forEach(connectedWall => {
+                    this.drawWallAngle(this.selectedWall, connectedWall, this.selectedWall.start);
+                });
+
+                // Draw angles at end point
+                endConnections.forEach(connectedWall => {
+                    this.drawWallAngle(this.selectedWall, connectedWall, this.selectedWall.end);
+                });
             }
         }
     }
 
     drawSimpleWall(wall, rect) {
-        // Draw the wall base
+        // Draw the wall itself
         this.ctx.fillStyle = WALL_FILL_COLOR;
-        this.ctx.strokeStyle = wall === this.selectedWall ? '#FFA500' : WALL_STROKE_COLOR;
+        this.ctx.strokeStyle = wall === this.selectedWall ? '#2196F3' : WALL_STROKE_COLOR;
         this.ctx.lineWidth = wall === this.selectedWall ? 2 : 1;
 
         this.ctx.beginPath();
@@ -885,69 +419,47 @@ export default class WallDrawingManager {
 
         this.ctx.fill();
         this.ctx.stroke();
-
-        // Draw hatching pattern
-        this.ctx.save();
-        
-        // Create clipping path for the wall
-        this.ctx.beginPath();
-        this.ctx.moveTo(rect[0].x, rect[0].y);
-        this.ctx.lineTo(rect[1].x, rect[1].y);
-        this.ctx.lineTo(rect[2].x, rect[2].y);
-        this.ctx.lineTo(rect[3].x, rect[3].y);
-        this.ctx.closePath();
-        this.ctx.clip();
-
-        // Calculate wall bounds
-        const minX = Math.min(rect[0].x, rect[1].x, rect[2].x, rect[3].x);
-        const maxX = Math.max(rect[0].x, rect[1].x, rect[2].x, rect[3].x);
-        const minY = Math.min(rect[0].y, rect[1].y, rect[2].y, rect[3].y);
-        const maxY = Math.max(rect[0].y, rect[1].y, rect[2].y, rect[3].y);
-
-        // Determine if wall is more vertical or horizontal
-        const dx = wall.end.x - wall.start.x;
-        const dy = wall.end.y - wall.start.y;
-        const isMoreVertical = Math.abs(dy) > Math.abs(dx);
-
-        // Set hatching style
-        this.ctx.strokeStyle = wall === this.selectedWall ? '#FFA500' : '#333333'; // Orange if selected, dark gray if not
-        this.ctx.lineWidth = 0.5;
-
-        // Draw diagonal lines
-        const spacing = 6; // Space between hatch lines
-        const padding = spacing * 2; // Extra space to ensure coverage
-
-        if (isMoreVertical) {
-            // For vertical walls, draw lines from top-left to bottom-right
-            for (let y = minY - padding; y < maxY + padding; y += spacing) {
-                this.ctx.beginPath();
-                this.ctx.moveTo(minX - padding, y);
-                this.ctx.lineTo(maxX + padding, y + (maxX - minX) + padding * 2);
-        this.ctx.stroke();
-            }
-        } else {
-            // For horizontal walls, draw lines from top-right to bottom-left
-            for (let x = minX - padding; x < maxX + padding; x += spacing) {
-                this.ctx.beginPath();
-                this.ctx.moveTo(x, minY - padding);
-                this.ctx.lineTo(x + (maxY - minY) + padding * 2, maxY + padding);
-                this.ctx.stroke();
-            }
-        }
-
-        this.ctx.restore();
     }
 
     drawWallControlPoints(wall) {
         if (!this.store.state.project.currentTool) {
             const controlPoints = this.getWallControlPoints(wall);
+            const isDragging = this.dragState && this.dragState.wall === wall;
             
-            // Draw control points with different colors and sizes
+            // Draw control points with different sizes and visual feedback
             [
-                { point: controlPoints.start, color: '#4CAF50', size: 6 },
-                { point: controlPoints.middle, color: '#FFA500', size: 8 },
-                { point: controlPoints.end, color: '#4CAF50', size: 6 }
-            ].forEach(({ point, color, size }) => {
+                { 
+                    point: controlPoints.start, 
+                    color: '#4CAF50', 
+                    size: CONTROL_POINT_VISUAL_SIZE.END,
+                    hitArea: CONTROL_POINT_HIT_AREA.END,
+                    type: 'start'
+                },
+                { 
+                    point: controlPoints.middle, 
+                    color: '#2196F3', 
+                    size: CONTROL_POINT_VISUAL_SIZE.MIDDLE,
+                    hitArea: CONTROL_POINT_HIT_AREA.MIDDLE,
+                    type: 'middle'
+                },
+                { 
+                    point: controlPoints.end, 
+                    color: '#4CAF50', 
+                    size: CONTROL_POINT_VISUAL_SIZE.END,
+                    hitArea: CONTROL_POINT_HIT_AREA.END,
+                    type: 'end'
+                }
+            ].forEach(({ point, color, size, hitArea, type }) => {
+                const isActive = isDragging && this.dragState.type === type;
+
+                // Draw hit area indicator (semi-transparent)
+                if (this.isPointUnderMouse(point)) {
+                    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                    this.ctx.beginPath();
+                    this.ctx.arc(point.x, point.y, hitArea, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+
                 // Draw outer circle (white background)
                 this.ctx.fillStyle = 'white';
                 this.ctx.beginPath();
@@ -955,7 +467,7 @@ export default class WallDrawingManager {
                 this.ctx.fill();
                 
                 // Draw inner circle (colored)
-                this.ctx.fillStyle = color;
+                this.ctx.fillStyle = isActive ? '#FF5722' : color;
                 this.ctx.beginPath();
                 this.ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
                 this.ctx.fill();
@@ -969,7 +481,7 @@ export default class WallDrawingManager {
                 );
 
                 if (isSharedPoint) {
-                    this.ctx.strokeStyle = color;
+                    this.ctx.strokeStyle = isActive ? '#FF5722' : color;
                     this.ctx.lineWidth = 1;
                     this.ctx.setLineDash([2, 2]);
                     this.ctx.beginPath();
@@ -1088,28 +600,38 @@ export default class WallDrawingManager {
             }
         });
 
-        // Create rooms from unique paths
+        // For each unique path, calculate area and create room
         uniquePaths.forEach((path, index) => {
-            const color = ROOM_COLORS[index % ROOM_COLORS.length];
+            const area = this.calculatePolygonArea(path);
+            if (area > 0) { // Only positive areas (clockwise paths)
+                // Check if this room already existed (to maintain label position)
+                const existingRoom = oldRooms.find(room =>
+                    this.arePathsEquivalent(room.path, path)
+                );
 
-            // Check if this room already existed (to maintain label position)
-            const existingRoom = oldRooms.find(room =>
-                this.arePathsEquivalent(room.path, path)
-            );
+                const color = ROOM_COLORS[index % ROOM_COLORS.length];
 
-            if (existingRoom) {
-                // Keep the same ID and labelPosition if room existed before
-                this.rooms.push({
-                    id: existingRoom.id,
-                    path,
-                    color
-                });
-            } else {
-                this.rooms.push({
-                    id: `room_${Date.now()}_${index}`,
-                    path,
-                    color
-                });
+                if (existingRoom) {
+                    // Keep the same ID and labelPosition if room existed before
+                    this.rooms.push({
+                        id: existingRoom.id,
+                        path,
+                        area: (area / 100).toFixed(2), // Convert to square meters
+                        color,
+                        labelPosition: existingRoom.labelPosition
+                    });
+                } else {
+                    // Calculate centroid for new room
+                    const centroid = this.calculatePolygonCentroid(path);
+
+                    this.rooms.push({
+                        id: `room_${Date.now()}_${index}`,
+                        path,
+                        area: (area / 100).toFixed(2), // Convert to square meters
+                        color,
+                        labelPosition: centroid
+                    });
+                }
             }
         });
     }
@@ -1126,55 +648,370 @@ export default class WallDrawingManager {
     }
 
     findClosedPaths() {
-        // Get all wall endpoints as vertices
+        // Get all wall endpoints and intersection points
         const vertices = new Map();
+        const wallsByEndpoints = new Map();
 
-        // Create a graph representation
+        // First, find all wall intersections
+        const intersectionPoints = this.findWallIntersections();
+
+        // Create a graph representation including both endpoints and intersection points
         this.walls.forEach(wall => {
+            // Add wall endpoints
             const startKey = `${wall.start.x},${wall.start.y}`;
             const endKey = `${wall.end.x},${wall.end.y}`;
 
-            if (!vertices.has(startKey)) {
-                vertices.set(startKey, []);
-            }
-            if (!vertices.has(endKey)) {
-                vertices.set(endKey, []);
-            }
+            // Add intersection points for this wall
+            const wallIntersections = intersectionPoints.filter(point => 
+                this.isPointOnWall(point, wall) && 
+                !this.isPointAtWallEnd(point, wall)
+            );
 
-            vertices.get(startKey).push({ point: wall.end, key: endKey });
-            vertices.get(endKey).push({ point: wall.start, key: startKey });
+            // Add all points (endpoints and intersections) to vertices map
+            [startKey, endKey, ...wallIntersections.map(p => `${p.x},${p.y}`)].forEach(pointKey => {
+                if (!vertices.has(pointKey)) {
+                    vertices.set(pointKey, []);
+            }
+                if (!wallsByEndpoints.has(pointKey)) {
+                    wallsByEndpoints.set(pointKey, new Set());
+                }
+            });
+
+            // Connect all points along this wall
+            const allPoints = [
+                { key: startKey, point: wall.start },
+                ...wallIntersections.map(p => ({ key: `${p.x},${p.y}`, point: p })),
+                { key: endKey, point: wall.end }
+            ].sort((a, b) => {
+                // Sort points along the wall from start to end
+                const distA = this.distance(wall.start, a.point);
+                const distB = this.distance(wall.start, b.point);
+                return distA - distB;
+            });
+
+            // Create connections between consecutive points
+            for (let i = 0; i < allPoints.length - 1; i++) {
+                const current = allPoints[i];
+                const next = allPoints[i + 1];
+                
+                vertices.get(current.key).push({ 
+                    point: next.point, 
+                    key: next.key, 
+                    wall,
+                    isIntersection: i > 0 || i < allPoints.length - 2
+                });
+                vertices.get(next.key).push({ 
+                    point: current.point, 
+                    key: current.key, 
+                    wall,
+                    isIntersection: i > 0 || i < allPoints.length - 2
+                });
+
+                wallsByEndpoints.get(current.key).add(wall);
+                wallsByEndpoints.get(next.key).add(wall);
+            }
         });
 
-        // Find all cycles (closed paths) using DFS
+        // Find all cycles using the enhanced graph
         const paths = [];
-        const visited = new Set();
-
         for (const [startKey, neighbors] of vertices.entries()) {
-            if (neighbors.length > 1) {
-                this.findCycles(startKey, startKey, vertices, [this.keyToPoint(startKey)], new Set(), paths);
+            if (neighbors.length >= 1) {
+                this.findCycles(startKey, startKey, vertices, [this.keyToPoint(startKey)], new Set(), paths, [], [], wallsByEndpoints);
             }
         }
 
-        return paths;
+        return this.filterValidRooms(paths);
     }
 
-    findCycles(startKey, currentKey, graph, path, visited, cycles, depth = 0) {
-        if (depth > 0 && currentKey === startKey && path.length > 2) {
-            // Found a cycle
-            cycles.push([...path]);
+    findWallIntersections() {
+        const intersections = new Set();
+        
+        // Check each pair of walls for intersections
+        for (let i = 0; i < this.walls.length; i++) {
+            for (let j = i + 1; j < this.walls.length; j++) {
+                const wall1 = this.walls[i];
+                const wall2 = this.walls[j];
+                
+                const intersection = this.findWallIntersectionPoint(wall1, wall2);
+                if (intersection) {
+                    intersections.add(intersection);
+                }
+            }
+        }
+
+        return Array.from(intersections);
+    }
+
+    findWallIntersectionPoint(wall1, wall2) {
+        // Skip if walls share an endpoint
+        if (this.distance(wall1.start, wall2.start) < 1 ||
+            this.distance(wall1.start, wall2.end) < 1 ||
+            this.distance(wall1.end, wall2.start) < 1 ||
+            this.distance(wall1.end, wall2.end) < 1) {
+            return null;
+        }
+
+        // Calculate intersection point
+        const x1 = wall1.start.x, y1 = wall1.start.y;
+        const x2 = wall1.end.x, y2 = wall1.end.y;
+        const x3 = wall2.start.x, y3 = wall2.start.y;
+        const x4 = wall2.end.x, y4 = wall2.end.y;
+
+        const denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        if (Math.abs(denominator) < 0.001) return null; // Lines are parallel
+
+        const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denominator;
+        const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denominator;
+
+        if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+            return {
+                x: x1 + t * (x2 - x1),
+                y: y1 + t * (y2 - y1)
+            };
+        }
+
+        return null;
+    }
+
+    isPointOnWall(point, wall) {
+        const d1 = this.distance(point, wall.start);
+        const d2 = this.distance(point, wall.end);
+        const wallLength = this.distance(wall.start, wall.end);
+        
+        // Check if point lies on the wall line and between its endpoints
+        return Math.abs(d1 + d2 - wallLength) < 0.1;
+    }
+
+    isPointAtWallEnd(point, wall) {
+        return this.distance(point, wall.start) < 1 || 
+               this.distance(point, wall.end) < 1;
+    }
+
+    findCycles(startKey, currentKey, graph, path, visited, cycles, walls, currentPath, wallsByEndpoints) {
+        if (path.length > 2 && currentKey === startKey) {
+            // Verify this is a valid cycle by checking wall connections
+            if (this.isValidCycle(path, walls, wallsByEndpoints)) {
+                cycles.push({
+                    path: [...path],
+                    walls: [...walls]
+                });
+            }
             return;
         }
 
-        if (visited.has(currentKey)) return;
-        visited.add(currentKey);
+        // Limit cycle size to prevent infinite loops
+        if (path.length > 8) return; // Reasonable limit for most room shapes
 
-        // Visit neighbors
         const neighbors = graph.get(currentKey) || [];
         for (const neighbor of neighbors) {
-            path.push(this.keyToPoint(neighbor.key));
-            this.findCycles(startKey, neighbor.key, graph, path, new Set([...visited]), cycles, depth + 1);
+            const nextKey = neighbor.key;
+            if (path.length > 1 && nextKey === startKey) {
+                // Check if this completes a valid cycle
+                path.push(this.keyToPoint(nextKey));
+                walls.push(neighbor.wall);
+                if (this.isValidCycle(path, walls, wallsByEndpoints)) {
+                    cycles.push({
+                        path: [...path],
+                        walls: [...walls]
+                    });
+                }
             path.pop();
+                walls.pop();
+            } else if (!visited.has(nextKey)) {
+                visited.add(nextKey);
+                path.push(this.keyToPoint(nextKey));
+                walls.push(neighbor.wall);
+                this.findCycles(startKey, nextKey, graph, path, visited, cycles, walls, [...currentPath, currentKey], wallsByEndpoints);
+                path.pop();
+                walls.pop();
+                visited.delete(nextKey);
+            }
         }
+    }
+
+    isValidCycle(path, walls, wallsByEndpoints) {
+        if (path.length < 3) return false;
+
+        // Check if all points form a proper polygon
+        for (let i = 0; i < path.length; i++) {
+            const current = path[i];
+            const next = path[(i + 1) % path.length];
+            const currentKey = `${current.x},${current.y}`;
+            const nextKey = `${next.x},${next.y}`;
+
+            // Check if there's a wall connecting these points (either direction)
+            const wallsAtCurrent = wallsByEndpoints.get(currentKey);
+            const wallsAtNext = wallsByEndpoints.get(nextKey);
+            
+            if (!wallsAtCurrent || !wallsAtNext) return false;
+
+            // Check if there's at least one wall connecting these points
+            let hasConnection = false;
+            for (const wall of wallsAtCurrent) {
+                if (wallsAtNext.has(wall)) {
+                    hasConnection = true;
+                    break;
+                }
+            }
+            if (!hasConnection) return false;
+        }
+
+        // Calculate area to ensure it's a proper polygon
+        const area = this.calculatePolygonArea(path);
+        if (area < 100) return false; // Minimum area threshold (1 square meter)
+
+        // Check for internal walls that divide this space
+        if (this.hasInternalWalls(path)) return false;
+
+        return true;
+    }
+
+    hasInternalWalls(roomPath) {
+        // Create a polygon from the room path
+        const polygon = roomPath.map(point => ({ x: point.x, y: point.y }));
+
+        // Check each wall to see if it's inside the polygon
+        for (const wall of this.walls) {
+            // Skip walls that are part of the room boundary
+            if (this.isWallOnPolygonBoundary(wall, polygon)) continue;
+
+            // Check if wall midpoint is inside the polygon
+            const midpoint = {
+                x: (wall.start.x + wall.end.x) / 2,
+                y: (wall.start.y + wall.end.y) / 2
+            };
+
+            // If the midpoint is inside and the wall isn't on the boundary,
+            // this is an internal wall
+            if (this.isPointInPolygon(midpoint, polygon)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    isWallOnPolygonBoundary(wall, polygon) {
+        // Check if both endpoints of the wall are on the polygon boundary
+        for (let i = 0; i < polygon.length; i++) {
+            const start = polygon[i];
+            const end = polygon[(i + 1) % polygon.length];
+
+            // Check if wall endpoints match this polygon segment
+            if ((this.distance(wall.start, start) < 1 && this.distance(wall.end, end) < 1) ||
+                (this.distance(wall.start, end) < 1 && this.distance(wall.end, start) < 1)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    isPointInPolygon(point, polygon) {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x, yi = polygon[i].y;
+            const xj = polygon[j].x, yj = polygon[j].y;
+
+            const intersect = ((yi > point.y) !== (yj > point.y))
+                && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    filterValidRooms(paths) {
+        if (paths.length === 0) return [];
+
+        const validRooms = [];
+        
+        for (const pathData of paths) {
+            const { path } = pathData;
+            
+            // Skip invalid paths
+            if (!path || path.length < 3) continue;
+
+            // Check if this room is unique and valid
+            let isUnique = true;
+            for (const existingRoom of validRooms) {
+                if (this.areRoomsEquivalent(path, existingRoom)) {
+                    isUnique = false;
+                    break;
+                }
+            }
+
+            if (isUnique && !this.hasInternalWalls(path)) {
+                validRooms.push(path);
+            }
+        }
+
+        return validRooms;
+    }
+
+    areWallsParallel(wall1, wall2) {
+        if (!wall1 || !wall2) return false;
+
+        const vector1 = {
+            x: wall1.end.x - wall1.start.x,
+            y: wall1.end.y - wall1.start.y
+        };
+        const vector2 = {
+            x: wall2.end.x - wall2.start.x,
+            y: wall2.end.y - wall2.start.y
+        };
+
+        // Calculate angles
+        const angle1 = Math.atan2(vector1.y, vector1.x);
+        const angle2 = Math.atan2(vector2.y, vector2.x);
+
+        // Check if angles are the same or opposite (parallel)
+        const angleDiff = Math.abs(angle1 - angle2);
+        return angleDiff < 0.1 || Math.abs(angleDiff - Math.PI) < 0.1;
+    }
+
+    removeDuplicateRooms(rooms) {
+        const uniqueRooms = [];
+        
+        for (const room of rooms) {
+            let isDuplicate = false;
+            
+            for (const existingRoom of uniqueRooms) {
+                if (this.areRoomsEquivalent(room, existingRoom)) {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+            
+            if (!isDuplicate) {
+                uniqueRooms.push(room);
+            }
+        }
+        
+        return uniqueRooms;
+    }
+
+    areRoomsEquivalent(room1, room2) {
+        if (room1.length !== room2.length) return false;
+        
+        const area1 = this.calculatePolygonArea(room1);
+        const area2 = this.calculatePolygonArea(room2);
+        
+        // If areas are significantly different, rooms are not equivalent
+        if (Math.abs(area1 - area2) > 1) return false;
+        
+        // Check if all points in room1 have corresponding points in room2
+        const maxDistance = 1; // Maximum distance for points to be considered the same
+        let matchedPoints = 0;
+        
+        for (const point1 of room1) {
+            for (const point2 of room2) {
+                if (this.distance(point1, point2) < maxDistance) {
+                    matchedPoints++;
+                    break;
+                }
+            }
+        }
+        
+        return matchedPoints === room1.length;
     }
 
     keyToPoint(key) {
@@ -1202,18 +1039,12 @@ export default class WallDrawingManager {
         const y = (e.clientY - rect.top - this.panOffset.y) / this.zoom;
 
         if (snapToGrid) {
-            // Only snap to grid when initially placing walls
-            if (this.store.state.project.currentTool === 'wall' && !this.isDrawing) {
-                return {
-                    x: Math.round(x / GRID_SIZE) * GRID_SIZE,
-                    y: Math.round(y / GRID_SIZE) * GRID_SIZE
-                };
-            }
-            
-            // For wall resizing and movement, use 1cm precision
+            // Return both actual and snapped positions
             return {
-                x: Math.round(x),
-                y: Math.round(y)
+                x: x,
+                y: y,
+                snappedX: Math.round(x / GRID_SIZE) * GRID_SIZE,
+                snappedY: Math.round(y / GRID_SIZE) * GRID_SIZE
             };
         }
         return { x, y };
@@ -1287,266 +1118,53 @@ export default class WallDrawingManager {
         };
     }
 
-    draw() {
-        // Clear canvas
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    drawGrid() {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
 
-        // Apply pan and zoom transformation
-        this.ctx.save();
-        this.ctx.translate(this.panOffset.x, this.panOffset.y);
-        this.ctx.scale(this.zoom, this.zoom);
+        // Small grid lines
+        this.ctx.strokeStyle = '#eee';
+        this.ctx.lineWidth = 1.5;
 
-        // Draw grid
-        this.drawGrid();
-
-        // Draw rooms
-        this.drawRooms();
-
-        // Draw existing walls
-        this.drawWalls();
-
-        // Draw placed doors
-        this.drawPlacedDoors();
-
-        // Draw placed windows
-        this.windowManager.drawPlacedWindows(this.store.state.windows.windows);
-
-        // Draw alignment guides if we're in drawing mode
-        if (this.isDrawing && this.alignmentGuides) {
-            this.drawAlignmentGuides();
-        }
-
-        // Draw angle display if we're drawing from an existing wall
-        if (this.isDrawing && this.angleDisplay && this.angleDisplay.angle) {
-            this.drawAngleIndicator();
-        }
-
-        // Draw wall being created if in drawing mode
-        if (this.isDrawing && this.startPoint && this.currentPoint) {
-            this.drawTemporaryWall();
-        }
-
-        // Draw magnet indicator (if we're hovering near an existing wall)
-        if (this.magnetPoint && this.store.state.project.currentTool === 'wall') {
-            this.drawMagnetPoint();
-        }
-
-        // Draw wall preview cursor if wall tool is active
-        if (this.store.state.project.currentTool === 'wall' && !this.isDrawing) {
-            this.drawWallPreview();
-        }
-        
-        // Draw door preview if in door placement mode
-        if (this.store.state.project.currentTool === 'door') {
-            this.drawDoorPreview();
-        }
-
-        // Draw window preview if in window placement mode
-        if (this.store.state.project.currentTool === 'window') {
-            this.windowManager.drawWindowPreview();
-        }
-
-        // Draw angles for selected wall
-        if (this.selectedWall) {
-            const connectedWalls = this.findConnectedWalls(this.selectedWall);
-            
-            // Group connected walls by shared points
-            const startConnections = connectedWalls.filter(wall => 
-                this.distance(wall.start, this.selectedWall.start) < 1 ||
-                this.distance(wall.end, this.selectedWall.start) < 1
-            );
-            
-            const endConnections = connectedWalls.filter(wall => 
-                this.distance(wall.start, this.selectedWall.end) < 1 ||
-                this.distance(wall.end, this.selectedWall.end) < 1
-            );
-
-            // Draw angles at start point
-            if (startConnections.length > 0) {
-                startConnections.forEach(connectedWall => {
-                    this.drawAngleBetweenWalls(this.selectedWall, connectedWall, this.selectedWall.start);
-                });
-            }
-
-            // Draw angles at end point
-            if (endConnections.length > 0) {
-                endConnections.forEach(connectedWall => {
-                    this.drawAngleBetweenWalls(this.selectedWall, connectedWall, this.selectedWall.end);
-                });
-            }
-        }
-
-        // Restore context
-        this.ctx.restore();
-    }
-
-    drawPlacedDoors() {
-        const doors = this.store.state.doors.doors;
-        
-        doors.forEach(door => {
-            this.ctx.save();
-            this.ctx.translate(door.x, door.y);
-            this.ctx.rotate(door.angle);
-
-            // Set colors based on selection state
-            const isSelected = door === this.selectedDoor;
-            this.ctx.fillStyle = isSelected ? '#FFA500' : '#000000';
-            this.ctx.strokeStyle = isSelected ? '#FFA500' : '#000000';
-            this.ctx.lineWidth = isSelected ? 2 : 1;
-
-            // Draw door rectangle
+        // Draw vertical small grid lines
+        for (let x = 0; x < width; x += GRID_SIZE) {
             this.ctx.beginPath();
-            this.ctx.rect(0, -door.thickness/2, door.width, door.thickness);
-            this.ctx.fill();
+            this.ctx.moveTo(x, 0);
+            this.ctx.lineTo(x, height);
             this.ctx.stroke();
+        }
 
-            // Draw opening arc and connecting line
+        // Draw horizontal small grid lines
+        for (let y = 0; y < height; y += GRID_SIZE) {
             this.ctx.beginPath();
-            this.ctx.setLineDash([]);
-            
-            const openAngle = door.openAngle * (Math.PI / 180);
-            if (door.openDirection === 'left') {
-                // Calculate intersection point of arc with perpendicular line
-                const arcEndY = door.width * Math.sin(openAngle);
-                const arcEndX = door.width * (1 - Math.cos(openAngle));
-                
-                // Draw perpendicular line from left edge (hinge side)
-                this.ctx.moveTo(0, 0);
-                this.ctx.lineTo(0, arcEndY);
-                
-                // Draw arc from left edge to intersection point
-                this.ctx.moveTo(0, 0);
-                this.ctx.arc(0, 0, door.width, 0, openAngle);
-            } else {
-                // Calculate intersection point of arc with perpendicular line
-                const arcEndY = door.width * Math.sin(Math.PI - openAngle);
-                const arcEndX = door.width * (1 - Math.cos(Math.PI - openAngle));
-                
-                // Draw perpendicular line from right edge (hinge side)
-                this.ctx.moveTo(door.width, 0);
-                this.ctx.lineTo(door.width, arcEndY);
-                
-                // Draw arc from right edge to intersection point
-                this.ctx.moveTo(door.width, 0);
-                this.ctx.arc(door.width, 0, door.width, Math.PI, Math.PI - openAngle, true);
-            }
-            
+            this.ctx.moveTo(0, y);
+            this.ctx.lineTo(width, y);
             this.ctx.stroke();
+        }
 
-            this.ctx.restore();
-        });
-    }
-
-    drawDoorSegmentDimensions(leftSegment, rightSegment, doorWidth, thickness) {
-        const offset = thickness + 20; // Offset for dimension lines
-        
-        this.ctx.save();
-        this.ctx.strokeStyle = '#666';
-        this.ctx.fillStyle = '#666';
+        // Draw larger grid lines (10x size) with darker color
+        const LARGE_GRID_SIZE = GRID_SIZE * 10;
+        this.ctx.strokeStyle = '#aaa';
         this.ctx.lineWidth = 1;
-        this.ctx.setLineDash([4, 4]);
-        this.ctx.font = '12px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
 
-        // Left segment
-        if (leftSegment > 0) {
-            // Extension lines
+        // Draw vertical large grid lines
+        for (let x = 0; x < width; x += LARGE_GRID_SIZE) {
             this.ctx.beginPath();
-            this.ctx.moveTo(-leftSegment, -thickness/2);
-            this.ctx.lineTo(-leftSegment, -offset);
-            this.ctx.moveTo(0, -thickness/2);
-            this.ctx.lineTo(0, -offset);
+            this.ctx.moveTo(x, 0);
+            this.ctx.lineTo(x, height);
             this.ctx.stroke();
-
-            // Dimension line
-            this.ctx.beginPath();
-            this.ctx.moveTo(-leftSegment, -offset);
-            this.ctx.lineTo(0, -offset);
-            this.ctx.stroke();
-
-            // Text with background
-            const leftText = `${Math.round(leftSegment)} cm`;
-            const leftTextWidth = this.ctx.measureText(leftText).width;
-            
-            this.ctx.fillStyle = 'white';
-            this.ctx.fillRect(-leftSegment/2 - leftTextWidth/2 - 2, -offset - 8, leftTextWidth + 4, 16);
-            
-            this.ctx.fillStyle = '#666';
-            this.ctx.fillText(leftText, -leftSegment/2, -offset);
         }
 
-        // Door width
+        // Draw horizontal large grid lines
+        for (let y = 0; y < height; y += LARGE_GRID_SIZE) {
             this.ctx.beginPath();
-        this.ctx.moveTo(0, -offset);
-        this.ctx.lineTo(doorWidth, -offset);
+            this.ctx.moveTo(0, y);
+            this.ctx.lineTo(width, y);
             this.ctx.stroke();
-
-        // Door width text with background
-        const doorText = `${Math.round(doorWidth)} cm`;
-        const doorTextWidth = this.ctx.measureText(doorText).width;
-        
-        this.ctx.fillStyle = 'white';
-        this.ctx.fillRect(doorWidth/2 - doorTextWidth/2 - 2, -offset - 8, doorTextWidth + 4, 16);
-        
-        this.ctx.fillStyle = '#666';
-        this.ctx.fillText(doorText, doorWidth/2, -offset);
-
-        // Right segment
-        if (rightSegment > 0) {
-            // Extension lines
-            this.ctx.beginPath();
-            this.ctx.moveTo(doorWidth, -thickness/2);
-            this.ctx.lineTo(doorWidth, -offset);
-            this.ctx.moveTo(doorWidth + rightSegment, -thickness/2);
-            this.ctx.lineTo(doorWidth + rightSegment, -offset);
-            this.ctx.stroke();
-
-            // Dimension line
-            this.ctx.beginPath();
-            this.ctx.moveTo(doorWidth, -offset);
-            this.ctx.lineTo(doorWidth + rightSegment, -offset);
-            this.ctx.stroke();
-
-            // Text with background
-            const rightText = `${Math.round(rightSegment)} cm`;
-            const rightTextWidth = this.ctx.measureText(rightText).width;
-            
-            this.ctx.fillStyle = 'white';
-            this.ctx.fillRect(doorWidth + rightSegment/2 - rightTextWidth/2 - 2, -offset - 8, rightTextWidth + 4, 16);
-            
-            this.ctx.fillStyle = '#666';
-            this.ctx.fillText(rightText, doorWidth + rightSegment/2, -offset);
-        }
-
-        this.ctx.setLineDash([]);
-        this.ctx.restore();
-    }
-
-    drawWall(wall) {
-        const rect = this.calculateWallRectangle(wall.start, wall.end, wall.thickness);
-        if (!rect) return;
-        this.drawSimpleWall(wall, rect);
-
-        // Check if this wall has any doors
-        const doors = this.store.state.doors.doors.filter(door => door.wallId === wall.id);
-        if (doors.length > 0) {
-            // If wall has doors, always show internal dimensions
-            wall.hideDimension = false;
-        }
-
-        // Only show wall dimensions in original-plan mode
-        if (this.store.state.project.activeMode === 'original-plan') {
-            this.drawWallDimension(wall);
         }
     }
 
     drawWallDimension(wall) {
-        // Skip drawing dimensions if we're not in original-plan mode
-        if (this.store.state.project.activeMode !== 'original-plan') {
-            return;
-        }
-
         // Find connected walls at both ends
         const startConnections = this.findWallsConnectedToPoint(wall.start);
         const endConnections = this.findWallsConnectedToPoint(wall.end);
@@ -1557,258 +1175,152 @@ export default class WallDrawingManager {
 
         const { internalStart, internalEnd } = internalPoints;
 
-        // Check if this wall has any doors or windows
-        const doors = this.store.state.doors.doors.filter(door => door.wallId === wall.id);
-        const windows = this.store.state.windows.windows.filter(window => window.wallId === wall.id);
+        const midPoint = {
+            x: (internalStart.x + internalEnd.x) / 2,
+            y: (internalStart.y + internalEnd.y) / 2
+        };
 
-        if (doors.length > 0 || windows.length > 0) {
-            // Calculate wall direction vector
-            const wallDx = wall.end.x - wall.start.x;
-            const wallDy = wall.end.y - wall.start.y;
-            const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
-            const wallUnitX = wallDx / wallLength;
-            const wallUnitY = wallDy / wallLength;
+        const dx = internalEnd.x - internalStart.x;
+        const dy = internalEnd.y - internalStart.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+
+        // Only draw dimension if wall is long enough
+        if (length < 20) return;
 
         // Calculate normal vector for offset direction
-            const nx = -wallDy / wallLength;
-            const ny = wallDx / wallLength;
-
-            // Offset for dimension line
-        const offset = wall.thickness + 20;
-
-            // Draw extension lines from internal points
-        this.ctx.strokeStyle = '#666';
-        this.ctx.lineWidth = 1;
-        this.ctx.setLineDash([4, 4]);
-
-            // Combine doors and windows and sort them by position along the wall
-            const elements = [
-                ...doors.map(door => ({ type: 'door', element: door })),
-                ...windows.map(window => ({ type: 'window', element: window }))
-            ].sort((a, b) => {
-                const distA = this.distance(wall.start, { x: a.element.x, y: a.element.y });
-                const distB = this.distance(wall.start, { x: b.element.x, y: b.element.y });
-                return distA - distB;
-            });
-
-            // Draw segments between elements
-            let lastEndPoint = internalStart;
-            let lastEndX = internalStart.x;
-            let lastEndY = internalStart.y;
-
-            elements.forEach((item, index) => {
-                const element = item.element;
-                const elementWidth = element.width;
-                
-                // Calculate element start and end points
-                const elementStartX = element.x;
-                const elementStartY = element.y;
-                const elementEndX = element.x + wallUnitX * elementWidth;
-                const elementEndY = element.y + wallUnitY * elementWidth;
-
-        // Draw extension lines
-        this.ctx.beginPath();
-                if (index === 0) {
-                    // From internal start to first element
-                    this.ctx.moveTo(internalStart.x, internalStart.y);
-                    this.ctx.lineTo(internalStart.x + nx * offset, internalStart.y + ny * offset);
-                }
-                // From element start
-                this.ctx.moveTo(elementStartX, elementStartY);
-                this.ctx.lineTo(elementStartX + nx * offset, elementStartY + ny * offset);
-                // From element end
-                this.ctx.moveTo(elementEndX, elementEndY);
-                this.ctx.lineTo(elementEndX + nx * offset, elementEndY + ny * offset);
-                if (index === elements.length - 1) {
-                    // From last element to internal end
-                    this.ctx.moveTo(internalEnd.x, internalEnd.y);
-                    this.ctx.lineTo(internalEnd.x + nx * offset, internalEnd.y + ny * offset);
-                }
-                this.ctx.stroke();
-
-                // Draw segment before element
-                const leftSegment = Math.sqrt(
-                    Math.pow(elementStartX - lastEndX, 2) +
-                    Math.pow(elementStartY - lastEndY, 2)
-                );
-                if (leftSegment > 0) {
-                    this.drawDimensionText(
-                        { x: lastEndX, y: lastEndY },
-                        { x: elementStartX, y: elementStartY },
-                        offset,
-                        leftSegment
-                    );
-                }
-
-                // Draw element width
-                this.drawDimensionText(
-                    { x: elementStartX, y: elementStartY },
-                    { x: elementEndX, y: elementEndY },
-                    offset,
-                    elementWidth
-                );
-
-                // Update last end point
-                lastEndX = elementEndX;
-                lastEndY = elementEndY;
-            });
-
-            // Draw final segment if needed
-            const finalSegment = Math.sqrt(
-                Math.pow(internalEnd.x - lastEndX, 2) +
-                Math.pow(internalEnd.y - lastEndY, 2)
-            );
-            if (finalSegment > 0) {
-                this.drawDimensionText(
-                    { x: lastEndX, y: lastEndY },
-                    internalEnd,
-                    offset,
-                    finalSegment
-                );
-            }
-
-            this.ctx.setLineDash([]);
-        } else {
-            // For walls without doors or windows, draw the total internal dimension
-            const dx = internalEnd.x - internalStart.x;
-            const dy = internalEnd.y - internalStart.y;
-            const length = Math.sqrt(dx * dx + dy * dy);
-
-            if (length < 20) return;
-
-            // Draw the total dimension line
-            this.drawTotalDimension(internalStart, internalEnd, wall.thickness, length);
-        }
-    }
-
-    drawTotalDimension(start, end, thickness, length) {
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
         const nx = -dy / length;
         const ny = dx / length;
-        const offset = thickness + 20;
 
-        // Draw extension lines
+        // Offset for dimension line (perpendicular to wall)
+        const offset = wall.thickness + 20;
+
+        // Convert length to current unit and format
+        const unit = this.store.state.project.unit;
+        let displayLength;
+        let unitLabel;
+
+        switch (unit) {
+            case 'mm':
+                displayLength = (length * 10).toFixed(0); // Convert from internal units (cm) to mm
+                unitLabel = 'mm';
+                break;
+            case 'm':
+                displayLength = (length / 100).toFixed(2); // Convert from internal units (cm) to m
+                unitLabel = 'm';
+                break;
+            case 'cm':
+            default:
+                displayLength = length.toFixed(1); // Internal units are already in cm
+                unitLabel = 'cm';
+                break;
+        }
+
+        // Draw dimension line
         this.ctx.strokeStyle = '#666';
         this.ctx.lineWidth = 1;
         this.ctx.setLineDash([4, 4]);
-        this.ctx.beginPath();
-        this.ctx.moveTo(start.x, start.y);
-        this.ctx.lineTo(start.x + nx * offset, start.y + ny * offset);
-        this.ctx.moveTo(end.x, end.y);
-        this.ctx.lineTo(end.x + nx * offset, end.y + ny * offset);
-        this.ctx.stroke();
 
-        this.ctx.setLineDash([]);
+        // Draw extension lines from internal points
+        this.ctx.beginPath();
+        this.ctx.moveTo(internalStart.x, internalStart.y);
+        this.ctx.lineTo(
+            internalStart.x + nx * offset,
+            internalStart.y + ny * offset
+        );
+        this.ctx.moveTo(internalEnd.x, internalEnd.y);
+        this.ctx.lineTo(
+            internalEnd.x + nx * offset,
+            internalEnd.y + ny * offset
+        );
+        this.ctx.stroke();
 
         // Draw dimension line
         this.ctx.beginPath();
-        this.ctx.moveTo(start.x + nx * offset, start.y + ny * offset);
-        this.ctx.lineTo(end.x + nx * offset, end.y + ny * offset);
+        this.ctx.moveTo(
+            internalStart.x + nx * offset,
+            internalStart.y + ny * offset
+        );
+        this.ctx.lineTo(
+            internalEnd.x + nx * offset,
+            internalEnd.y + ny * offset
+        );
         this.ctx.stroke();
 
+        this.ctx.setLineDash([]); // Reset dash pattern
+
         // Draw arrows
+        const arrowSize = 6;
         const angle = Math.atan2(dy, dx);
-        this.drawArrow(start.x + nx * offset, start.y + ny * offset, angle, 6);
-        this.drawArrow(end.x + nx * offset, end.y + ny * offset, angle + Math.PI, 6);
 
-        // Draw text with proper unit conversion
-        const midX = (start.x + end.x) / 2;
-        const midY = (start.y + end.y) / 2;
-        const lengthInMM = length * 10; // Convert to mm
-        const text = formatMeasurement(lengthInMM, this.store.state.project.unit);
+        // Start arrow
+        this.ctx.beginPath();
+        this.ctx.moveTo(
+            internalStart.x + nx * offset,
+            internalStart.y + ny * offset
+        );
+        this.ctx.lineTo(
+            internalStart.x + nx * offset + Math.cos(angle + Math.PI * 0.75) * arrowSize,
+            internalStart.y + ny * offset + Math.sin(angle + Math.PI * 0.75) * arrowSize
+        );
+        this.ctx.moveTo(
+            internalStart.x + nx * offset,
+            internalStart.y + ny * offset
+        );
+        this.ctx.lineTo(
+            internalStart.x + nx * offset + Math.cos(angle - Math.PI * 0.75) * arrowSize,
+            internalStart.y + ny * offset + Math.sin(angle - Math.PI * 0.75) * arrowSize
+        );
+        this.ctx.stroke();
 
+        // End arrow
+        this.ctx.beginPath();
+        this.ctx.moveTo(
+            internalEnd.x + nx * offset,
+            internalEnd.y + ny * offset
+        );
+        this.ctx.lineTo(
+            internalEnd.x + nx * offset + Math.cos(angle + Math.PI + Math.PI * 0.75) * arrowSize,
+            internalEnd.y + ny * offset + Math.sin(angle + Math.PI + Math.PI * 0.75) * arrowSize
+        );
+        this.ctx.moveTo(
+            internalEnd.x + nx * offset,
+            internalEnd.y + ny * offset
+        );
+        this.ctx.lineTo(
+            internalEnd.x + nx * offset + Math.cos(angle + Math.PI - Math.PI * 0.75) * arrowSize,
+            internalEnd.y + ny * offset + Math.sin(angle + Math.PI - Math.PI * 0.75) * arrowSize
+        );
+        this.ctx.stroke();
+
+        // Draw dimension text
+        const dimensionText = `${displayLength} ${unitLabel}`;
         this.ctx.font = '12px Arial';
         this.ctx.fillStyle = '#333';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'bottom';
 
-        let textAngle = angle;
+        // Calculate text angle to ensure it's always readable
+        let textAngle = Math.atan2(dy, dx);
         if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
             textAngle += Math.PI;
         }
 
-        const textWidth = this.ctx.measureText(text).width + 4;
+        // Draw text background
+        const textWidth = this.ctx.measureText(dimensionText).width + 4;
         const textHeight = 16;
         
         this.ctx.save();
-        this.ctx.translate(midX + nx * offset, midY + ny * offset);
+        this.ctx.translate(midPoint.x + nx * offset, midPoint.y + ny * offset);
         this.ctx.rotate(textAngle);
         
-        // Draw text background
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
         this.ctx.fillRect(-textWidth / 2, 0, textWidth, -textHeight);
         
         // Draw text
         this.ctx.fillStyle = '#333';
-        this.ctx.fillText(text, 0, -2);
+        this.ctx.fillText(dimensionText, 0, -2);
         
         this.ctx.restore();
-    }
-
-    drawDimensionText(start, end, offset, value) {
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
-        const length = Math.sqrt(dx * dx + dy * dy);
-        if (length === 0) return;
-
-        const nx = -dy / length;
-        const ny = dx / length;
-
-        this.ctx.beginPath();
-        this.ctx.moveTo(start.x + nx * offset, start.y + ny * offset);
-        this.ctx.lineTo(end.x + nx * offset, end.y + ny * offset);
-        this.ctx.stroke();
-
-        const arrowSize = 6;
-        const angle = Math.atan2(dy, dx);
-        this.drawArrow(start.x + nx * offset, start.y + ny * offset, angle, arrowSize);
-        this.drawArrow(end.x + nx * offset, end.y + ny * offset, angle + Math.PI, arrowSize);
-
-        this.ctx.font = '12px Arial';
-        this.ctx.fillStyle = '#333';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'bottom';
-
-        const midX = (start.x + end.x) / 2;
-        const midY = (start.y + end.y) / 2;
-        let textAngle = angle;
-        if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
-            textAngle += Math.PI;
-        }
-
-        // Convert value to mm and format with current unit
-        const valueInMM = value * 10; // Convert from internal units to mm
-        const text = formatMeasurement(valueInMM, this.store.state.project.unit);
-        const textWidth = this.ctx.measureText(text).width + 4;
-        const textHeight = 16;
-
-        this.ctx.save();
-        this.ctx.translate(midX + nx * offset, midY + ny * offset);
-        this.ctx.rotate(textAngle);
-
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        this.ctx.fillRect(-textWidth / 2, 0, textWidth, -textHeight);
-
-        this.ctx.fillStyle = '#333';
-        this.ctx.fillText(text, 0, -2);
-
-        this.ctx.restore();
-    }
-
-    drawArrow(x, y, angle, size) {
-        this.ctx.beginPath();
-        this.ctx.moveTo(x, y);
-        this.ctx.lineTo(
-            x + Math.cos(angle + Math.PI * 0.75) * size,
-            y + Math.sin(angle + Math.PI * 0.75) * size
-        );
-        this.ctx.moveTo(x, y);
-        this.ctx.lineTo(
-            x + Math.cos(angle - Math.PI * 0.75) * size,
-            y + Math.sin(angle - Math.PI * 0.75) * size
-        );
-        this.ctx.stroke();
     }
 
     calculateInternalPoints(wall, startConnections, endConnections) {
@@ -1855,6 +1367,92 @@ export default class WallDrawingManager {
         };
 
         return { internalStart, internalEnd };
+    }
+
+    drawRooms() {
+        this.rooms.forEach(room => {
+            if (!room.path || room.path.length < 3) return;
+
+            // Fill the room with semi-transparent white
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            this.ctx.beginPath();
+            this.ctx.moveTo(room.path[0].x, room.path[0].y);
+
+            for (let i = 1; i < room.path.length; i++) {
+                this.ctx.lineTo(room.path[i].x, room.path[i].y);
+            }
+
+            this.ctx.closePath();
+            this.ctx.fill();
+
+            // Calculate room center
+            const center = this.calculatePolygonCentroid(room.path);
+
+            // Get wall height from store (assuming it's in millimeters)
+            const wallHeight = this.store.getters['walls/defaultHeight'] || 2700; // Default 2700mm if not set
+            const heightInCm = Math.round(wallHeight / 10); // Convert to cm
+
+            // Calculate internal area in square meters
+            const internalArea = this.calculateInternalRoomArea(room);
+            const areaInSqM = (internalArea / 10000).toFixed(2); // Convert from sq cm to sq m
+
+            // Draw height label
+            this.drawRoundedLabel(
+                center.x,
+                center.y - 20,
+                `H=${heightInCm}`,
+                '#2196F3' // Blue color for height
+            );
+
+            // Draw area label
+            this.drawRoundedLabel(
+                center.x,
+                center.y + 20,
+                `S=${areaInSqM} м²`,
+                '#F44336' // Red color for area
+            );
+        });
+    }
+
+    // Helper method to draw rounded rectangle labels
+    drawRoundedLabel(x, y, text, textColor) {
+        this.ctx.save();
+
+        // Text measurements
+        this.ctx.font = 'bold 14px Arial';
+        const metrics = this.ctx.measureText(text);
+        const padding = 10;
+        const width = metrics.width + padding * 2;
+        const height = 24; // Fixed height for the rectangle
+        const radius = 12; // Border radius
+
+        // Draw rounded rectangle
+        this.ctx.beginPath();
+        this.ctx.moveTo(x - width/2 + radius, y - height/2);
+        this.ctx.lineTo(x + width/2 - radius, y - height/2);
+        this.ctx.arcTo(x + width/2, y - height/2, x + width/2, y - height/2 + radius, radius);
+        this.ctx.lineTo(x + width/2, y + height/2 - radius);
+        this.ctx.arcTo(x + width/2, y + height/2, x + width/2 - radius, y + height/2, radius);
+        this.ctx.lineTo(x - width/2 + radius, y + height/2);
+        this.ctx.arcTo(x - width/2, y + height/2, x - width/2, y + height/2 - radius, radius);
+        this.ctx.lineTo(x - width/2, y - height/2 + radius);
+        this.ctx.arcTo(x - width/2, y - height/2, x - width/2 + radius, y - height/2, radius);
+        this.ctx.closePath();
+
+        // Fill and stroke
+        this.ctx.fillStyle = 'white';
+        this.ctx.fill();
+        this.ctx.strokeStyle = 'black';
+        this.ctx.lineWidth = 1;
+        this.ctx.stroke();
+
+        // Draw text
+        this.ctx.fillStyle = textColor;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(text, x, y);
+
+        this.ctx.restore();
     }
 
     calculatePolygonCentroid(points) {
@@ -1906,9 +1504,13 @@ export default class WallDrawingManager {
     drawAlignmentGuides() {
         if (!this.currentPoint || !this.alignmentGuides) return;
 
-        this.ctx.strokeStyle = 'rgba(0, 150, 255, 0.5)';
+        const alignment = this.checkWallAlignment(this.startPoint, this.currentPoint);
+        
         this.ctx.lineWidth = 1;
         this.ctx.setLineDash([5, 3]);
+
+        // Draw all guides dimmed first
+        this.ctx.strokeStyle = 'rgba(0, 150, 255, 0.3)';
 
         // Horizontal guide
         this.ctx.beginPath();
@@ -1922,7 +1524,7 @@ export default class WallDrawingManager {
         this.ctx.lineTo(this.alignmentGuides.vertical.x, this.startPoint.y + ALIGNMENT_LINE_LENGTH);
         this.ctx.stroke();
 
-        // 45° diagonal guide
+        // 45° diagonal guides
         this.ctx.beginPath();
         let x1 = this.startPoint.x - ALIGNMENT_LINE_LENGTH;
         let y1 = this.alignmentGuides.diagonal45.offset + x1;
@@ -1932,7 +1534,6 @@ export default class WallDrawingManager {
         this.ctx.lineTo(x2, y2);
         this.ctx.stroke();
 
-        // 135° diagonal guide
         this.ctx.beginPath();
         x1 = this.startPoint.x - ALIGNMENT_LINE_LENGTH;
         y1 = this.alignmentGuides.diagonal135.offset - x1;
@@ -1941,6 +1542,55 @@ export default class WallDrawingManager {
         this.ctx.moveTo(x1, y1);
         this.ctx.lineTo(x2, y2);
         this.ctx.stroke();
+
+        // If there's an active alignment, highlight that guide
+        if (alignment) {
+            this.ctx.strokeStyle = 'rgba(0, 150, 255, 0.8)';
+            this.ctx.lineWidth = 2;
+
+            switch (alignment.angle) {
+                case 0:
+                case 180:
+                    // Highlight horizontal guide
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(this.startPoint.x - ALIGNMENT_LINE_LENGTH, this.alignmentGuides.horizontal.y);
+                    this.ctx.lineTo(this.startPoint.x + ALIGNMENT_LINE_LENGTH, this.alignmentGuides.horizontal.y);
+                    this.ctx.stroke();
+                    break;
+                case 90:
+                case 270:
+                    // Highlight vertical guide
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(this.alignmentGuides.vertical.x, this.startPoint.y - ALIGNMENT_LINE_LENGTH);
+                    this.ctx.lineTo(this.alignmentGuides.vertical.x, this.startPoint.y + ALIGNMENT_LINE_LENGTH);
+                    this.ctx.stroke();
+                    break;
+                case 45:
+                case 225:
+                    // Highlight 45° diagonal
+                    this.ctx.beginPath();
+                    x1 = this.startPoint.x - ALIGNMENT_LINE_LENGTH;
+                    y1 = this.alignmentGuides.diagonal45.offset + x1;
+                    x2 = this.startPoint.x + ALIGNMENT_LINE_LENGTH;
+                    y2 = this.alignmentGuides.diagonal45.offset + x2;
+                    this.ctx.moveTo(x1, y1);
+                    this.ctx.lineTo(x2, y2);
+                    this.ctx.stroke();
+                    break;
+                case 135:
+                case 315:
+                    // Highlight 135° diagonal
+                    this.ctx.beginPath();
+                    x1 = this.startPoint.x - ALIGNMENT_LINE_LENGTH;
+                    y1 = this.alignmentGuides.diagonal135.offset - x1;
+                    x2 = this.startPoint.x + ALIGNMENT_LINE_LENGTH;
+                    y2 = this.alignmentGuides.diagonal135.offset - x2;
+                    this.ctx.moveTo(x1, y1);
+                    this.ctx.lineTo(x2, y2);
+                    this.ctx.stroke();
+                    break;
+            }
+        }
 
         this.ctx.setLineDash([]);
     }
@@ -1993,34 +1643,69 @@ export default class WallDrawingManager {
 
     drawTemporaryWall() {
         const endPoint = this.magnetPoint || this.currentPoint;
-        const alignedEndPoint = this.alignWallToNearestAngle(this.startPoint, endPoint);
         const wallThickness = this.store.getters['walls/defaultThickness'] / 10;
 
-        // Draw alignment indicator first
-        this.drawAlignmentIndicator(this.startPoint, endPoint, alignedEndPoint);
-
-        // Draw the temporary wall using the aligned endpoint
+        // Draw the temporary wall
         this.ctx.strokeStyle = 'rgba(50, 50, 200, 0.6)';
         this.ctx.lineWidth = wallThickness;
 
         this.ctx.beginPath();
         this.ctx.moveTo(this.startPoint.x, this.startPoint.y);
-        this.ctx.lineTo(alignedEndPoint.x, alignedEndPoint.y);
+        this.ctx.lineTo(endPoint.x, endPoint.y);
         this.ctx.stroke();
 
-        const dx = alignedEndPoint.x - this.startPoint.x;
-        const dy = alignedEndPoint.y - this.startPoint.y;
+        // Find connected walls at the start point
+        const connectedWalls = this.findWallsConnectedToPoint(this.startPoint);
+        
+        // Draw angles between the temporary wall and connected walls
+        connectedWalls.forEach(connectedWall => {
+            this.drawConstructionAngle(this.startPoint, endPoint, connectedWall);
+        });
+
+        // Draw grid snap indicators
+        if (!this.magnetPoint) {
+            const snapIndicators = this.getGridSnapIndicators(endPoint);
+            
+            if (snapIndicators.showVertical || snapIndicators.showHorizontal) {
+                this.ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+                this.ctx.lineWidth = 1;
+                this.ctx.setLineDash([4, 4]);
+
+                if (snapIndicators.showVertical) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(snapIndicators.gridX, 0);
+                    this.ctx.lineTo(snapIndicators.gridX, this.canvas.height);
+                    this.ctx.stroke();
+                }
+
+                if (snapIndicators.showHorizontal) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, snapIndicators.gridY);
+                    this.ctx.lineTo(this.canvas.width, snapIndicators.gridY);
+                    this.ctx.stroke();
+                }
+
+                this.ctx.setLineDash([]);
+            }
+        }
+
+        // Draw dimension
+        const dx = endPoint.x - this.startPoint.x;
+        const dy = endPoint.y - this.startPoint.y;
         const length = Math.sqrt(dx * dx + dy * dy);
 
         if (length > 20) {
-            const lengthInMM = length * 10; // Convert to mm
+            const lengthInMeters = (length / 100).toFixed(2);
             const midPoint = {
-                x: (this.startPoint.x + alignedEndPoint.x) / 2,
-                y: (this.startPoint.y + alignedEndPoint.y) / 2
+                x: (this.startPoint.x + endPoint.x) / 2,
+                y: (this.startPoint.y + endPoint.y) / 2
             };
 
+            // Calculate normal vector for offset direction
             const nx = -dy / length;
             const ny = dx / length;
+
+            // Offset for dimension line
             const offset = 15 + wallThickness / 2;
 
             this.ctx.font = '12px Arial';
@@ -2028,9 +1713,8 @@ export default class WallDrawingManager {
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
 
-            const text = formatMeasurement(lengthInMM, this.store.state.project.unit);
-            const textWidth = this.ctx.measureText(text).width;
-
+            // Background
+            const textWidth = this.ctx.measureText(lengthInMeters + ' m').width;
             this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             this.ctx.fillRect(
                 midPoint.x + nx * offset - textWidth / 2 - 2,
@@ -2039,13 +1723,89 @@ export default class WallDrawingManager {
                 16
             );
 
+            // Text
             this.ctx.fillStyle = '#3366cc';
             this.ctx.fillText(
-                text,
+                `${lengthInMeters} m`,
                 midPoint.x + nx * offset,
                 midPoint.y + ny * offset
             );
         }
+    }
+
+    // New method to draw angle during wall construction
+    drawConstructionAngle(startPoint, endPoint, connectedWall) {
+        // Calculate vectors
+        const tempWallVector = {
+            x: endPoint.x - startPoint.x,
+            y: endPoint.y - startPoint.y
+        };
+
+        // Determine which end of the connected wall to use
+        const isStartConnection = this.distance(connectedWall.start, startPoint) < 1;
+        const connectedVector = {
+            x: isStartConnection ? 
+                connectedWall.end.x - connectedWall.start.x :
+                connectedWall.start.x - connectedWall.end.x,
+            y: isStartConnection ?
+                connectedWall.end.y - connectedWall.start.y :
+                connectedWall.start.y - connectedWall.end.y
+        };
+
+        // Calculate angles
+        const angle1 = Math.atan2(connectedVector.y, connectedVector.x);
+        const angle2 = Math.atan2(tempWallVector.y, tempWallVector.x);
+        
+        // Calculate the angle between the walls (in degrees)
+        let angleDiff = (angle2 - angle1) * 180 / Math.PI;
+        
+        // Normalize angle to be between 0 and 180
+        if (angleDiff < 0) angleDiff += 360;
+        if (angleDiff > 180) angleDiff = 360 - angleDiff;
+
+        // Draw arc
+        const radius = 40; // Radius for the angle arc
+        this.ctx.beginPath();
+        this.ctx.strokeStyle = '#E91E63'; // Pink color for the angle indicator
+        this.ctx.lineWidth = 2;
+
+        // Draw the arc
+        this.ctx.beginPath();
+        this.ctx.arc(startPoint.x, startPoint.y, radius, 
+            Math.min(angle1, angle2), Math.max(angle1, angle2));
+        this.ctx.stroke();
+
+        // Calculate position for angle text
+        const midAngle = (angle1 + angle2) / 2;
+        const textRadius = radius + 15;
+        const textX = startPoint.x + textRadius * Math.cos(midAngle);
+        const textY = startPoint.y + textRadius * Math.sin(midAngle);
+
+        // Draw angle text with background
+        this.ctx.font = 'bold 14px Arial';
+        const angleText = `${angleDiff.toFixed(1)}°`;
+        const textWidth = this.ctx.measureText(angleText).width;
+
+        // Draw text background
+        this.ctx.fillStyle = 'white';
+        this.ctx.fillRect(
+            textX - textWidth/2 - 4,
+            textY - 10,
+            textWidth + 8,
+            20
+        );
+
+        // Draw text
+        this.ctx.fillStyle = '#E91E63';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(angleText, textX, textY);
+
+        // Draw small dots at the angle points
+        this.ctx.fillStyle = '#E91E63';
+        this.ctx.beginPath();
+        this.ctx.arc(startPoint.x, startPoint.y, 3, 0, Math.PI * 2);
+        this.ctx.fill();
     }
 
     drawWallPreview() {
@@ -2075,74 +1835,33 @@ export default class WallDrawingManager {
     }
 
     drawMagnetPoint() {
-        if (!this.magnetPoint) return;
-
         // Draw a visual indicator for magnetic point
         this.ctx.fillStyle = '#3366cc';
         this.ctx.beginPath();
         this.ctx.arc(this.magnetPoint.x, this.magnetPoint.y, 5, 0, Math.PI * 2);
         this.ctx.fill();
 
-        // Highlight the connection area with a larger, animated circle
+        // Highlight the connection area
         this.ctx.strokeStyle = '#3366cc';
         this.ctx.lineWidth = 2;
-        
-        // Create pulsing effect
-        const time = Date.now() % 1000; // 1 second cycle
-        const scale = 1 + 0.3 * Math.sin(time * Math.PI / 500); // Scale varies between 0.7 and 1.3
-        
         this.ctx.setLineDash([5, 3]);
         this.ctx.beginPath();
-        this.ctx.arc(this.magnetPoint.x, this.magnetPoint.y, 12 * scale, 0, Math.PI * 2);
+        this.ctx.arc(this.magnetPoint.x, this.magnetPoint.y, 10, 0, Math.PI * 2);
         this.ctx.stroke();
         this.ctx.setLineDash([]);
-
-        // If this is an endpoint connection, draw additional visual cues
-        if (this.magnetIsEnd !== null) {
-            // Draw a larger highlight for endpoint connections
-            this.ctx.strokeStyle = 'rgba(51, 102, 204, 0.3)';
-            this.ctx.lineWidth = 4;
-            this.ctx.beginPath();
-            this.ctx.arc(this.magnetPoint.x, this.magnetPoint.y, 20, 0, Math.PI * 2);
-            this.ctx.stroke();
-
-            // Draw connection lines
-            this.ctx.strokeStyle = '#3366cc';
-            this.ctx.lineWidth = 1;
-            this.ctx.setLineDash([3, 3]);
-            
-            // Draw cross lines to emphasize the connection point
-            const crossSize = 8;
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.magnetPoint.x - crossSize, this.magnetPoint.y - crossSize);
-            this.ctx.lineTo(this.magnetPoint.x + crossSize, this.magnetPoint.y + crossSize);
-            this.ctx.moveTo(this.magnetPoint.x - crossSize, this.magnetPoint.y + crossSize);
-            this.ctx.lineTo(this.magnetPoint.x + crossSize, this.magnetPoint.y - crossSize);
-            this.ctx.stroke();
-            this.ctx.setLineDash([]);
-        }
     }
 
     // Store interaction
     saveWallsToStore() {
-        // Convert walls to the format expected by walls store
-        const wallsToSave = this.walls.map(wall => ({
+        // Convert walls to the format expected by store
+        const wallElements = this.walls.map(wall => ({
             id: wall.id,
+            type: 'wall',
             start: { x: wall.start.x, y: wall.start.y },
             end: { x: wall.end.x, y: wall.end.y },
             thickness: wall.thickness * 10 // Convert back to mm with adjusted ratio
         }));
 
-        // Save walls to the walls store
-        this.store.dispatch('walls/saveWalls', wallsToSave);
-
-        // Notify about wall changes to update attached objects
-        this.store.dispatch('sockets/updateSocketsOnWallChange', {
-            walls: wallsToSave,
-            originalWalls: this.walls
-        });
-
-        // Convert rooms to elements format and save to project store
         const roomElements = this.rooms.map(room => ({
             id: room.id,
             type: 'room',
@@ -2151,8 +1870,13 @@ export default class WallDrawingManager {
             color: room.color
         }));
 
-        // Update project store with only room elements
-        this.store.commit('project/setElements', roomElements);
+        // Save walls and rooms to their respective stores
+        this.store.commit('walls/setWalls', wallElements);
+        this.store.commit('rooms/setRooms', roomElements);
+
+        // Add to history
+        const elements = [...wallElements, ...roomElements];
+        this.store.commit('history/addToHistory', elements);
     }
 
     undo() {
@@ -2173,25 +1897,34 @@ export default class WallDrawingManager {
 
     // Load data from store
     loadFromStore() {
-        // Load walls from walls store
-        const walls = this.store.getters['walls/getAllWalls'];
-        this.walls = walls.map(wall => ({
-            id: wall.id,
-            start: { x: wall.start.x, y: wall.start.y },
-            end: { x: wall.end.x, y: wall.end.y },
-            thickness: wall.thickness / 10 // Convert mm to canvas units with adjusted ratio
-        }));
+        // Load walls from walls module
+        const wallElements = this.store.state.walls.walls || [];
+        // Load rooms from rooms module
+        const roomElements = this.store.state.rooms.rooms || [];
 
-        // Load rooms from project store
-        const elements = this.store.state.project.elements || [];
-        this.rooms = elements
-            .filter(element => element.type === 'room')
-            .map(room => ({
-                id: room.id,
-                path: room.path,
-                area: room.area,
-                color: room.color
-            }));
+        // Reset collections
+        this.walls = [];
+        this.rooms = [];
+
+        // Process walls
+        wallElements.forEach(element => {
+                this.walls.push({
+                    id: element.id,
+                    start: { x: element.start.x, y: element.start.y },
+                    end: { x: element.end.x, y: element.end.y },
+                    thickness: element.thickness / 10 // Convert mm to canvas units with adjusted ratio
+                });
+        });
+
+        // Process rooms
+        roomElements.forEach(element => {
+                this.rooms.push({
+                    id: element.id,
+                    path: element.path,
+                    area: element.area,
+                    color: element.color
+                });
+        });
 
         this.draw();
     }
@@ -2228,404 +1961,60 @@ export default class WallDrawingManager {
         return sharedPoint;
     }
 
-    updateDoorsOnWall(wall, originalStart, originalEnd) {
-        // Find all walls that need their doors updated
-        const wallsToUpdate = new Set();
-        wallsToUpdate.add(wall);
+    connectWalls(newWall, connection, isEnd = false) {
+        const connectionPoint = connection.point;
+        const oldWall = connection.wall;
 
-        // Add connected walls that might have doors
-        const startConnectedWalls = this.findWallsConnectedToPoint(wall.start);
-        const endConnectedWalls = this.findWallsConnectedToPoint(wall.end);
-        startConnectedWalls.forEach(w => wallsToUpdate.add(w));
-        endConnectedWalls.forEach(w => wallsToUpdate.add(w));
+        // Create or find a shared point
+        const sharedPoint = this.findSharedPoint(connectionPoint);
 
-        // Update doors on all affected walls
-        const doors = this.store.state.doors.doors;
-        const updatedDoors = doors.map(door => {
-            const doorWall = this.walls.find(w => w.id === door.wallId);
-            if (doorWall && wallsToUpdate.has(doorWall)) {
-                // Get connected walls for the door's wall to calculate internal dimensions
-                const wallStartConnections = this.findWallsConnectedToPoint(doorWall.start);
-                const wallEndConnections = this.findWallsConnectedToPoint(doorWall.end);
-
-                // Calculate internal points for the wall with the door
-                const internalPoints = this.calculateInternalPoints(doorWall, wallStartConnections, wallEndConnections);
-                if (!internalPoints) return door;
-
-                const { internalStart, internalEnd } = internalPoints;
-
-                // Calculate internal wall length
-                const internalDx = internalEnd.x - internalStart.x;
-                const internalDy = internalEnd.y - internalStart.y;
-                const internalLength = Math.sqrt(internalDx * internalDx + internalDy * internalDy);
-
-                // Calculate wall direction vector
-                const wallDx = doorWall.end.x - doorWall.start.x;
-                const wallDy = doorWall.end.y - doorWall.start.y;
-                const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
-                const wallUnitX = wallDx / wallLength;
-                const wallUnitY = wallDy / wallLength;
-
-                // Calculate the door's relative position along the internal wall
-                const doorToStartX = door.x - internalStart.x;
-                const doorToStartY = door.y - internalStart.y;
-                const relativePosition = (doorToStartX * internalDx + doorToStartY * internalDy) / 
-                                      (internalLength * internalLength);
-
-                // Calculate new door position based on internal dimensions
-                const newX = internalStart.x + wallUnitX * (relativePosition * internalLength);
-                const newY = internalStart.y + wallUnitY * (relativePosition * internalLength);
-
-                // Calculate new angle
-                const newAngle = Math.atan2(wallDy, wallDx);
-
-                // Calculate new segments
-                const leftSegment = relativePosition * internalLength;
-                const rightSegment = internalLength - (leftSegment + door.width);
-
-                return {
-                    ...door,
-                    x: newX,
-                    y: newY,
-                    angle: newAngle,
-                    leftSegment,
-                    rightSegment
-                };
-            }
-            return door;
-        });
-
-        // Update doors in store if any changes were made
-        if (doors.length !== updatedDoors.length || updatedDoors.some((door, i) => 
-            door.x !== doors[i].x || 
-            door.y !== doors[i].y || 
-            door.angle !== doors[i].angle ||
-            door.leftSegment !== doors[i].leftSegment ||
-            door.rightSegment !== doors[i].rightSegment)) {
-            this.store.commit('doors/updateDoors', updatedDoors);
-        }
-    }
-
-    updateWindowsOnWall(wall, originalStart, originalEnd) {
-        // Find all walls that need their windows updated
-        const wallsToUpdate = new Set();
-        wallsToUpdate.add(wall);
-
-        // Add connected walls that might have windows
-        const startConnectedWalls = this.findWallsConnectedToPoint(wall.start);
-        const endConnectedWalls = this.findWallsConnectedToPoint(wall.end);
-        startConnectedWalls.forEach(w => wallsToUpdate.add(w));
-        endConnectedWalls.forEach(w => wallsToUpdate.add(w));
-
-        // Update windows on all affected walls
-        const windows = this.store.state.windows.windows;
-        const updatedWindows = windows.map(window => {
-            const windowWall = this.walls.find(w => w.id === window.wallId);
-            if (windowWall && wallsToUpdate.has(windowWall)) {
-                // Get connected walls for the window's wall to calculate internal dimensions
-                const wallStartConnections = this.findWallsConnectedToPoint(windowWall.start);
-                const wallEndConnections = this.findWallsConnectedToPoint(windowWall.end);
-
-                // Calculate internal points for the wall with the window
-                const internalPoints = this.calculateInternalPoints(windowWall, wallStartConnections, wallEndConnections);
-                if (!internalPoints) return window;
-
-                const { internalStart, internalEnd } = internalPoints;
-
-                // Calculate internal wall length
-                const internalDx = internalEnd.x - internalStart.x;
-                const internalDy = internalEnd.y - internalStart.y;
-                const internalLength = Math.sqrt(internalDx * internalDx + internalDy * internalDy);
-
-                // Calculate wall direction vector
-                const wallDx = windowWall.end.x - windowWall.start.x;
-                const wallDy = windowWall.end.y - windowWall.start.y;
-                const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
-                const wallUnitX = wallDx / wallLength;
-                const wallUnitY = wallDy / wallLength;
-
-                // Calculate the window's relative position along the internal wall
-                const windowToStartX = window.x - internalStart.x;
-                const windowToStartY = window.y - internalStart.y;
-                const relativePosition = (windowToStartX * internalDx + windowToStartY * internalDy) / 
-                                      (internalLength * internalLength);
-
-                // Ensure window stays within wall bounds
-                let adjustedPosition = relativePosition;
-                if (relativePosition < 0) {
-                    adjustedPosition = 0;
-                } else if (relativePosition + window.width / internalLength > 1) {
-                    adjustedPosition = 1 - window.width / internalLength;
-                }
-
-                // Calculate new window position based on internal dimensions
-                const newX = internalStart.x + wallUnitX * (adjustedPosition * internalLength);
-                const newY = internalStart.y + wallUnitY * (adjustedPosition * internalLength);
-
-                // Calculate new angle based on wall direction
-                const newAngle = Math.atan2(wallDy, wallDx);
-
-                // Calculate new segments
-                const leftSegment = adjustedPosition * internalLength;
-                const rightSegment = internalLength - (leftSegment + window.width);
-
-                return {
-                    ...window,
-                    x: newX,
-                    y: newY,
-                    angle: newAngle,
-                    leftSegment,
-                    rightSegment
-                };
-            }
-            return window;
-        });
-
-        // Update windows in store if any changes were made
-        if (windows.length !== updatedWindows.length || updatedWindows.some((window, i) => 
-            window.x !== windows[i].x || 
-            window.y !== windows[i].y || 
-            window.angle !== windows[i].angle ||
-            window.leftSegment !== windows[i].leftSegment ||
-            window.rightSegment !== windows[i].rightSegment)) {
-            this.store.commit('windows/updateWindows', updatedWindows);
-        }
-    }
-
-    updateSocketsOnWall(wall, originalStart, originalEnd) {
-        // Find all walls that need their sockets updated
-        const wallsToUpdate = new Set();
-        wallsToUpdate.add(wall);
-
-        // Add connected walls that might have sockets
-        const startConnectedWalls = this.findWallsConnectedToPoint(wall.start);
-        const endConnectedWalls = this.findWallsConnectedToPoint(wall.end);
-        startConnectedWalls.forEach(w => wallsToUpdate.add(w));
-        endConnectedWalls.forEach(w => wallsToUpdate.add(w));
-
-        // Update sockets on all affected walls
-        const sockets = this.store.state.sockets.objects;
-        const updatedSockets = sockets.map(socket => {
-            const socketWall = this.walls.find(w => w.id === socket.wallId);
-            if (socketWall && wallsToUpdate.has(socketWall)) {
-                // Get connected walls for the socket's wall to calculate internal dimensions
-                const wallStartConnections = this.findWallsConnectedToPoint(socketWall.start);
-                const wallEndConnections = this.findWallsConnectedToPoint(socketWall.end);
-
-                // Calculate internal points for the wall with the socket
-                const internalPoints = this.calculateInternalPoints(socketWall, wallStartConnections, wallEndConnections);
-                if (!internalPoints) return socket;
-
-                const { internalStart, internalEnd } = internalPoints;
-
-                // Calculate internal wall length and direction
-                const internalDx = internalEnd.x - internalStart.x;
-                const internalDy = internalEnd.y - internalStart.y;
-                const internalLength = Math.sqrt(internalDx * internalDx + internalDy * internalDy);
-
-                // Calculate wall direction vector
-                const wallDx = socketWall.end.x - socketWall.start.x;
-                const wallDy = socketWall.end.y - socketWall.start.y;
-                const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
-                const wallUnitX = wallDx / wallLength;
-                const wallUnitY = wallDy / wallLength;
-
-                // Calculate normal vector (perpendicular to wall)
-                const normalX = -wallDy / wallLength;
-                const normalY = wallDx / wallLength;
-
-                // Calculate the socket's relative position along the internal wall
-                const socketToStartX = socket.x - internalStart.x;
-                const socketToStartY = socket.y - internalStart.y;
-                const relativePosition = (socketToStartX * internalDx + socketToStartY * internalDy) / 
-                                      (internalLength * internalLength);
-
-                // Ensure socket stays within wall bounds
-                let adjustedPosition = relativePosition;
-                if (relativePosition < socket.size/2/internalLength) {
-                    adjustedPosition = socket.size/2/internalLength;
-                } else if (relativePosition > 1 - socket.size/2/internalLength) {
-                    adjustedPosition = 1 - socket.size/2/internalLength;
-                }
-
-                // Calculate new socket position
-                const newX = internalStart.x + wallUnitX * (adjustedPosition * internalLength);
-                const newY = internalStart.y + wallUnitY * (adjustedPosition * internalLength);
-
-                // Calculate wall offset based on which side the socket is on
-                const wallOffset = socket.wallSide * (socket.size / 2);
-
-                // Calculate final socket position with offset from wall
-                const finalX = newX + normalX * wallOffset;
-                const finalY = newY + normalY * wallOffset;
-
-                // Calculate new angle based on wall direction
-                const newAngle = Math.atan2(wallDy, wallDx);
-
-                // Calculate new segments
-                const leftSegment = adjustedPosition * internalLength - socket.size/2;
-                const rightSegment = internalLength - (adjustedPosition * internalLength + socket.size/2);
-
-                return {
-                    ...socket,
-                    x: finalX,
-                    y: finalY,
-                    angle: newAngle,
-                    leftSegment,
-                    rightSegment
-                };
-            }
-            return socket;
-        });
-
-        // Update sockets in store if any changes were made
-        if (sockets.length !== updatedSockets.length || updatedSockets.some((socket, i) => 
-            socket.x !== sockets[i].x || 
-            socket.y !== sockets[i].y || 
-            socket.angle !== sockets[i].angle ||
-            socket.leftSegment !== sockets[i].leftSegment ||
-            socket.rightSegment !== sockets[i].rightSegment)) {
-            this.store.commit('sockets/updateObjects', updatedSockets);
-        }
-    }
-
-    constrainMovement(wall, point) {
-        const isHorizontal = this.isWallMoreHorizontal(wall);
-        const dx = point.x - (wall.start.x + wall.end.x) / 2;
-        const dy = point.y - (wall.start.y + wall.end.y) / 2;
-        
-        // Calculate the constrained movement
-        const movement = {
-            x: isHorizontal ? 0 : dx,
-            y: isHorizontal ? dy : 0
-        };
-
-        // Store original positions
-        const originalStart = { ...wall.start };
-        const originalEnd = { ...wall.end };
-
-        // Check if we're moving from the center point (middle control point)
-        const isCenterMove = this.draggedWall && this.draggedWall.point === 'middle';
-
-        if (isCenterMove) {
-            // Move both endpoints of the wall
-            wall.start.x += movement.x;
-            wall.start.y += movement.y;
-            wall.end.x += movement.x;
-            wall.end.y += movement.y;
-
-            // Find all connected walls at both endpoints
-            const startConnectedWalls = this.findWallsConnectedToPoint(originalStart).filter(w => w.id !== wall.id);
-            const endConnectedWalls = this.findWallsConnectedToPoint(originalEnd).filter(w => w.id !== wall.id);
-
-            // Create shared points for better connection maintenance
-            const startSharedPoint = { x: wall.start.x, y: wall.start.y, connectedWalls: [] };
-            const endSharedPoint = { x: wall.end.x, y: wall.end.y, connectedWalls: [] };
-
-            // Update connected walls at start point
-            startConnectedWalls.forEach(connectedWall => {
-                const originalConnectedStart = { ...connectedWall.start };
-                const originalConnectedEnd = { ...connectedWall.end };
-                
-                if (this.distance(connectedWall.start, originalStart) < 1) {
-                    connectedWall.start = startSharedPoint;
-                    startSharedPoint.connectedWalls.push({ wall: connectedWall, isStart: true });
-                } else if (this.distance(connectedWall.end, originalStart) < 1) {
-                    connectedWall.end = startSharedPoint;
-                    startSharedPoint.connectedWalls.push({ wall: connectedWall, isStart: false });
-                }
-                
-                // Update doors, windows, and sockets on the connected wall
-                this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
-                this.updateWindowsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
-                this.updateSocketsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
-            });
-
-            // Update connected walls at end point
-            endConnectedWalls.forEach(connectedWall => {
-                const originalConnectedStart = { ...connectedWall.start };
-                const originalConnectedEnd = { ...connectedWall.end };
-                
-                if (this.distance(connectedWall.start, originalEnd) < 1) {
-                    connectedWall.start = endSharedPoint;
-                    endSharedPoint.connectedWalls.push({ wall: connectedWall, isStart: true });
-                } else if (this.distance(connectedWall.end, originalEnd) < 1) {
-                    connectedWall.end = endSharedPoint;
-                    endSharedPoint.connectedWalls.push({ wall: connectedWall, isStart: false });
-                }
-                
-                // Update doors, windows, and sockets on the connected wall
-                this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
-                this.updateWindowsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
-                this.updateSocketsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
-            });
-
-            // Update the moved wall's connections
-            wall.start = startSharedPoint;
-            wall.end = endSharedPoint;
-            startSharedPoint.connectedWalls.push({ wall, isStart: true });
-            endSharedPoint.connectedWalls.push({ wall, isStart: false });
-
-            // Update doors, windows, and sockets on the moved wall
-            this.updateDoorsOnWall(wall, originalStart, originalEnd);
-            this.updateWindowsOnWall(wall, originalStart, originalEnd);
-            this.updateSocketsOnWall(wall, originalStart, originalEnd);
-
-            // Update sockets in store immediately
-            const wallsToSave = this.walls.map(w => ({
-                id: w.id,
-                start: { x: w.start.x, y: w.start.y },
-                end: { x: w.end.x, y: w.end.y },
-                thickness: w.thickness * 10
-            }));
-            this.store.dispatch('sockets/updateSocketsOnWallChange', {
-                walls: wallsToSave,
-                originalWalls: this.walls
-            });
+        // Determine which end of the new wall to connect
+        if (isEnd) {
+            newWall.end = sharedPoint;
         } else {
-            // Moving from an endpoint
-            const sharedPoint = this.draggedWall.sharedPoint;
-            sharedPoint.x = point.x;
-            sharedPoint.y = point.y;
-
-            // Update all walls connected to this point
-            sharedPoint.connectedWalls.forEach(connection => {
-                const connectedWall = connection.wall;
-                const originalConnectedStart = { ...connectedWall.start };
-                const originalConnectedEnd = { ...connectedWall.end };
-
-                if (connection.isStart) {
-                    connectedWall.start = sharedPoint;
-                } else {
-                    connectedWall.end = sharedPoint;
-                }
-
-                // Update doors, windows, and sockets on each connected wall
-                this.updateDoorsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
-                this.updateWindowsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
-                this.updateSocketsOnWall(connectedWall, originalConnectedStart, originalConnectedEnd);
-            });
-
-            // Update sockets in store immediately
-            const wallsToSave = this.walls.map(w => ({
-                id: w.id,
-                start: { x: w.start.x, y: w.start.y },
-                end: { x: w.end.x, y: w.end.y },
-                thickness: w.thickness * 10
-            }));
-            this.store.dispatch('sockets/updateSocketsOnWallChange', {
-                walls: wallsToSave,
-                originalWalls: this.walls
-            });
+            newWall.start = sharedPoint;
         }
 
-        return movement;
+        // Update the old wall's connection point
+        if (connection.isEnd) {
+            oldWall.end = sharedPoint;
+        } else {
+            oldWall.start = sharedPoint;
+        }
+
+        return null; // No split wall needed with shared points
     }
 
+    // Add these helper methods after the existing helper methods
     isWallMoreHorizontal(wall) {
         const dx = Math.abs(wall.end.x - wall.start.x);
         const dy = Math.abs(wall.end.y - wall.start.y);
         return dx >= dy;
+    }
+
+    constrainMovement(wall, point) {
+        // Calculate wall orientation
+        const dx = Math.abs(wall.end.x - wall.start.x);
+        const dy = Math.abs(wall.end.y - wall.start.y);
+        const isHorizontal = dx > dy;
+
+        // Calculate center point of wall
+        const centerX = (wall.start.x + wall.end.x) / 2;
+        const centerY = (wall.start.y + wall.end.y) / 2;
+        
+        // Calculate movement vector
+        const moveX = point.x - centerX;
+        const moveY = point.y - centerY;
+
+        // Constrain movement based on wall orientation:
+        // - Horizontal walls can only move vertically
+        // - Vertical walls can only move horizontally
+        const movement = {
+            x: isHorizontal ? 0 : moveX,
+            y: isHorizontal ? moveY : 0
+        };
+
+        return movement;
     }
 
     findWallsConnectedToPoint(point) {
@@ -2633,6 +2022,44 @@ export default class WallDrawingManager {
             this.distance(wall.start, point) < 1 || 
             this.distance(wall.end, point) < 1
         );
+    }
+
+    // Calculate rectangle points for wall rendering
+    calculateWallRectangle(start, end, thickness) {
+        // Calculate wall vector
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+
+        // Return null if wall has no length
+        if (length === 0) return null;
+
+        // Calculate normalized perpendicular vector
+        const perpX = -dy / length;
+        const perpY = dx / length;
+
+        // Calculate half thickness
+        const halfThickness = thickness / 2;
+
+        // Calculate the four corners of the wall rectangle
+        return [
+            {
+                x: start.x + perpX * halfThickness,
+                y: start.y + perpY * halfThickness
+            },
+            {
+                x: end.x + perpX * halfThickness,
+                y: end.y + perpY * halfThickness
+            },
+            {
+                x: end.x - perpX * halfThickness,
+                y: end.y - perpY * halfThickness
+            },
+            {
+                x: start.x - perpX * halfThickness,
+                y: start.y - perpY * halfThickness
+            }
+        ];
     }
 
     calculateWallAngle(wall1, wall2, sharedPoint) {
@@ -2646,7 +2073,7 @@ export default class WallDrawingManager {
                     x: wall1.end.x - wall1.start.x,
                     y: wall1.end.y - wall1.start.y
                 };
-        } else {
+            } else {
                 vec1 = {
                     x: wall1.start.x - wall1.end.x,
                     y: wall1.start.y - wall1.end.y
@@ -2777,7 +2204,7 @@ export default class WallDrawingManager {
         this.ctx.beginPath();
         this.ctx.arc(sharedPoint.x, sharedPoint.y, radius, 
             Math.min(angle1, angle2), Math.max(angle1, angle2));
-        this.ctx.strokeStyle = '#FFA500';
+        this.ctx.strokeStyle = '#2196F3';
         this.ctx.stroke();
         
         // Draw background for text
@@ -2795,495 +2222,615 @@ export default class WallDrawingManager {
         );
         
         // Draw the angle text
-        this.ctx.fillStyle = '#FFA500';
+        this.ctx.fillStyle = '#2196F3';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(text, textX, textY);
     }
 
-    updateDoorPreview(point) {
-        const doorConfig = this.store.state.doors.currentConfig;
-        
-        // Reset door preview state and restore wall dimensions
-        if (this.doorMagnetWall) {
-            this.doorMagnetWall.hideDimension = false;
-        }
-        this.doorPreview = null;
-        this.doorMagnetWall = null;
-        this.doorMagnetPoint = null;
+    // Helper method to check if a point is near another point
+    isNearPoint(point1, point2, customThreshold = null) {
+        const dx = point1.x - point2.x;
+        const dy = point1.y - point2.y;
+        const threshold = (customThreshold || 5) / this.transformManager.zoom;
+        return Math.sqrt(dx * dx + dy * dy) < threshold;
+    }
 
-        // Find suitable walls for door placement
-        for (const wall of this.walls) {
-            // Find connected walls at both ends to calculate internal dimensions
-            const startConnections = this.findWallsConnectedToPoint(wall.start);
-            const endConnections = this.findWallsConnectedToPoint(wall.end);
+    // Move the start point of a wall
+    moveWallStart(wall, newPoint) {
+        // Find all walls that share this point
+        const connectedWalls = this.walls.filter(w => 
+            w.id !== wall.id && (
+                this.distance(w.start, wall.start) < 1 ||
+                this.distance(w.end, wall.start) < 1
+            )
+        );
 
-            // Calculate internal points accounting for wall thickness
-            const internalPoints = this.calculateInternalPoints(wall, startConnections, endConnections);
-            if (!internalPoints) continue;
+        // Create a shared point object to maintain connection
+        const sharedPoint = {
+            x: newPoint.x,
+            y: newPoint.y
+        };
 
-            const { internalStart, internalEnd } = internalPoints;
+        // Store original position for calculating movement vector
+        const originalPoint = { ...wall.start };
 
-            // Calculate internal wall length
-            const internalLength = Math.sqrt(
-                Math.pow(internalEnd.x - internalStart.x, 2) + 
-                Math.pow(internalEnd.y - internalStart.y, 2)
+        // Update the active wall's start point
+        wall.start = sharedPoint;
+
+        // Update all connected walls
+        connectedWalls.forEach(connectedWall => {
+            if (this.distance(connectedWall.start, originalPoint) < 1) {
+                // If connected at start, move start point
+                connectedWall.start = sharedPoint;
+            } else if (this.distance(connectedWall.end, originalPoint) < 1) {
+                // If connected at end, move end point
+                connectedWall.end = sharedPoint;
+            }
+
+            // Update any walls connected to the other end of the connected wall
+            const otherEndConnections = this.walls.filter(w =>
+                w.id !== connectedWall.id && w.id !== wall.id && (
+                    (this.distance(w.start, connectedWall.start) < 1 && !this.distance(connectedWall.start, sharedPoint) < 1) ||
+                    (this.distance(w.start, connectedWall.end) < 1 && !this.distance(connectedWall.end, sharedPoint) < 1) ||
+                    (this.distance(w.end, connectedWall.start) < 1 && !this.distance(connectedWall.start, sharedPoint) < 1) ||
+                    (this.distance(w.end, connectedWall.end) < 1 && !this.distance(connectedWall.end, sharedPoint) < 1)
+                )
             );
 
-            // Skip if internal wall length is too short for the door
-            if (internalLength < doorConfig.width) continue;
-
-            // Calculate distance from point to wall
-            const magnetDistance = this.distanceToLine(point, wall.start, wall.end);
-            if (magnetDistance < 20) { // Magnetization threshold
-                // Calculate the projection point on the wall
-                const projection = this.projectPointOnLine(point, wall.start, wall.end);
-                
-                // Calculate wall direction vector
-                const wallDx = wall.end.x - wall.start.x;
-                const wallDy = wall.end.y - wall.start.y;
-                const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
-                const wallUnitX = wallDx / wallLength;
-                const wallUnitY = wallDy / wallLength;
-
-                // Calculate internal wall direction
-                const internalDx = internalEnd.x - internalStart.x;
-                const internalDy = internalEnd.y - internalStart.y;
-                const internalUnitX = internalDx / internalLength;
-                const internalUnitY = internalDy / internalLength;
-
-                // Calculate distance from internal start to projection
-                const projToStartX = projection.x - internalStart.x;
-                const projToStartY = projection.y - internalStart.y;
-                const distanceFromInternalStart = (projToStartX * internalUnitX + projToStartY * internalUnitY);
-
-                // Move projection point back by half door width to center the door
-                const doorCenter = {
-                    x: projection.x - (doorConfig.width / 2) * wallUnitX,
-                    y: projection.y - (doorConfig.width / 2) * wallUnitY
-                };
-
-                // Calculate distances for centered door position
-                const centerToStartX = doorCenter.x - internalStart.x;
-                const centerToStartY = doorCenter.y - internalStart.y;
-                const centeredDistanceFromStart = (centerToStartX * internalUnitX + centerToStartY * internalUnitY);
-                
-                // Calculate distance from door end to internal wall end
-                const distanceFromEnd = internalLength - (centeredDistanceFromStart + doorConfig.width);
-
-                // Ensure door fits within internal wall length
-                if (centeredDistanceFromStart + doorConfig.width <= internalLength) {
-                    // Ensure door doesn't extend beyond internal dimensions
-                    let adjustedDoorCenter = { ...doorCenter };
-                    let adjustedLeftSegment = centeredDistanceFromStart;
-                    let adjustedRightSegment = distanceFromEnd;
-
-                    // If door would extend beyond internal start
-                    if (centeredDistanceFromStart < 0) {
-                        adjustedDoorCenter = {
-                            x: internalStart.x + (doorConfig.width / 2) * wallUnitX,
-                            y: internalStart.y + (doorConfig.width / 2) * wallUnitY
-                        };
-                        adjustedLeftSegment = 0;
-                        adjustedRightSegment = internalLength - doorConfig.width;
-                    }
-                    // If door would extend beyond internal end
-                    else if (centeredDistanceFromStart + doorConfig.width > internalLength) {
-                        adjustedDoorCenter = {
-                            x: internalEnd.x - (doorConfig.width / 2) * wallUnitX,
-                            y: internalEnd.y - (doorConfig.width / 2) * wallUnitY
-                        };
-                        adjustedLeftSegment = internalLength - doorConfig.width;
-                        adjustedRightSegment = 0;
-                    }
-
-                    // Hide wall dimension only for the wall we're adding door to
-                    wall.hideDimension = true;
-                    this.doorMagnetWall = wall;
-                    this.doorMagnetPoint = adjustedDoorCenter;
-                    
-                    // Calculate wall angle
-                    const wallAngle = Math.atan2(wallDy, wallDx);
-
-                    // Create door preview aligned with the wall
-                    this.doorPreview = {
-                        x: adjustedDoorCenter.x,
-                        y: adjustedDoorCenter.y,
-                        width: doorConfig.width,
-                        thickness: wall.thickness,
-                        angle: wallAngle,
-                        wall: wall,
-                        leftSegment: adjustedLeftSegment,
-                        rightSegment: adjustedRightSegment,
-                        internalStart,
-                        internalEnd
-                    };
-                    break;
+            otherEndConnections.forEach(connection => {
+                // Maintain relative positions of other connected walls
+                if (this.distance(connection.start, connectedWall.start) < 1) {
+                    connection.start = connectedWall.start;
                 }
-            }
-        }
-    }
-
-    drawDoorPreview() {
-        if (!this.doorPreview) return;
-
-        const { x, y, width, thickness, angle = 0, wall, leftSegment, rightSegment } = this.doorPreview;
-
-        this.ctx.save();
-        this.ctx.translate(x, y);
-        this.ctx.rotate(angle);
-
-        // Draw door rectangle
-        this.ctx.fillStyle = '#000000';
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
-
-        this.ctx.beginPath();
-        this.ctx.rect(0, -thickness/2, width, thickness);
-        this.ctx.fill();
-        this.ctx.stroke();
-
-        // Draw opening arc and connecting line
-        this.ctx.beginPath();
-        this.ctx.strokeStyle = '#000000';
-        
-        const openAngle = this.store.state.doors.currentConfig.openAngle * (Math.PI / 180);
-        if (this.store.state.doors.currentConfig.openDirection === 'left') {
-            // Draw arc from left edge
-            this.ctx.arc(0, 0, width, 0, openAngle);
-            // Add perpendicular line from left edge (hinge side) to arc height
-            const arcEndY = width * Math.sin(openAngle);
-            this.ctx.moveTo(0, 0);
-            this.ctx.lineTo(0, arcEndY);
-        } else {
-            // Draw arc from right edge
-            this.ctx.arc(width, 0, width, Math.PI, Math.PI - openAngle, true);
-            // Add perpendicular line from right edge (hinge side) to arc height
-            const arcEndY = width * Math.sin(Math.PI - openAngle);
-            this.ctx.moveTo(width, 0);
-            this.ctx.lineTo(width, arcEndY);
-        }
-        
-        this.ctx.stroke();
-
-        // Draw dimensions for door preview
-        if (wall) {
-            // Calculate wall direction vector
-            const wallDx = wall.end.x - wall.start.x;
-            const wallDy = wall.end.y - wall.start.y;
-            const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
-            const wallUnitX = wallDx / wallLength;
-            const wallUnitY = wallDy / wallLength;
-
-            // Calculate normal vector for offset direction
-            const nx = -wallDy / wallLength;
-            const ny = wallDx / wallLength;
-
-            // Offset for dimension line
-            const offset = thickness + 20;
-
-            // Draw extension lines
-            this.ctx.strokeStyle = '#666';
-            this.ctx.lineWidth = 1;
-            this.ctx.setLineDash([4, 4]);
-
-            // Draw extension lines for segments
-            this.drawDoorSegmentDimensions(leftSegment, rightSegment, width, thickness);
-        }
-
-        this.ctx.restore();
-    }
-
-    handleClick(point) {
-        console.log('Handle click called with point:', point);
-        console.log('Current tool:', this.store.state.project.currentTool);
-        
-        if (this.store.state.project.currentTool === 'wall') {
-            this.handleWallClick(point);
-        } else if (this.store.state.project.currentTool === 'door' && this.doorPreview) {
-            console.log('Door preview exists:', this.doorPreview);
-            // Add the door if we have a valid preview
-            const { x, y, width, thickness, angle, wall, leftSegment, rightSegment } = this.doorPreview;
-            
-            console.log('Adding door with config:', {
-                x, y, width, thickness, angle, wallId: wall.id,
-                leftSegment, rightSegment,
-                openDirection: this.store.state.doors.currentConfig.openDirection,
-                openAngle: this.store.state.doors.currentConfig.openAngle
+                if (this.distance(connection.start, connectedWall.end) < 1) {
+                    connection.start = connectedWall.end;
+                }
+                if (this.distance(connection.end, connectedWall.start) < 1) {
+                    connection.end = connectedWall.start;
+                }
+                if (this.distance(connection.end, connectedWall.end) < 1) {
+                    connection.end = connectedWall.end;
+                }
             });
-
-            this.store.commit('doors/addDoor', {
-                x,
-                y,
-                width,
-                thickness,
-                angle,
-                wallId: wall.id,
-                leftSegment,
-                rightSegment,
-                openDirection: this.store.state.doors.currentConfig.openDirection,
-                openAngle: this.store.state.doors.currentConfig.openAngle
-            });
-
-            // Reset preview after placing the door
-            this.doorPreview = null;
-            this.doorMagnetWall = null;
-            this.doorMagnetPoint = null;
-            
-            // Redraw the canvas
-            this.draw();
-            console.log('Door added and canvas redrawn');
-        } else if (this.store.state.project.currentTool === 'window' && this.windowManager.windowPreview) {
-            console.log('Window preview exists:', this.windowManager.windowPreview);
-            // Add the window if we have a valid preview
-            const { x, y, width, thickness, angle, wall, leftSegment, rightSegment } = this.windowManager.windowPreview;
-            
-            console.log('Adding window with config:', {
-                x, y, width, thickness, angle, wallId: wall.id,
-                leftSegment, rightSegment
-            });
-
-            this.store.commit('windows/addWindow', {
-                x,
-                y,
-                width,
-                thickness,
-                angle,
-                wallId: wall.id,
-                leftSegment,
-                rightSegment
-            });
-
-            // Reset preview after placing the window
-            this.windowManager.windowPreview = null;
-            this.windowManager.windowMagnetWall = null;
-            this.windowManager.windowMagnetPoint = null;
-            
-            // Redraw the canvas
-            this.draw();
-            console.log('Window added and canvas redrawn');
-        } else {
-            console.log('Click not handled - Tool:', this.store.state.project.currentTool, 'Door preview:', !!this.doorPreview, 'Window preview:', !!this.windowManager.windowPreview);
-        }
-    }
-
-    drawGrid() {
-        const width = this.canvas.width;
-        const height = this.canvas.height;
-
-        // Small grid lines (10cm)
-        this.ctx.strokeStyle = '#eee';
-        this.ctx.lineWidth = 1.5;
-
-        // Draw vertical small grid lines
-        for (let x = 0; x < width; x += GRID_SIZE) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, height);
-            this.ctx.stroke();
-        }
-
-        // Draw horizontal small grid lines
-        for (let y = 0; y < height; y += GRID_SIZE) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, y);
-            this.ctx.lineTo(width, y);
-            this.ctx.stroke();
-        }
-
-        // Draw larger grid lines (100cm) with darker color
-        const LARGE_GRID_SIZE = GRID_SIZE * 10;
-        this.ctx.strokeStyle = '#aaa';
-        this.ctx.lineWidth = 1;
-
-        // Draw vertical large grid lines
-        for (let x = 0; x < width; x += LARGE_GRID_SIZE) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, height);
-            this.ctx.stroke();
-        }
-
-        // Draw horizontal large grid lines
-        for (let y = 0; y < height; y += LARGE_GRID_SIZE) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, y);
-            this.ctx.lineTo(width, y);
-            this.ctx.stroke();
-        }
-    }
-
-    drawRooms() {
-        this.rooms.forEach(room => {
-            if (!room.path || room.path.length < 3) return;
-
-            // Fill the room with color only
-            this.ctx.fillStyle = room.color;
-            this.ctx.beginPath();
-            this.ctx.moveTo(room.path[0].x, room.path[0].y);
-
-            for (let i = 1; i < room.path.length; i++) {
-                this.ctx.lineTo(room.path[i].x, room.path[i].y);
-            }
-
-            this.ctx.closePath();
-            this.ctx.fill();
         });
+
+        // Detect and update rooms after moving walls
+        this.detectRooms();
     }
 
-    updateCursor(point) {
-        if (!this.draggedWall && !this.isPanning && !this.store.state.project.currentTool) {
-            if (this.selectedWall) {
-                const controlPoints = this.getWallControlPoints(this.selectedWall);
-                const clickRadius = 10;
-                
-                if (this.distance(point, controlPoints.start) < clickRadius ||
-                    this.distance(point, controlPoints.end) < clickRadius) {
-                    this.canvas.style.cursor = 'pointer';
-                } else if (this.distance(point, controlPoints.middle) < clickRadius) {
-                    this.canvas.style.cursor = 'move';
-                } else {
-                    const wallUnderCursor = this.getWallAtPoint(point);
-                    this.canvas.style.cursor = wallUnderCursor ? 'pointer' : 'default';
+    // Move the end point of a wall
+    moveWallEnd(wall, newPoint) {
+        // Find all walls that share this point
+        const connectedWalls = this.walls.filter(w => 
+            w.id !== wall.id && (
+                this.distance(w.start, wall.end) < 1 ||
+                this.distance(w.end, wall.end) < 1
+            )
+        );
+
+        // Create a shared point object to maintain connection
+        const sharedPoint = {
+            x: newPoint.x,
+            y: newPoint.y
+        };
+
+        // Store original position for calculating movement vector
+        const originalPoint = { ...wall.end };
+
+        // Update the active wall's end point
+        wall.end = sharedPoint;
+
+        // Update all connected walls
+        connectedWalls.forEach(connectedWall => {
+            if (this.distance(connectedWall.start, originalPoint) < 1) {
+                // If connected at start, move start point
+                connectedWall.start = sharedPoint;
+            } else if (this.distance(connectedWall.end, originalPoint) < 1) {
+                // If connected at end, move end point
+                connectedWall.end = sharedPoint;
+            }
+
+            // Update any walls connected to the other end of the connected wall
+            const otherEndConnections = this.walls.filter(w =>
+                w.id !== connectedWall.id && w.id !== wall.id && (
+                    (this.distance(w.start, connectedWall.start) < 1 && !this.distance(connectedWall.start, sharedPoint) < 1) ||
+                    (this.distance(w.start, connectedWall.end) < 1 && !this.distance(connectedWall.end, sharedPoint) < 1) ||
+                    (this.distance(w.end, connectedWall.start) < 1 && !this.distance(connectedWall.start, sharedPoint) < 1) ||
+                    (this.distance(w.end, connectedWall.end) < 1 && !this.distance(connectedWall.end, sharedPoint) < 1)
+                )
+            );
+
+            otherEndConnections.forEach(connection => {
+                // Maintain relative positions of other connected walls
+                if (this.distance(connection.start, connectedWall.start) < 1) {
+                    connection.start = connectedWall.start;
                 }
-            } else {
-                const wallUnderCursor = this.getWallAtPoint(point);
-                this.canvas.style.cursor = wallUnderCursor ? 'pointer' : 'default';
+                if (this.distance(connection.start, connectedWall.end) < 1) {
+                    connection.start = connectedWall.end;
+                }
+                if (this.distance(connection.end, connectedWall.start) < 1) {
+                    connection.end = connectedWall.start;
+                }
+                if (this.distance(connection.end, connectedWall.end) < 1) {
+                    connection.end = connectedWall.end;
+                }
+            });
+        });
+
+        // Detect and update rooms after moving walls
+        this.detectRooms();
+    }
+
+    // Move the entire wall
+    moveEntireWall(wall, point) {
+        // Apply constrained movement
+        const movement = this.constrainMovement(wall, point);
+
+        // Store original positions
+        const originalStart = { ...wall.start };
+        const originalEnd = { ...wall.end };
+
+        // Find all connected walls before moving
+        const connectedWalls = this.findAllConnectedWalls(wall);
+
+        // Create new shared points for the moved positions
+        const newStartPoint = {
+            x: wall.start.x + movement.x,
+            y: wall.start.y + movement.y
+        };
+        const newEndPoint = {
+            x: wall.end.x + movement.x,
+            y: wall.end.y + movement.y
+        };
+
+        // Update the moving wall's points
+        wall.start = newStartPoint;
+        wall.end = newEndPoint;
+
+        // Update all connected walls to use the new shared points
+        connectedWalls.forEach(connectedWall => {
+            if (this.distance(connectedWall.start, originalStart) < 1) {
+                connectedWall.start = newStartPoint;
+            }
+            if (this.distance(connectedWall.end, originalStart) < 1) {
+                connectedWall.end = newStartPoint;
+            }
+            if (this.distance(connectedWall.start, originalEnd) < 1) {
+                connectedWall.start = newEndPoint;
+            }
+            if (this.distance(connectedWall.end, originalEnd) < 1) {
+                connectedWall.end = newEndPoint;
+            }
+        });
+
+        // After moving, check if any walls need to be split
+        const wallsToCheck = this.walls.filter(w => 
+            w.id !== wall.id && !connectedWalls.includes(w)
+        );
+
+        for (const existingWall of wallsToCheck) {
+            const intersection = this.findWallIntersectionPoint(wall, existingWall);
+            if (intersection) {
+                // Only split if this is a new intersection
+                const isNewIntersection = !connectedWalls.some(w => 
+                    this.distance(w.start, intersection) < 1 || 
+                    this.distance(w.end, intersection) < 1
+                );
+
+                if (isNewIntersection) {
+                    this.splitWallAtPoint(existingWall, intersection, wall);
+                }
             }
         }
+
+        // Update all connections again after any new splits
+        const allConnectedWalls = this.findAllConnectedWalls(wall);
+        this.updateSharedPoints(wall, allConnectedWalls);
     }
 
-    getDoorAtPoint(point) {
-        const doors = this.store.state.doors.doors;
-        const clickThreshold = 10; // Pixels
+    // Helper method to find all walls connected at a point
+    findConnectedWallsAtPoint(point) {
+        return this.walls.filter(wall =>
+            this.distance(wall.start, point) < 1 ||
+            this.distance(wall.end, point) < 1
+        );
+    }
 
-        for (const door of doors) {
-            // Transform the click point relative to the door's coordinate system
-            const dx = point.x - door.x;
-            const dy = point.y - door.y;
-            
-            // Rotate point to align with door's coordinate system
-            const rotatedX = dx * Math.cos(-door.angle) - dy * Math.sin(-door.angle);
-            const rotatedY = dx * Math.sin(-door.angle) + dy * Math.cos(-door.angle);
+    // Add new method to check wall alignment
+    checkWallAlignment(startPoint, endPoint) {
+        if (!startPoint || !endPoint) return null;
 
-            // Check if point is within door bounds (including some padding for easier selection)
-            if (rotatedX >= -clickThreshold && 
-                rotatedX <= door.width + clickThreshold && 
-                rotatedY >= -door.thickness/2 - clickThreshold && 
-                rotatedY <= door.thickness/2 + clickThreshold) {
-                return door;
+        const dx = endPoint.x - startPoint.x;
+        const dy = endPoint.y - startPoint.y;
+        const angle = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+
+        // Check alignment with predefined angles
+        for (const alignmentAngle of ALIGNMENT_ANGLES) {
+            if (Math.abs(angle - alignmentAngle) < ALIGNMENT_SNAP_THRESHOLD) {
+                // Calculate the aligned end point
+                const length = Math.sqrt(dx * dx + dy * dy);
+                const alignedAngle = alignmentAngle * Math.PI / 180;
+                return {
+                    angle: alignmentAngle,
+                    snappedPoint: {
+                        x: startPoint.x + length * Math.cos(alignedAngle),
+                        y: startPoint.y + length * Math.sin(alignedAngle)
+                    }
+                };
             }
         }
 
         return null;
     }
 
-    // Add new method for wall alignment
-    alignWallToNearestAngle(startPoint, endPoint) {
-        const dx = endPoint.x - startPoint.x;
-        const dy = endPoint.y - startPoint.y;
-        const length = Math.sqrt(dx * dx + dy * dy);
+    // Add helper method to check if a point is under the mouse
+    isPointUnderMouse(point) {
+        if (!this.currentPoint) return false;
+        return this.isNearPoint(this.currentPoint, point, Math.max(
+            CONTROL_POINT_HIT_AREA.END,
+            CONTROL_POINT_HIT_AREA.MIDDLE
+        ));
+    }
+
+    // New method to get grid snap indicators
+    getGridSnapIndicators(point) {
+        const snapDistance = 5; // Pixels within which to show snap indicators
+        const nearestGridX = Math.round(point.x / GRID_SIZE) * GRID_SIZE;
+        const nearestGridY = Math.round(point.y / GRID_SIZE) * GRID_SIZE;
         
-        if (length === 0) return endPoint;
+        return {
+            showVertical: Math.abs(point.x - nearestGridX) < snapDistance / this.zoom,
+            showHorizontal: Math.abs(point.y - nearestGridY) < snapDistance / this.zoom,
+            gridX: nearestGridX,
+            gridY: nearestGridY
+        };
+    }
 
-        // Calculate current angle in degrees (0-360)
-        let angle = Math.atan2(dy, dx) * 180 / Math.PI;
-        if (angle < 0) angle += 360;
+    calculateInternalRoomArea(room) {
+        if (!room.path || room.path.length < 3) return 0;
 
-        // Define snap angles (0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°)
-        const snapAngles = [0, 45, 90, 135, 180, 225, 270, 315];
-        const SNAP_THRESHOLD = 10; // Degrees
-
-        // Find the closest snap angle
-        let closestAngle = angle;
-        let minDiff = SNAP_THRESHOLD;
-
-        for (const snapAngle of snapAngles) {
-            const diff = Math.min(
-                Math.abs(angle - snapAngle),
-                Math.abs(angle - (snapAngle + 360))
+        // Get all walls that form this room's boundary
+        const roomWalls = [];
+        for (let i = 0; i < room.path.length; i++) {
+            const point1 = room.path[i];
+            const point2 = room.path[(i + 1) % room.path.length];
+            
+            // Find the wall that connects these points
+            const wall = this.walls.find(w => 
+                (this.distance(w.start, point1) < 1 && this.distance(w.end, point2) < 1) ||
+                (this.distance(w.start, point2) < 1 && this.distance(w.end, point1) < 1)
             );
             
-            if (diff < minDiff) {
-                closestAngle = snapAngle;
-                minDiff = diff;
+            if (wall) {
+                roomWalls.push({
+                    wall,
+                    startPoint: point1,
+                    endPoint: point2
+                });
             }
         }
 
-        // If we're close enough to a snap angle, align the wall
-        if (minDiff < SNAP_THRESHOLD) {
-            // Convert angle back to radians
-            const alignedAngle = closestAngle * Math.PI / 180;
+        // Calculate internal points considering wall thickness
+        const internalPoints = [];
+        for (let i = 0; i < roomWalls.length; i++) {
+            const currentWallInfo = roomWalls[i];
+            const nextWallInfo = roomWalls[(i + 1) % roomWalls.length];
+            const prevWallInfo = roomWalls[(i - 1 + roomWalls.length) % roomWalls.length];
+
+            const currentWall = currentWallInfo.wall;
+            const nextWall = nextWallInfo.wall;
+            const prevWall = prevWallInfo.wall;
+
+            // Calculate vectors for current wall
+            const isCurrentWallReversed = this.distance(currentWall.end, currentWallInfo.endPoint) < 1;
+            const currentVector = {
+                x: isCurrentWallReversed ? 
+                    currentWall.start.x - currentWall.end.x :
+                    currentWall.end.x - currentWall.start.x,
+                y: isCurrentWallReversed ? 
+                    currentWall.start.y - currentWall.end.y :
+                    currentWall.end.y - currentWall.start.y
+            };
+            const currentLength = Math.sqrt(currentVector.x * currentVector.x + currentVector.y * currentVector.y);
+            const currentNormal = {
+                x: -currentVector.y / currentLength,
+                y: currentVector.x / currentLength
+            };
+
+            // Calculate vectors for next wall
+            const isNextWallReversed = this.distance(nextWall.end, nextWallInfo.endPoint) < 1;
+            const nextVector = {
+                x: isNextWallReversed ? 
+                    nextWall.start.x - nextWall.end.x :
+                    nextWall.end.x - nextWall.start.x,
+                y: isNextWallReversed ? 
+                    nextWall.start.y - nextWall.end.y :
+                    nextWall.end.y - nextWall.start.y
+            };
+            const nextLength = Math.sqrt(nextVector.x * nextVector.x + nextVector.y * nextVector.y);
+            const nextNormal = {
+                x: -nextVector.y / nextLength,
+                y: nextVector.x / nextLength
+            };
+
+            // Calculate the corner point
+            const cornerPoint = currentWallInfo.endPoint;
             
-            // Calculate new endpoint
+            // Determine if normals point inside the room
+            const center = this.calculatePolygonCentroid(room.path);
+            const toCenter = {
+                x: center.x - cornerPoint.x,
+                y: center.y - cornerPoint.y
+            };
+
+            // Ensure normals point inside
+            if (currentNormal.x * toCenter.x + currentNormal.y * toCenter.y < 0) {
+                currentNormal.x = -currentNormal.x;
+                currentNormal.y = -currentNormal.y;
+            }
+            if (nextNormal.x * toCenter.x + nextNormal.y * toCenter.y < 0) {
+                nextNormal.x = -nextNormal.x;
+                nextNormal.y = -nextNormal.y;
+            }
+
+            // Calculate the internal corner point
+            const internalCorner = this.calculateInternalCorner(
+                cornerPoint,
+                currentNormal,
+                currentWall.thickness / 2,
+                nextNormal,
+                nextWall.thickness / 2
+            );
+
+            internalPoints.push(internalCorner);
+        }
+
+        // Calculate area of the internal polygon
+        let area = 0;
+        for (let i = 0; i < internalPoints.length; i++) {
+            const j = (i + 1) % internalPoints.length;
+            area += internalPoints[i].x * internalPoints[j].y;
+            area -= internalPoints[j].x * internalPoints[i].y;
+        }
+
+        return Math.abs(area) / 2;
+    }
+
+    calculateInternalCorner(corner, normal1, thickness1, normal2, thickness2) {
+        // Calculate offset points along each wall
+        const offset1 = {
+            x: corner.x + normal1.x * thickness1,
+            y: corner.y + normal1.y * thickness1
+        };
+        const offset2 = {
+            x: corner.x + normal2.x * thickness2,
+            y: corner.y + normal2.y * thickness2
+        };
+
+        // Calculate the intersection of the offset lines
+        const dir1 = { x: -normal1.y, y: normal1.x };
+        const dir2 = { x: -normal2.y, y: normal2.x };
+
+        // Parametric intersection calculation
+        const denominator = dir1.x * dir2.y - dir1.y * dir2.x;
+        if (Math.abs(denominator) < 0.001) {
+            // Lines are parallel, return midpoint
             return {
-                x: startPoint.x + length * Math.cos(alignedAngle),
-                y: startPoint.y + length * Math.sin(alignedAngle)
+                x: (offset1.x + offset2.x) / 2,
+                y: (offset1.y + offset2.y) / 2
             };
         }
 
-        return endPoint;
+        const t = ((offset2.x - offset1.x) * dir2.y - (offset2.y - offset1.y) * dir2.x) / denominator;
+
+        return {
+            x: offset1.x + dir1.x * t,
+            y: offset1.y + dir1.y * t
+        };
     }
 
-    // Add new method to draw alignment indicators
-    drawAlignmentIndicator(startPoint, endPoint, alignedPoint) {
-        if (!alignedPoint || (endPoint.x === alignedPoint.x && endPoint.y === alignedPoint.y)) return;
+    // Add new method to split a wall at a given point
+    splitWallAtPoint(wall, intersectionPoint, dividingWall) {
+        // Calculate the wall vector
+        const wallVector = {
+            x: wall.end.x - wall.start.x,
+            y: wall.end.y - wall.start.y
+        };
+        const length = Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y);
+        const unitVector = {
+            x: wallVector.x / length,
+            y: wallVector.y / length
+        };
 
-        // Draw the alignment line
-        this.ctx.save();
-        this.ctx.strokeStyle = 'rgba(51, 102, 204, 0.5)';
-        this.ctx.lineWidth = 1;
-        this.ctx.setLineDash([5, 3]);
+        // Calculate the dividing wall's direction vector
+        const dividingWallVector = {
+            x: dividingWall.end.x - dividingWall.start.x,
+            y: dividingWall.end.y - dividingWall.start.y
+        };
+        const dividingLength = Math.sqrt(
+            dividingWallVector.x * dividingWallVector.x + 
+            dividingWallVector.y * dividingWallVector.y
+        );
+        const dividingUnitVector = {
+            x: dividingWallVector.x / dividingLength,
+            y: dividingWallVector.y / dividingLength
+        };
 
-        // Calculate angle for the alignment line
-        const dx = alignedPoint.x - startPoint.x;
-        const dy = alignedPoint.y - startPoint.y;
-        const angle = Math.atan2(dy, dx);
+        // Create two new walls that meet at the intersection point
+        const wall1 = {
+            id: Date.now().toString(),
+            start: { ...wall.start },
+            end: { 
+                x: intersectionPoint.x,
+                y: intersectionPoint.y
+            },
+            thickness: wall.thickness
+        };
+
+        const wall2 = {
+            id: (Date.now() + 1).toString(),
+            start: { 
+                x: intersectionPoint.x,
+                y: intersectionPoint.y
+            },
+            end: { ...wall.end },
+            thickness: wall.thickness
+        };
+
+        // Find and update connections for the original wall
+        const connectedWalls = this.findWallsConnectedToPoint(wall.start)
+            .concat(this.findWallsConnectedToPoint(wall.end))
+            .filter(w => w.id !== wall.id);
+
+        // Update connections for the new walls
+        connectedWalls.forEach(connectedWall => {
+            if (this.distance(connectedWall.start, wall.start) < 1) {
+                connectedWall.start = wall1.start;
+            } else if (this.distance(connectedWall.end, wall.start) < 1) {
+                connectedWall.end = wall1.start;
+            } else if (this.distance(connectedWall.start, wall.end) < 1) {
+                connectedWall.start = wall2.end;
+            } else if (this.distance(connectedWall.end, wall.end) < 1) {
+                connectedWall.end = wall2.end;
+            }
+        });
+
+        // Remove the original wall and add the new walls
+        this.walls = this.walls.filter(w => w.id !== wall.id);
+        this.walls.push(wall1, wall2);
+
+        return [wall1, wall2];
+    }
+
+    findAllConnectedWalls(wall) {
+        const connectedWalls = new Set();
+        const visited = new Set();
+        const queue = [wall];
+
+        while (queue.length > 0) {
+            const currentWall = queue.shift();
+            if (!visited.has(currentWall)) {
+                visited.add(currentWall);
+                connectedWalls.add(currentWall);
+                const connectedPoints = this.findWallsConnectedToPoint(currentWall.start).concat(this.findWallsConnectedToPoint(currentWall.end));
+                for (const connectedWall of connectedPoints) {
+                    if (!visited.has(connectedWall)) {
+                        queue.push(connectedWall);
+                    }
+                }
+            }
+        }
+
+        return Array.from(connectedWalls);
+    }
+
+    updateSharedPoints(wall, connectedWalls) {
+        const sharedPoints = new Map();
+
+        for (const connectedWall of connectedWalls) {
+            const startPoint = connectedWall.start;
+            const endPoint = connectedWall.end;
+
+            const startKey = `${startPoint.x},${startPoint.y}`;
+            const endKey = `${endPoint.x},${endPoint.y}`;
+
+            if (!sharedPoints.has(startKey)) {
+                sharedPoints.set(startKey, { x: startPoint.x, y: startPoint.y, connectedWalls: [] });
+            }
+            if (!sharedPoints.has(endKey)) {
+                sharedPoints.set(endKey, { x: endPoint.x, y: endPoint.y, connectedWalls: [] });
+            }
+
+            const sharedPoint = sharedPoints.get(startKey);
+            sharedPoint.connectedWalls.push({ wall: connectedWall, isStart: true });
+
+            const sharedPointEnd = sharedPoints.get(endKey);
+            sharedPointEnd.connectedWalls.push({ wall: connectedWall, isStart: false });
+        }
+
+        for (const [key, sharedPoint] of sharedPoints) {
+            if (sharedPoint.connectedWalls.length === 1) {
+                const [wall, isStart] = sharedPoint.connectedWalls[0];
+                if (isStart) {
+                    wall.start = sharedPoint;
+                } else {
+                    wall.end = sharedPoint;
+                }
+            }
+        }
+    }
+
+    // New method to draw angle between two walls
+    drawWallAngle(wall1, wall2, sharedPoint) {
+        // Calculate vectors for both walls from the shared point
+        const vec1 = this.getWallVectorFromPoint(wall1, sharedPoint);
+        const vec2 = this.getWallVectorFromPoint(wall2, sharedPoint);
+
+        // Calculate angles
+        const angle1 = Math.atan2(vec1.y, vec1.x);
+        const angle2 = Math.atan2(vec2.y, vec2.x);
+
+        // Calculate the angle between the walls (in degrees)
+        let angleDiff = (angle2 - angle1) * 180 / Math.PI;
         
-        // Extend the line in both directions
-        const lineLength = 1000; // Length of alignment guide
-        const extendedStart = {
-            x: startPoint.x - Math.cos(angle) * lineLength,
-            y: startPoint.y - Math.sin(angle) * lineLength
-        };
-        const extendedEnd = {
-            x: startPoint.x + Math.cos(angle) * lineLength,
-            y: startPoint.y + Math.sin(angle) * lineLength
-        };
+        // Normalize angle to be between 0 and 180
+        if (angleDiff < 0) angleDiff += 360;
+        if (angleDiff > 180) angleDiff = 360 - angleDiff;
 
-        // Draw extended alignment line
+        // Draw arc
+        const radius = 30; // Radius for the angle arc
         this.ctx.beginPath();
-        this.ctx.moveTo(extendedStart.x, extendedStart.y);
-        this.ctx.lineTo(extendedEnd.x, extendedEnd.y);
+        this.ctx.strokeStyle = '#E91E63'; // Pink color for the angle indicator
+        this.ctx.lineWidth = 2;
+
+        // Draw the arc
+        this.ctx.beginPath();
+        this.ctx.arc(sharedPoint.x, sharedPoint.y, radius, 
+            Math.min(angle1, angle2), Math.max(angle1, angle2));
         this.ctx.stroke();
 
-        // Draw angle indicator
-        const angleInDegrees = (angle * 180 / Math.PI + 360) % 360;
-        const angleText = `${Math.round(angleInDegrees)}°`;
-        
-        // Position the angle text
-        const textRadius = 40;
-        const textX = startPoint.x + Math.cos(angle) * textRadius;
-        const textY = startPoint.y + Math.sin(angle) * textRadius;
+        // Calculate position for angle text
+        const midAngle = (angle1 + angle2) / 2;
+        const textRadius = radius + 15;
+        const textX = sharedPoint.x + textRadius * Math.cos(midAngle);
+        const textY = sharedPoint.y + textRadius * Math.sin(midAngle);
 
-        this.ctx.font = '12px Arial';
+        // Draw angle text with background
+        this.ctx.font = 'bold 14px Arial';
+        const angleText = `${angleDiff.toFixed(1)}°`;
         const textWidth = this.ctx.measureText(angleText).width;
-        
+
         // Draw text background
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        this.ctx.fillStyle = 'white';
         this.ctx.fillRect(
             textX - textWidth/2 - 4,
-            textY - 8,
+            textY - 10,
             textWidth + 8,
-            16
+            20
         );
 
         // Draw text
-        this.ctx.fillStyle = '#3366cc';
+        this.ctx.fillStyle = '#E91E63';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(angleText, textX, textY);
 
-        this.ctx.restore();
+        // Draw small dots at the angle points
+        this.ctx.fillStyle = '#E91E63';
+        this.ctx.beginPath();
+        this.ctx.arc(sharedPoint.x, sharedPoint.y, 3, 0, Math.PI * 2);
+        this.ctx.fill();
+    }
+
+    // Helper method to get wall vector from a point
+    getWallVectorFromPoint(wall, point) {
+        // Determine if the point is at the start or end of the wall
+        const isStart = this.distance(wall.start, point) < 1;
+        
+        return {
+            x: isStart ? wall.end.x - wall.start.x : wall.start.x - wall.end.x,
+            y: isStart ? wall.end.y - wall.start.y : wall.start.y - wall.end.y
+        };
     }
 }

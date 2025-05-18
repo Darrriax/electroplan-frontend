@@ -15,11 +15,8 @@
             @update:thickness="updateWallThickness"
             class="wall-settings"
         />
-        <DoorSettingsCard v-if="isDoorToolActive" />
-        <WindowSettingsCard v-if="isWindowToolActive" />
-        <SocketSettingsCard v-if="isSocketToolActive" />
         <div class="editor-canvas-container">
-          <canvas ref="canvas" class="editor-canvas" @contextmenu="onContextMenu" @wheel="onWheel" @click="handleCanvasClick"></canvas>
+          <canvas ref="canvas" class="editor-canvas" @contextmenu="onContextMenu" @wheel="onWheel"></canvas>
         </div>
       </div>
     </div>
@@ -29,78 +26,76 @@
 <script>
 import ProjectLayout from '../../UI/layouts/ProjectLayout.vue';
 import WallDrawingManager from '../../../utils/wallDrawing.js';
-import ObjectManager from '../../../utils/drawing/ObjectManager.js';
+import ObjectManagerFactory from '../../../utils/ObjectManagerFactory';
 import { mapState, mapGetters, mapActions } from 'vuex';
 import ToolSidebar from "../../UI/elements/ToolSidebar.vue";
 import WallSettingsCard from "../../UI/settings/WallSettingsCard.vue";
-import DoorSettingsCard from "../../UI/settings/DoorSettingsCard.vue";
-import WindowSettingsCard from "../../UI/settings/WindowSettingsCard.vue";
-import SocketSettingsCard from "../../UI/settings/SocketSettingsCard.vue";
 
 export default {
   name: 'PlanEditor',
   components: {
     ProjectLayout,
     ToolSidebar,
-    WallSettingsCard,
-    DoorSettingsCard,
-    WindowSettingsCard,
-    SocketSettingsCard
+    WallSettingsCard
   },
   data() {
     return {
-      drawingManager: null,
+      wallManager: null,
       objectManager: null,
-      lastMouseX: null,
-      lastMouseY: null,
-      editorTools: [
-        { id: 'wall', name: 'wall', label: 'Walls', icon: 'mdi mdi-wall' },
-        { id: 'door', name: 'door', label: 'Doors', icon: 'mdi mdi-door' },
-        { id: 'window', name: 'window', label: 'Windows', icon: 'mdi mdi-window-closed-variant' }
-      ]
+      canvas: null,
+      ctx: null,
+      mousePosition: { x: 0, y: 0 },
+      canvasWidth: 0,
+      canvasHeight: 0,
+      resizeObserver: null
     };
   },
   computed: {
-    ...mapState('project', ['unit', 'activeMode']),
+    ...mapState('project', ['unit']),
     ...mapGetters({
       isMenuOpen: 'project/isMenuOpen',
       currentTool: 'project/getCurrentTool',
+      currentMode: 'project/getCurrentMode',
+      editorTools: 'project/getCurrentModeTools',
       wallThickness: 'walls/defaultThickness',
-      wallHeight: 'walls/defaultHeight',
-      currentTools: 'project/currentTools'
+      wallHeight: 'walls/defaultHeight'
     }),
     isWallToolActive() {
       return this.currentTool === 'wall';
-    },
-    isDoorToolActive() {
-      return this.currentTool === 'door';
-    },
-    isWindowToolActive() {
-      return this.currentTool === 'window';
-    },
-    isSocketToolActive() {
-      return ['standard-socket', 'waterproof-socket', 'switchboard'].includes(this.currentTool);
+    }
+  },
+  watch: {
+    currentTool(newTool) {
+      if (this.objectManager) {
+        this.objectManager.setTool(newTool);
+        this.redraw();
+      }
     }
   },
   mounted() {
-    this.initializeCanvas();
-
-    // Handle window resize
-    window.addEventListener('resize', this.resizeCanvas);
+    // Initialize canvas after component is mounted
+    this.$nextTick(() => {
+      this.initializeCanvas();
+      
+      // Set up resize observer
+      this.resizeObserver = new ResizeObserver(entries => {
+        for (let entry of entries) {
+          if (entry.target === this.canvas.parentElement) {
+            this.resizeCanvas();
+          }
+        }
+      });
+      
+      this.resizeObserver.observe(this.canvas.parentElement);
+    });
 
     // Add keyboard shortcuts
     window.addEventListener('keydown', this.handleKeyboard);
-
-    // Add mouse move handler directly to canvas
-    this.$refs.canvas.addEventListener('mousemove', this.handleCanvasMouseMove);
 
     // Set initial tool
     if (!this.currentTool) {
       this.setCurrentTool('wall');
     }
-
-    // Initial draw
-    this.drawAll();
   },
   methods: {
     ...mapActions({
@@ -108,6 +103,51 @@ export default {
       updateThickness: 'walls/updateDefaultThickness',
       updateHeight: 'walls/updateDefaultHeight'
     }),
+    initializeCanvas() {
+      this.canvas = this.$refs.canvas;
+      if (!this.canvas) return;
+
+      // Set canvas size
+      const container = this.canvas.parentElement;
+      this.canvasWidth = container.clientWidth;
+      this.canvasHeight = container.clientHeight;
+      
+      // Set canvas dimensions
+      this.canvas.width = this.canvasWidth;
+      this.canvas.height = this.canvasHeight;
+
+      // Get context
+      this.ctx = this.canvas.getContext('2d');
+      
+      // Initialize managers with both canvas and store
+      this.wallManager = new WallDrawingManager(this.canvas, this.$store);
+      this.objectManager = new ObjectManagerFactory(this.$store);
+      
+      // Set up event listeners
+      this.canvas.addEventListener('mousemove', this.onMouseMove);
+      this.canvas.addEventListener('click', this.onClick);
+      
+      // Initial draw
+      this.redraw();
+    },
+    resizeCanvas() {
+      if (!this.canvas) return;
+
+      const container = this.canvas.parentElement;
+      this.canvasWidth = container.clientWidth;
+      this.canvasHeight = container.clientHeight;
+      
+      this.canvas.width = this.canvasWidth;
+      this.canvas.height = this.canvasHeight;
+
+      // Update wall manager canvas size
+      if (this.wallManager) {
+        this.wallManager.canvas = this.canvas;
+        this.wallManager.ctx = this.canvas.getContext('2d');
+      }
+
+      this.redraw();
+    },
     setCurrentTool(tool) {
       this.setToolAction(tool);
     },
@@ -117,23 +157,81 @@ export default {
     updateWallHeight(height) {
       this.updateHeight(height);
     },
-    initializeCanvas() {
-      if (!this.$refs.canvas) return;
+    onMouseMove(e) {
+      if (!this.canvas) return;
 
-      // Create new drawing manager instance
-      this.drawingManager = new WallDrawingManager(this.$refs.canvas, this.$store);
-      this.objectManager = new ObjectManager(this.$refs.canvas.getContext('2d'), this.$store);
+      const rect = this.canvas.getBoundingClientRect();
+      this.mousePosition = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
 
-      // Load any existing data
-      this.drawingManager.loadFromStore();
+      // Update preview based on current tool
+      if (this.currentTool === 'wall' && this.wallManager) {
+        this.wallManager.onMouseMove(e); // Pass the entire event
+      } else if (this.objectManager) {
+        // Update object manager transform state
+        this.objectManager.updateTransform(
+          this.wallManager.panOffset,
+          this.wallManager.zoom
+        );
+        this.objectManager.updatePreview(this.mousePosition);
+      }
       
-      // Initial draw
-      this.drawAll();
+      this.redraw();
     },
-    resizeCanvas() {
-      if (!this.drawingManager) return;
-      this.drawingManager.resizeCanvas();
-      this.drawAll();
+    onClick(e) {
+      if (!this.canvas) return;
+
+      if (this.currentTool === 'wall' && this.wallManager) {
+        this.wallManager.onClick(e); // Pass the entire event
+      } else if (this.objectManager && this.objectManager.isValidPlacement()) {
+        const newObject = this.objectManager.createObject();
+        if (newObject) {
+          // Add object to appropriate store module based on type
+          switch(newObject.type) {
+            case 'door':
+            case 'window':
+              this.$store.dispatch('project/addElement', newObject);
+              break;
+            case 'socket':
+            case 'panel':
+              this.$store.dispatch('electrical/addElement', newObject);
+              break;
+            case 'ceiling-light':
+            case 'wall-light':
+              this.$store.dispatch('lighting/addElement', newObject);
+              break;
+            case 'single-switch':
+            case 'double-switch':
+              this.$store.dispatch('switches/addElement', newObject);
+              break;
+          }
+        }
+      }
+      
+      this.redraw();
+    },
+    redraw() {
+      if (!this.ctx || !this.canvas) return;
+
+      // Clear canvas
+      this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+      
+      // Let wall manager handle its own drawing
+      if (this.wallManager) {
+        this.wallManager.draw();
+      }
+      
+      // Draw object preview if not in wall mode
+      if (this.currentTool !== 'wall' && this.objectManager) {
+        // Update object manager transform state before drawing
+        this.objectManager.updateTransform(
+          this.wallManager.panOffset,
+          this.wallManager.zoom
+        );
+        this.objectManager.drawPreview(this.ctx);
+      }
     },
     handleKeyboard(event) {
       // Undo: Ctrl/Cmd + Z
@@ -148,136 +246,48 @@ export default {
       }
     },
     undoAction() {
-      if (this.drawingManager) {
-        this.drawingManager.undo();
-        this.drawAll();
+      if (this.wallManager) {
+        this.wallManager.undo();
+        this.redraw();
       }
     },
     redoAction() {
-      if (this.drawingManager) {
-        this.drawingManager.redo();
-        this.drawAll();
+      if (this.wallManager) {
+        this.wallManager.redo();
+        this.redraw();
       }
     },
     onContextMenu(event) {
-      event.preventDefault();
-      this.setCurrentTool(null);
+      event.preventDefault(); // Prevent the default context menu
+      this.setCurrentTool(null); // Deselect the current tool
     },
     onWheel(event) {
       event.preventDefault();
-      if (this.drawingManager) {
-        // Get mouse position in screen coordinates
-        const rect = this.$refs.canvas.getBoundingClientRect();
-        const mouseX = event.clientX - rect.left;
-        const mouseY = event.clientY - rect.top;
-
-        // Get mouse position in world coordinates before zoom
-        const worldX = (mouseX - this.drawingManager.panOffset.x) / this.drawingManager.zoom;
-        const worldY = (mouseY - this.drawingManager.panOffset.y) / this.drawingManager.zoom;
-
-        // Calculate new zoom
+      if (this.wallManager) {
         const delta = event.deltaY > 0 ? 0.9 : 1.1;
-        const newZoom = Math.min(Math.max(0.1, this.drawingManager.zoom * delta), 5);
-
-        // Calculate new offset to keep mouse position fixed
-        this.drawingManager.panOffset.x = mouseX - worldX * newZoom;
-        this.drawingManager.panOffset.y = mouseY - worldY * newZoom;
-        
-        // Apply new zoom
-        this.drawingManager.zoom = newZoom;
-        
-        // Update object manager transform
+        this.wallManager.zoom = Math.min(Math.max(0.1, this.wallManager.zoom * delta), 5);
+        // Update object manager transform state after zoom change
         if (this.objectManager) {
-          this.objectManager.updateTransform(this.drawingManager.panOffset, this.drawingManager.zoom);
+          this.objectManager.updateTransform(
+            this.wallManager.panOffset,
+            this.wallManager.zoom
+          );
         }
-        
-        this.drawAll();
+        this.redraw();
       }
     },
-    handleCanvasClick(e) {
-      if (!this.drawingManager) return;
-
-      // Only handle left-click (button 0)
-      if (e.button !== 0) return;
-
-      const point = this.drawingManager.getMousePos(e);
+    beforeUnmount() {
+      // Clean up event listeners
+      window.removeEventListener('keydown', this.handleKeyboard);
       
-      if (this.isSocketToolActive) {
-        if (this.objectManager) {
-          this.objectManager.handleClick(e);
-          this.drawAll();
-        }
-      } else {
-        this.drawingManager.handleClick(point);
-      }
-    },
-    handleCanvasMouseMove(e) {
-      if (!this.drawingManager) return;
-
-      // Update transforms for both managers
-      if (this.objectManager) {
-        this.objectManager.updateTransform(this.drawingManager.panOffset, this.drawingManager.zoom);
+      if (this.canvas) {
+        this.canvas.removeEventListener('mousemove', this.onMouseMove);
+        this.canvas.removeEventListener('click', this.onClick);
       }
 
-      // Only update object preview if socket tool is active
-      if (this.isSocketToolActive && this.objectManager) {
-        this.objectManager.updateObjectPreview(e, this.drawingManager.walls);
-      }
-
-      // Always redraw everything to keep objects visible
-      this.drawAll();
-    },
-    drawAll() {
-      if (!this.drawingManager) return;
-
-      // Clear the canvas
-      const ctx = this.drawingManager.ctx;
-      const canvas = ctx.canvas;
-      ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.restore();
-
-      // Draw walls and other elements
-      this.drawingManager.draw();
-
-      // Always draw objects, regardless of tool state
-      if (this.objectManager) {
-        this.objectManager.draw();
-      }
-    }
-  },
-  beforeDestroy() {
-    // Remove event listeners
-    window.removeEventListener('resize', this.resizeCanvas);
-    window.removeEventListener('keydown', this.handleKeyboard);
-    if (this.$refs.canvas) {
-      this.$refs.canvas.removeEventListener('mousemove', this.handleCanvasMouseMove);
-    }
-
-    // Cleanup managers
-    if (this.drawingManager) {
-      this.drawingManager.cleanup();
-    }
-    if (this.objectManager) {
-      this.objectManager.cleanup();
-    }
-  },
-  watch: {
-    wallThickness: {
-      handler() {
-        this.drawAll();
-      }
-    },
-    currentTool: {
-      handler(newTool) {
-        // Clear any preview when tool changes
-        if (this.objectManager) {
-          this.objectManager.clearPreview();
-        }
-        
-        // Always redraw to ensure objects remain visible
-        this.drawAll();
+      // Clean up resize observer
+      if (this.resizeObserver) {
+        this.resizeObserver.disconnect();
       }
     }
   }

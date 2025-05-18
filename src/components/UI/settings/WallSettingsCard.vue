@@ -60,7 +60,6 @@
 
 <script>
 import { mapState, mapActions } from 'vuex';
-import { convertFromMM, convertToMM } from '../../../utils/unitConversion';
 
 export default {
   name: 'WallSettingsCard',
@@ -78,20 +77,20 @@ export default {
   data() {
     return {
       thicknessPresets: [
-        { value: 50, display: convertFromMM(50, this.unit) },
-        { value: 80, display: convertFromMM(80, this.unit) },
-        { value: 100, display: convertFromMM(100, this.unit) },
-        { value: 120, display: convertFromMM(120, this.unit) },
-        { value: 150, display: convertFromMM(150, this.unit) },
-        { value: 200, display: convertFromMM(200, this.unit) }
+        { value: 50, display: '5' },
+        { value: 80, display: '8' },
+        { value: 100, display: '10' },
+        { value: 120, display: '12' },
+        { value: 150, display: '15' },
+        { value: 200, display: '20' }
       ],
       heightPresets: [
-        { value: 2400, display: convertFromMM(2400, this.unit) },
-        { value: 2600, display: convertFromMM(2600, this.unit) },
-        { value: 2800, display: convertFromMM(2800, this.unit) },
-        { value: 3000, display: convertFromMM(3000, this.unit) },
-        { value: 3200, display: convertFromMM(3200, this.unit) },
-        { value: 3400, display: convertFromMM(3400, this.unit) }
+        { value: 2400, display: '2.4' },
+        { value: 2600, display: '2.6' },
+        { value: 2800, display: '2.8' },
+        { value: 3000, display: '3.0' },
+        { value: 3200, display: '3.2' },
+        { value: 3400, display: '3.4' }
       ],
       stepMap: {
         mm: { thickness: 10, height: 100 },
@@ -103,79 +102,84 @@ export default {
   computed: {
     ...mapState('walls', ['defaultHeight']),
     displayThickness() {
-      return `${convertFromMM(this.thickness, this.unit)} ${this.unit}`;
+      return `${this.convertToCurrentUnit(this.thickness)} ${this.unit}`
     },
     displayHeight() {
-      return `${convertFromMM(this.defaultHeight, this.unit)} ${this.unit}`;
-    }
-  },
-  watch: {
-    unit: {
-      handler(newUnit) {
-        // Update presets when unit changes
-        this.thicknessPresets = this.thicknessPresets.map(preset => ({
-          ...preset,
-          display: convertFromMM(preset.value, newUnit)
-        }));
-        this.heightPresets = this.heightPresets.map(preset => ({
-          ...preset,
-          display: convertFromMM(preset.value, newUnit)
-        }));
-      },
-      immediate: true
+      return `${this.convertToCurrentUnit(this.defaultHeight)} ${this.unit}`
     }
   },
   methods: {
     ...mapActions('walls', ['updateDefaultHeight']),
+    convertToCurrentUnit(valueMM) {
+      switch (this.unit) {
+        case 'cm':
+          return (valueMM / 10).toFixed(0)
+        case 'm':
+          return (valueMM / 1000).toFixed(2)
+        default:
+          return valueMM
+      }
+    },
+    convertToMM(value) {
+      const numberValue = parseFloat(value) || 0
+      switch (this.unit) {
+        case 'cm':
+          return numberValue * 10
+        case 'm':
+          return numberValue * 1000
+        default:
+          return numberValue
+      }
+    },
     increaseThickness() {
-      const step = this.stepMap[this.unit].thickness;
-      const newValue = this.thickness + convertToMM(step, this.unit);
-      this.$emit('update:thickness', newValue);
+      const step = this.stepMap[this.unit].thickness
+      const newValue = this.thickness + this.convertToMM(step)
+      this.$emit('update:thickness', newValue)
     },
     decreaseThickness() {
-      const step = this.stepMap[this.unit].thickness;
-      const newValue = Math.max(10, this.thickness - convertToMM(step, this.unit));
-      this.$emit('update:thickness', newValue);
+      const step = this.stepMap[this.unit].thickness
+      const newValue = Math.max(10, this.thickness - this.convertToMM(step))
+      this.$emit('update:thickness', newValue)
     },
     increaseHeight() {
-      const step = this.stepMap[this.unit].height;
-      const newValue = this.defaultHeight + convertToMM(step, this.unit);
-      this.updateDefaultHeight(newValue);
+      const step = this.stepMap[this.unit].height
+      const newValue = this.defaultHeight + this.convertToMM(step)
+      this.updateDefaultHeight(newValue)
     },
     decreaseHeight() {
-      const step = this.stepMap[this.unit].height;
-      const newValue = Math.max(1000, this.defaultHeight - convertToMM(step, this.unit));
-      this.updateDefaultHeight(newValue);
+      const step = this.stepMap[this.unit].height
+      const newValue = Math.max(1000, this.defaultHeight - this.convertToMM(step))
+      this.updateDefaultHeight(newValue)
     },
     handleThicknessBlur(e) {
-      const raw = e.target.innerText.replace(/[^\d.,]/g, '').replace(',', '.');
-      const value = parseFloat(raw) || 0;
-      const mmValue = Math.max(10, convertToMM(value, this.unit));
-      this.$emit('update:thickness', mmValue);
+      const raw = e.target.innerText.replace(/[^\d.,]/g, '').replace(',', '.')
+      const value = parseFloat(raw) || 0
+      const mmValue = Math.max(10, this.convertToMM(value))
+      this.$emit('update:thickness', mmValue)
     },
     handleHeightBlur(e) {
-      const raw = e.target.innerText.replace(/[^\d.,]/g, '').replace(',', '.');
-      const value = parseFloat(raw) || 0;
-      const mmValue = Math.max(1000, convertToMM(value, this.unit));
-      this.updateDefaultHeight(mmValue);
+      const raw = e.target.innerText.replace(/[^\d.,]/g, '').replace(',', '.')
+      const value = parseFloat(raw) || 0
+      const mmValue = Math.max(1000, this.convertToMM(value))
+      this.updateDefaultHeight(mmValue)
     },
     handleEnter(e) {
-      e.target.blur();
+      e.target.blur()
     },
     isThicknessPresetActive(value) {
-      return this.thickness === value;
+      return this.thickness === value
     },
     isHeightPresetActive(value) {
-      return this.defaultHeight === value;
+      return this.defaultHeight === value
     },
     setThickness(value) {
-      this.$emit('update:thickness', value);
+      this.$emit('update:thickness', value)
     },
     setHeight(value) {
-      this.updateDefaultHeight(value);
+      this.updateDefaultHeight(value)
     }
   }
-};
+}
 </script>
 
 <style scoped>

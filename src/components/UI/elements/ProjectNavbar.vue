@@ -12,30 +12,10 @@
 
       <!-- Права панель -->
       <div class="navbar-right d-flex align-items-center gap-2">
-        <button-default 
-          icon="fa-solid fa-layer-group" 
-          label="Original Plan" 
-          @click="selectOriginalPlan"
-          :class="{ 'active-mode': isActiveMode('original-plan') }"
-        />
-        <button-default 
-          icon="fa-solid fa-plug" 
-          label="Power Sockets" 
-          @click="selectPowerSockets"
-          :class="{ 'active-mode': isActiveMode('power-sockets') }"
-        />
-        <button-default 
-          icon="fa-solid fa-lightbulb" 
-          label="Lighting" 
-          @click="selectLight"
-          :class="{ 'active-mode': isActiveMode('lighting') }"
-        />
-        <button-default 
-          icon="fa-solid fa-toggle-on" 
-          label="Switches" 
-          @click="selectSwitches"
-          :class="{ 'active-mode': isActiveMode('switches') }"
-        />
+        <button-default icon="fa-solid fa-layer-group" label="Original Plan" @click="selectOriginalPlan"/>
+        <button-default icon="fa-solid fa-plug" label="Power Sockets" @click="selectPowerSockets"/>
+        <button-default icon="fa-solid fa-lightbulb" label="Light" @click="selectLight"/>
+        <button-default icon="fa-solid fa-toggle-on" label="Switches" @click="selectSwitches"/>
 
         <div class="divider"/>
 
@@ -59,7 +39,7 @@
 
 <script>
 import ButtonDefault from "../buttons/ButtonDefault.vue"
-import { mapGetters } from 'vuex'
+import { mapActions } from "vuex"
 
 export default {
   name: "ProjectNavbar",
@@ -70,9 +50,6 @@ export default {
     return {
       selectedUnit: 'cm'
     }
-  },
-  computed: {
-    ...mapGetters('project', ['isActiveMode'])
   },
   watch: {
     selectedUnit(newVal) {
@@ -91,6 +68,9 @@ export default {
     }
   },
   methods: {
+    ...mapActions({
+      setMode: 'project/setMode'
+    }),
     toggleMenu() {
       this.$store.commit('project/toggleMenu')
     },
@@ -105,16 +85,16 @@ export default {
       this.$emit('redo');
     },
     selectOriginalPlan() {
-      this.$store.commit('project/setActiveMode', 'original-plan');
+      this.setMode('original-plan');
     },
     selectPowerSockets() {
-      this.$store.commit('project/setActiveMode', 'power-sockets');
+      this.setMode('power-sockets');
     },
     selectLight() {
-      this.$store.commit('project/setActiveMode', 'lighting');
+      this.setMode('light');
     },
     selectSwitches() {
-      this.$store.commit('project/setActiveMode', 'switches');
+      this.setMode('switches');
     },
     view2D() {},
     view3D() {},
@@ -138,15 +118,5 @@ export default {
   border-radius: 4px;
   background: #fff;
   font-size: 14px;
-}
-
-.active-mode {
-  background-color: #ff9800 !important;
-  padding: 4px 8px;
-  color: white !important;
-}
-
-.active-mode:hover {
-  background-color: #f57c00 !important;
 }
 </style>

@@ -12,6 +12,10 @@ export const walls = {
     }),
 
     mutations: {
+        setWalls(state, walls) {
+            state.walls = walls;
+        },
+
         addWall(state, wall) {
             const length = Math.sqrt(
                 Math.pow(wall.end.x - wall.start.x, 2) +
@@ -20,7 +24,6 @@ export const walls = {
 
             state.walls.push({
                 id: uuidv4(),
-                type: 'wall',
                 ...wall,
                 length,
                 thickness: wall.thickness || state.defaultThickness,
@@ -32,16 +35,16 @@ export const walls = {
         updateWall(state, { id, updates }) {
             const index = state.walls.findIndex(wall => wall.id === id);
             if (index !== -1) {
-                state.walls[index] = { ...state.walls[index], ...updates };
+                const updatedWall = { ...state.walls[index], ...updates };
+                // Recalculate length if position changed
+                if (updates.start || updates.end) {
+                    updatedWall.length = Math.sqrt(
+                        Math.pow(updatedWall.end.x - updatedWall.start.x, 2) +
+                        Math.pow(updatedWall.end.y - updatedWall.start.y, 2)
+                    ) * 10;
+                }
+                state.walls[index] = updatedWall;
             }
-        },
-
-        removeWall(state, id) {
-            state.walls = state.walls.filter(wall => wall.id !== id);
-        },
-
-        setWalls(state, walls) {
-            state.walls = walls;
         },
 
         updateDefaultThickness(state, thickness) {
@@ -69,14 +72,6 @@ export const walls = {
             commit('updateWall', { id, updates });
         },
 
-        deleteWall({ commit }, id) {
-            commit('removeWall', id);
-        },
-
-        saveWalls({ commit }, walls) {
-            commit('setWalls', walls);
-        },
-
         updateDefaultThickness({ commit }, thickness) {
             commit('updateDefaultThickness', thickness);
         },
@@ -87,9 +82,9 @@ export const walls = {
     },
 
     getters: {
-        getAllWalls: state => state.walls,
-        getWallById: state => id => state.walls.find(wall => wall.id === id),
         defaultThickness: state => state.defaultThickness,
-        defaultHeight: state => state.defaultHeight
+        defaultHeight: state => state.defaultHeight,
+        getAllWalls: state => state.walls,
+        getWallById: state => id => state.walls.find(wall => wall.id === id)
     }
 };
