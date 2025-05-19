@@ -15,11 +15,6 @@ export default class WallCenteredObject {
                 length: this.store.state.windows.defaultWidth || 1350,
                 height: this.store.state.windows.defaultHeight || 1350,
                 floorHeight: this.store.state.windows.defaultFloorHeight || 900
-            },
-            panel: {
-                length: this.store.state.panels.defaultWidth || 300,
-                height: this.store.state.panels.defaultHeight || 210,
-                floorHeight: this.store.state.panels.defaultFloorHeight || 1200
             }
         };
         // Canvas transform state
@@ -59,8 +54,6 @@ export default class WallCenteredObject {
                     this.store.dispatch('doors/updateDefaultWidth', dimensions.length);
                 } else if (this.preview.type === 'window') {
                     this.store.dispatch('windows/setDefaultWidth', dimensions.length);
-                } else if (this.preview.type === 'panel') {
-                    this.store.dispatch('panels/setDefaultWidth', dimensions.length);
                 }
             }
             if (dimensions.height !== undefined) {
@@ -70,39 +63,19 @@ export default class WallCenteredObject {
                     this.store.dispatch('doors/updateDefaultHeight', dimensions.height);
                 } else if (this.preview.type === 'window') {
                     this.store.dispatch('windows/setDefaultHeight', dimensions.height);
-                } else if (this.preview.type === 'panel') {
-                    this.store.dispatch('panels/setDefaultHeight', dimensions.height);
                 }
             }
             if (dimensions.floorHeight !== undefined) {
                 if (this.preview.type === 'window') {
                     this.preview.dimensions.floorHeight = dimensions.floorHeight / 10; // Convert mm to cm
                     this.store.dispatch('windows/setDefaultFloorHeight', dimensions.floorHeight);
-                } else if (this.preview.type === 'panel') {
-                    this.preview.dimensions.floorHeight = dimensions.floorHeight / 10; // Convert mm to cm
-                    this.store.dispatch('panels/setDefaultFloorHeight', dimensions.floorHeight);
                 }
             }
             if (dimensions.thickness !== undefined) {
                 this.preview.dimensions.thickness = dimensions.thickness / 10; // Convert mm to cm
             }
 
-            // Immediately update preview dimensions from store for real-time updates
-            if (this.preview.type === 'window') {
-                this.preview.dimensions = {
-                    ...this.preview.dimensions,
-                    length: this.store.state.windows.defaultWidth / 10,
-                    height: this.store.state.windows.defaultHeight / 10,
-                    floorHeight: this.store.state.windows.defaultFloorHeight / 10
-                };
-            } else if (this.preview.type === 'panel') {
-                this.preview.dimensions = {
-                    ...this.preview.dimensions,
-                    length: this.store.state.panels.defaultWidth / 10,
-                    height: this.store.state.panels.defaultHeight / 10,
-                    floorHeight: this.store.state.panels.defaultFloorHeight / 10
-                };
-            }
+
         }
     }
 
@@ -125,13 +98,6 @@ export default class WallCenteredObject {
             additionalProps = {
                 height: this.store.state.windows.defaultHeight,
                 floorHeight: this.store.state.windows.defaultFloorHeight
-            };
-        } else if (type === 'panel') {
-            // Always get fresh values from the store
-            defaultLength = this.store.state.panels.defaultWidth;
-            additionalProps = {
-                height: this.store.state.panels.defaultHeight,
-                floorHeight: this.store.state.panels.defaultFloorHeight
             };
         } else {
             defaultLength = this.objectDefaults[type]?.length || 1000;
@@ -177,14 +143,6 @@ export default class WallCenteredObject {
             const currentWidth = this.store.state.windows.defaultWidth;
             const currentHeight = this.store.state.windows.defaultHeight;
             const currentFloorHeight = this.store.state.windows.defaultFloorHeight;
-            
-            this.preview.dimensions.length = currentWidth / 10; // Convert mm to cm
-            this.preview.dimensions.height = currentHeight / 10; // Convert mm to cm
-            this.preview.dimensions.floorHeight = currentFloorHeight / 10; // Convert mm to cm
-        } else if (this.preview.type === 'panel') {
-            const currentWidth = this.store.state.panels.defaultWidth;
-            const currentHeight = this.store.state.panels.defaultHeight;
-            const currentFloorHeight = this.store.state.panels.defaultFloorHeight;
             
             this.preview.dimensions.length = currentWidth / 10; // Convert mm to cm
             this.preview.dimensions.height = currentHeight / 10; // Convert mm to cm
@@ -528,10 +486,6 @@ export default class WallCenteredObject {
             preview.dimensions.length = this.store.state.windows.defaultWidth / 10;
             preview.dimensions.height = this.store.state.windows.defaultHeight / 10;
             preview.dimensions.floorHeight = this.store.state.windows.defaultFloorHeight / 10;
-        } else if (preview.type === 'panel') {
-            preview.dimensions.length = this.store.state.panels.defaultWidth / 10;
-            preview.dimensions.height = this.store.state.panels.defaultHeight / 10;
-            preview.dimensions.floorHeight = this.store.state.panels.defaultFloorHeight / 10;
         }
 
         const { x, y, rotation } = preview.position;
@@ -564,9 +518,6 @@ export default class WallCenteredObject {
                 break;
             case 'window':
                 this.drawWindowIndicator(ctx, length, thickness);
-                break;
-            case 'panel':
-                this.drawPanelIndicator(ctx, length, thickness);
                 break;
         }
 
@@ -787,23 +738,6 @@ export default class WallCenteredObject {
         ctx.strokeRect(-currentLength/2, -thickness/2, currentLength, thickness);
     }
 
-    // Draw panel-specific indicators
-    drawPanelIndicator(ctx, length, thickness) {
-        // Draw panel symbol
-        ctx.strokeStyle = '#0096FF';
-        ctx.lineWidth = 1 / this.zoom; // Adjust line width for zoom
-        const size = Math.min(length, thickness) * 0.5;
-        ctx.strokeRect(-size/2, -size/2, size, size);
-        
-        // Draw "electricity" symbol
-        ctx.beginPath();
-        ctx.moveTo(0, -size/4);
-        ctx.lineTo(0, size/4);
-        ctx.moveTo(-size/4, 0);
-        ctx.lineTo(size/4, 0);
-        ctx.stroke();
-    }
-
     // Create final object
     createObject() {
         if (!this.preview || !this.preview.wall || !this.preview.position) return null;
@@ -837,15 +771,6 @@ export default class WallCenteredObject {
                     ...dimensions,
                     height: this.store.state.windows.defaultHeight,
                     floorHeight: this.store.state.windows.defaultFloorHeight
-                }
-            };
-        } else if (this.preview.type === 'panel') {
-            return {
-                ...baseObject,
-                dimensions: {
-                    ...dimensions,
-                    height: this.store.state.panels.defaultHeight,
-                    floorHeight: this.store.state.panels.defaultFloorHeight
                 }
             };
         }

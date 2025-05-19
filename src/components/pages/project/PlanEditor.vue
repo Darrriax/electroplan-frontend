@@ -13,7 +13,7 @@
             :thickness="wallThickness"
             :unit="unit"
             @update:thickness="updateWallThickness"
-            class="wall-settings"
+            class="settings"
         />
         <DoorSettingsCard
             v-if="isDoorToolActive"
@@ -24,7 +24,7 @@
             @update:height="updateDoorHeight"
             @update:opening-direction="updateDoorOpeningDirection"
             @update:opening-side="updateDoorOpeningSide"
-            class="door-settings"
+            class="settings"
         />
         <WindowSettingsCard
             v-if="isWindowToolActive"
@@ -35,7 +35,7 @@
             @update:width="updateWindowWidth"
             @update:height="updateWindowHeight"
             @update:floor-height="updateWindowFloorHeight"
-            class="window-settings"
+            class="settings"
         />
         <PanelSettingsCard
             v-if="isPanelToolActive"
@@ -46,7 +46,29 @@
             @update:width="updatePanelWidth"
             @update:height="updatePanelHeight"
             @update:floor-height="updatePanelFloorHeight"
-            class="panel-settings"
+            class="settings"
+        />
+        <SocketSettingsCard
+            v-if="isSocketToolActive"
+            :floor-height="socketFloorHeight"
+            :unit="unit"
+            @update:floor-height="updateSocketFloorHeight"
+            class="settings"
+        />
+        <LightPanelCard
+            v-if="isCeilingLightToolActive || isWallLightToolActive"
+            :floor-height="lightFloorHeight"
+            :unit="unit"
+            :is-wall-light="isWallLightToolActive"
+            @update:floor-height="updateLightFloorHeight"
+            class="settings"
+        />
+        <SwitchSettingsCard
+            v-if="isSwitchToolActive"
+            :floor-height="switchFloorHeight"
+            :unit="unit"
+            @update:floor-height="updateSwitchFloorHeight"
+            class="switch-settings"
         />
         <div class="editor-canvas-container">
           <canvas ref="canvas" class="editor-canvas" @contextmenu="onContextMenu" @wheel="onWheel"></canvas>
@@ -66,6 +88,9 @@ import WallSettingsCard from "../../UI/settings/WallSettingsCard.vue";
 import DoorSettingsCard from "../../UI/settings/DoorSettingsCard.vue";
 import WindowSettingsCard from "../../UI/settings/WindowSettingsCard.vue";
 import PanelSettingsCard from "../../UI/settings/PanelSettingsCard.vue";
+import SocketSettingsCard from "../../UI/settings/SocketSettingsCard.vue";
+import LightPanelCard from "../../UI/settings/LightPanelCard.vue";
+import SwitchSettingsCard from "../../UI/settings/SwitchSettingsCard.vue";
 
 export default {
   name: 'PlanEditor',
@@ -75,7 +100,10 @@ export default {
     WallSettingsCard,
     DoorSettingsCard,
     WindowSettingsCard,
-    PanelSettingsCard
+    PanelSettingsCard,
+    SocketSettingsCard,
+    LightPanelCard,
+    SwitchSettingsCard
   },
   data() {
     return {
@@ -94,7 +122,10 @@ export default {
       windowFloorHeight: 1000,
       panelWidth: 300,
       panelHeight: 210,
-      panelFloorHeight: 1200
+      panelFloorHeight: 1200,
+      socketFloorHeight: 300,
+      lightFloorHeight: 2200, // default for wall light
+      switchFloorHeight: 900,
     };
   },
   computed: {
@@ -118,6 +149,18 @@ export default {
     },
     isPanelToolActive() {
       return this.currentTool === 'panel';
+    },
+    isSocketToolActive() {
+      return this.currentTool === 'socket';
+    },
+    isCeilingLightToolActive() {
+      return this.currentTool === 'ceiling-light';
+    },
+    isWallLightToolActive() {
+      return this.currentTool === 'wall-light';
+    },
+    isSwitchToolActive() {
+      return this.currentTool === 'single-switch' || this.currentTool === 'double-switch';
     }
   },
   watch: {
@@ -392,18 +435,48 @@ export default {
       this.panelWidth = width;
       if (this.objectManager) {
         this.objectManager.updateDimensions({ width });
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
       }
     },
     updatePanelHeight(height) {
       this.panelHeight = height;
       if (this.objectManager) {
         this.objectManager.updateDimensions({ height });
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
       }
     },
     updatePanelFloorHeight(height) {
       this.panelFloorHeight = height;
       if (this.objectManager) {
         this.objectManager.updateDimensions({ floorHeight: height });
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
+      }
+    },
+    updateSocketFloorHeight(height) {
+      this.socketFloorHeight = height;
+      if (this.objectManager && this.isSocketToolActive) {
+        this.objectManager.updateDimensions({ floorHeight: height });
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
+      }
+    },
+    updateLightFloorHeight(height) {
+      this.lightFloorHeight = height;
+      if (this.objectManager && this.isWallLightToolActive) {
+        this.objectManager.updateDimensions({ floorHeight: height });
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
+      }
+    },
+    updateSwitchFloorHeight(height) {
+      this.switchFloorHeight = height;
+      if (this.objectManager && this.isSwitchToolActive) {
+        this.objectManager.updateDimensions({ floorHeight: height });
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
       }
     },
     beforeUnmount() {
@@ -456,28 +529,14 @@ export default {
   cursor: crosshair;
 }
 
-.wall-settings {
+.settings {
   position: absolute;
   top: 20px;
   right: 20px;
   z-index: 1000;
 }
 
-.door-settings {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  z-index: 1000;
-}
-
-.window-settings {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  z-index: 1000;
-}
-
-.panel-settings {
+.switch-settings {
   position: absolute;
   top: 20px;
   right: 20px;

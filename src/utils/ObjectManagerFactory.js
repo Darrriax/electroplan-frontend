@@ -30,9 +30,9 @@ export default class ObjectManagerFactory {
         switch(toolType) {
             case 'door':
             case 'window':
-            case 'panel':
                 this.currentManager = new WallCenteredObject(this.store);
                 break;
+            case 'panel':
             case 'socket':
             case 'wall-light':
             case 'single-switch':
@@ -117,5 +117,12 @@ export default class ObjectManagerFactory {
     // Check if current preview is valid for placement
     isValidPlacement() {
         return this.preview && this.preview.position !== null;
+    }
+
+    // Forward updateDimensions to the current manager
+    updateDimensions(dimensions) {
+        if (this.currentManager && typeof this.currentManager.updateDimensions === 'function') {
+            this.currentManager.updateDimensions(dimensions);
+        }
     }
 } 

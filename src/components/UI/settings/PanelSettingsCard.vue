@@ -1,6 +1,6 @@
 <template>
   <transition name="fade">
-    <div class="panel-settings-card">
+    <div class="settings-card">
       <div class="header">Panel Settings</div>
 
       <!-- Width Section -->
@@ -287,77 +287,5 @@ export default {
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
   z-index: 1000;
   position: fixed;
-}
-
-.header {
-  font-weight: bold;
-  font-size: 16px;
-  margin-bottom: 10px;
-}
-
-.settings-section {
-  margin-bottom: 12px;
-}
-
-.step-control {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: #f5f5f5;
-  border-radius: 6px;
-  padding: 2px 8px;
-  margin-bottom: 12px;
-}
-
-.step-control button {
-  background: none;
-  border: none;
-  font-size: 18px;
-  cursor: pointer;
-  padding: 4px;
-}
-
-.editable-value {
-  min-width: 70px;
-  text-align: center;
-  font-weight: 500;
-  outline: none;
-  border-radius: 4px;
-}
-
-.preset-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.preset-button {
-  padding: 6px 0;
-  border: 1px solid #ccc;
-  background: #f9f9f9;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.preset-button:hover {
-  background: #eee;
-}
-
-.preset-button.active {
-  background: #42b983;
-  color: white;
-  border-color: #42b983;
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
 }
 </style> 

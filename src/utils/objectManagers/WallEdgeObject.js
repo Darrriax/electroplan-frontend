@@ -2,9 +2,30 @@
 export default class WallEdgeObject {
     constructor(store) {
         this.store = store;
-        this.defaultDimensions = {
-            width: 8,  // 8 cm width
-            height: 8  // 8 cm height
+        // Define default dimensions for each object type (in cm)
+        this.objectDefaults = {
+            panel: {
+                width: (this.store.state.panels?.defaultWidth || 300) / 10, // cm
+                height: (this.store.state.panels?.defaultHeight || 210) / 10, // cm
+                floorHeight: (this.store.state.panels?.defaultFloorHeight || 1200) / 10 // cm
+            },
+            wallLight: {
+                width: 8,
+                height: 8,
+                heightFromFloor: 220 // cm
+            },
+            socket: {
+                width: 8,
+                height: 8
+            },
+            singleSwitch: {
+                width: 8,
+                height: 8
+            },
+            doubleSwitch: {
+                width: 8,
+                height: 8
+            }
         };
         // Canvas transform state
         this.panOffset = { x: 0, y: 0 };
@@ -37,13 +58,44 @@ export default class WallEdgeObject {
 
     // Initialize object preview when tool is selected
     initializePreview(type) {
+        let dimensions = { ...this.objectDefaults[type] };
+        // For panel, always get fresh values from the store
+        if (type === 'panel') {
+            dimensions.width = (this.store.state.panels?.defaultWidth || 300) / 10;
+            dimensions.height = (this.store.state.panels?.defaultHeight || 210) / 10;
+            dimensions.floorHeight = (this.store.state.panels?.defaultFloorHeight || 1200) / 10;
+        }
         return {
             type,
-            dimensions: { ...this.defaultDimensions },
+            dimensions,
             position: null,
             wall: null,
             side: null // 'left', 'right', 'top', or 'bottom' of the wall
         };
+    }
+
+    // Update dimensions of the preview object
+    updateDimensions(dimensions) {
+        if (this.preview) {
+            if (dimensions.width !== undefined) {
+                this.preview.dimensions.width = dimensions.width / 10; // mm to cm
+                if (this.preview.type === 'panel') {
+                    this.store.dispatch('panels/setDefaultWidth', dimensions.width);
+                }
+            }
+            if (dimensions.height !== undefined) {
+                this.preview.dimensions.height = dimensions.height / 10;
+                if (this.preview.type === 'panel') {
+                    this.store.dispatch('panels/setDefaultHeight', dimensions.height);
+                }
+            }
+            if (dimensions.floorHeight !== undefined) {
+                this.preview.dimensions.floorHeight = dimensions.floorHeight / 10;
+                if (this.preview.type === 'panel') {
+                    this.store.dispatch('panels/setDefaultFloorHeight', dimensions.floorHeight);
+                }
+            }
+        }
     }
 
     // Find nearest wall and calculate position
@@ -133,7 +185,6 @@ export default class WallEdgeObject {
             y: wall.end.y - wall.start.y
         };
         const wallLength = Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y);
-        
         if (wallLength === 0) return null;
 
         // Calculate wall unit vector
@@ -208,7 +259,14 @@ export default class WallEdgeObject {
 
         // Convert wall thickness from mm to cm and calculate half thickness
         const halfThickness = (wall.thickness / 10) / 2;
-        const halfObjectSize = this.defaultDimensions.width / 2;
+
+        // Get the current preview dimensions, fallback to defaults if undefined
+        const dimensions = (this.preview && this.preview.dimensions)
+            ? this.preview.dimensions
+            : { width: 8, height: 8 };
+        const width = dimensions.width || 8;
+        const height = dimensions.height || 8;
+        const halfObjectSize = width / 2;
 
         // Constrain position along wall length
         const relativePos = projection / internalLength;
@@ -226,49 +284,48 @@ export default class WallEdgeObject {
         // Determine side and calculate final position
         let side, rotation;
 
-        // For diagonal walls (close to 45 degrees), use normal projection
-        const isDiagonal = Math.abs(Math.abs(normalizedAngle - Math.PI / 4) % (Math.PI / 2)) < Math.PI / 8;
-
-        if (isDiagonal) {
-            // For diagonal walls, use normal projection for side determination
-            if (normalProjection > 0) {
-                side = 'right';
-                rotation = wallAngle + Math.PI / 2;
-                // Move object perpendicular to wall direction
-                position.x += normalVector.x * (halfThickness + halfObjectSize);
-                position.y += normalVector.y * (halfThickness + halfObjectSize);
-            } else {
-                side = 'left';
-                rotation = wallAngle - Math.PI / 2;
-                // Move object perpendicular to wall direction
-                position.x -= normalVector.x * (halfThickness + halfObjectSize);
-                position.y -= normalVector.y * (halfThickness + halfObjectSize);
-            }
+        // For panel, always align with wall
+        if (this.preview && this.preview.type === 'panel') {
+            rotation = wallAngle;
+            side = null; // Not used for panel
         } else {
-            // For more vertical walls
-            const isMoreVertical = Math.abs(normalizedAngle - Math.PI / 2) < Math.PI / 4;
-            
-            if (isMoreVertical) {
-                // For vertical-ish walls, use x-coordinate for side determination
-                if (mouseToWall.x > 0) {
+            // For diagonal walls (close to 45 degrees), use normal projection
+            const isDiagonal = Math.abs(Math.abs(normalizedAngle - Math.PI / 4) % (Math.PI / 2)) < Math.PI / 8;
+
+            if (isDiagonal) {
+                if (normalProjection > 0) {
                     side = 'right';
                     rotation = wallAngle + Math.PI / 2;
-                    position.x += halfThickness + halfObjectSize;
+                    position.x += normalVector.x * (halfThickness + halfObjectSize);
+                    position.y += normalVector.y * (halfThickness + halfObjectSize);
                 } else {
                     side = 'left';
                     rotation = wallAngle - Math.PI / 2;
-                    position.x -= halfThickness + halfObjectSize;
+                    position.x -= normalVector.x * (halfThickness + halfObjectSize);
+                    position.y -= normalVector.y * (halfThickness + halfObjectSize);
                 }
             } else {
-                // For horizontal-ish walls, use y-coordinate for side determination
-                if (mouseToWall.y > 0) {
-                    side = 'bottom';
-                    rotation = wallAngle;
-                    position.y += halfThickness + halfObjectSize;
+                const isMoreVertical = Math.abs(normalizedAngle - Math.PI / 2) < Math.PI / 4;
+                if (isMoreVertical) {
+                    if (mouseToWall.x > 0) {
+                        side = 'right';
+                        rotation = wallAngle + Math.PI / 2;
+                        position.x += halfThickness + halfObjectSize;
+                    } else {
+                        side = 'left';
+                        rotation = wallAngle - Math.PI / 2;
+                        position.x -= halfThickness + halfObjectSize;
+                    }
                 } else {
-                    side = 'top';
-                    rotation = wallAngle + Math.PI;
-                    position.y -= halfThickness + halfObjectSize;
+                    if (mouseToWall.y > 0) {
+                        side = 'bottom';
+                        rotation = wallAngle;
+                        position.y += halfThickness + halfObjectSize;
+                    } else {
+                        side = 'top';
+                        rotation = wallAngle + Math.PI;
+                        position.y -= halfThickness + halfObjectSize;
+                    }
                 }
             }
         }
@@ -419,6 +476,13 @@ export default class WallEdgeObject {
     drawPreview(ctx, preview) {
         if (!preview.position || !preview.wall) return;
 
+        // Always update panel preview dimensions from the store for instant reactivity
+        if (preview.type === 'panel') {
+            preview.dimensions.width = (this.store.state.panels?.defaultWidth || 300) / 10;
+            preview.dimensions.height = (this.store.state.panels?.defaultHeight || 210) / 10;
+            preview.dimensions.floorHeight = (this.store.state.panels?.defaultFloorHeight || 1200) / 10;
+        }
+
         const { x, y, rotation, side } = preview.position;
         const wall = preview.wall;
         
@@ -429,16 +493,20 @@ export default class WallEdgeObject {
         ctx.translate(x, y);
         ctx.rotate(rotation);
 
-        // Draw square representing the object
+        // Draw square/rectangle representing the object
         ctx.fillStyle = 'rgba(0, 150, 255, 0.3)';
         ctx.strokeStyle = '#0096FF';
         ctx.lineWidth = 1 / this.zoom;
 
-        const width = this.defaultDimensions.width;
-        const height = this.defaultDimensions.height;
+        // For panel, use width from preview and fixed thickness 8cm
+        let width = preview.dimensions.width;
+        let drawThickness = 8; // cm
+        if (preview.type !== 'panel') {
+            drawThickness = preview.dimensions.height || 8;
+        }
 
         ctx.beginPath();
-        ctx.rect(-width/2, -height/2, width, height);
+        ctx.rect(-width/2, -drawThickness/2, width, drawThickness);
         ctx.fill();
         ctx.stroke();
 
@@ -621,5 +689,20 @@ export default class WallEdgeObject {
             },
             dimensions: preview.dimensions
         };
+    }
+
+    updatePreview(mousePoint) {
+        if (!this.preview) return;
+
+        // Get all walls from store
+        const walls = this.store.state.walls.walls || [];
+
+        // Find nearest wall and calculate position
+        const { wall, position, distance } = this.findNearestWall(mousePoint, walls);
+
+        this.preview.position = position;
+        this.preview.wall = wall;
+
+        return distance;
     }
 } 

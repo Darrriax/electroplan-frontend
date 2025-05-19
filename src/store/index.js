@@ -8,8 +8,10 @@ import {walls} from "./modules/walls.js";
 import {rooms} from "./modules/rooms.js";
 import {history} from "./modules/history.js";
 import {doors} from "./modules/doors.js";
-import windows from './modules/windows';
+import {windows} from './modules/windows';
 import {panels} from './modules/panels';
+import {sockets} from './modules/sockets';
+import {switches} from './modules/switches';
 
 export default createStore({
     modules: {
@@ -23,6 +25,8 @@ export default createStore({
         history,
         doors,
         windows,
-        panels
+        panels,
+        sockets,
+        switches
     },
 });

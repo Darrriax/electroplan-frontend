@@ -5,7 +5,7 @@ export const project = {
         elements: [], // Contains other elements like doors, windows, etc.
         currentTool: null,
         currentMode: 'original-plan', // Current selected mode
-        menuOpen: false,
+        menuOpen: true,
         unit: 'cm',
         scale: 1, // 1 unit = 1 cm
         modes: {

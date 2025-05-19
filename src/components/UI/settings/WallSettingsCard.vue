@@ -1,6 +1,6 @@
 <template>
   <transition name="fade">
-    <div class="wall-settings-card">
+    <div class="settings-card">
       <div class="header">Settings</div>
 
       <!-- Thickness Section -->
