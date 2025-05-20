@@ -72,6 +72,8 @@
         />
         <div class="editor-canvas-container">
           <canvas ref="canvas" class="editor-canvas" @contextmenu="onContextMenu" @wheel="onWheel"></canvas>
+          
+          />
         </div>
       </div>
     </div>
@@ -91,6 +93,7 @@ import PanelSettingsCard from "../../UI/settings/PanelSettingsCard.vue";
 import SocketSettingsCard from "../../UI/settings/SocketSettingsCard.vue";
 import LightPanelCard from "../../UI/settings/LightPanelCard.vue";
 import SwitchSettingsCard from "../../UI/settings/SwitchSettingsCard.vue";
+import ObjectCanvasRenderer from '../../../utils/ObjectCanvasRenderer';
 
 export default {
   name: 'PlanEditor',
@@ -103,7 +106,7 @@ export default {
     PanelSettingsCard,
     SocketSettingsCard,
     LightPanelCard,
-    SwitchSettingsCard
+    SwitchSettingsCard,
   },
   data() {
     return {
@@ -126,6 +129,7 @@ export default {
       socketFloorHeight: 300,
       lightFloorHeight: 2200, // default for wall light
       switchFloorHeight: 900,
+      objectRenderer: null,
     };
   },
   computed: {
@@ -186,6 +190,9 @@ export default {
       });
       
       this.resizeObserver.observe(this.canvas.parentElement);
+
+      this.objectRenderer = new ObjectCanvasRenderer(this.$store, this.ctx);
+      this.objectRenderer.redrawAll(this.$store.state);
     });
 
     // Add keyboard shortcuts
@@ -283,32 +290,40 @@ export default {
       if (!this.canvas) return;
 
       if (this.currentTool === 'wall' && this.wallManager) {
-        this.wallManager.onClick(e); // Pass the entire event
+        this.wallManager.onClick(e);
       } else if (this.objectManager && this.objectManager.isValidPlacement()) {
         const newObject = this.objectManager.createObject();
         if (newObject) {
-          // Add object to appropriate store module based on type
-          switch(newObject.type) {
+          switch (newObject.type) {
             case 'door':
+              this.$store.dispatch('doors/addDoor', newObject);
+              break;
             case 'window':
-              this.$store.dispatch('project/addElement', newObject);
+              this.$store.dispatch('windows/addWindow', newObject);
               break;
             case 'socket':
+              this.$store.dispatch('electrical/addSocket', newObject);
+              break;
             case 'panel':
-              this.$store.dispatch('electrical/addElement', newObject);
+              this.$store.dispatch('electrical/addPanel', newObject);
               break;
             case 'ceiling-light':
+              this.$store.dispatch('lighting/addCeilingLight', newObject);
+              break;
             case 'wall-light':
-              this.$store.dispatch('lighting/addElement', newObject);
+              this.$store.dispatch('lighting/addWallLight', newObject);
               break;
             case 'single-switch':
+              this.$store.dispatch('switches/addSingleSwitch', newObject);
+              break;
             case 'double-switch':
-              this.$store.dispatch('switches/addElement', newObject);
+              this.$store.dispatch('switches/addDoubleSwitch', newObject);
+              break;
+            default:
               break;
           }
         }
       }
-      
       this.redraw();
     },
     redraw() {
@@ -320,6 +335,15 @@ export default {
       // Let wall manager handle its own drawing
       if (this.wallManager) {
         this.wallManager.draw();
+      }
+
+      // Update object renderer with current transform
+      if (this.objectRenderer && this.wallManager) {
+        this.objectRenderer.updateTransform(
+          this.wallManager.panOffset,
+          this.wallManager.zoom
+        );
+        this.objectRenderer.redrawAll(this.$store.state);
       }
       
       // Draw object preview if not in wall mode

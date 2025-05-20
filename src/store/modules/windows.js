@@ -26,9 +26,9 @@ export const windows = {
                 state.windows[index] = { ...state.windows[index], ...updates };
             }
         },
-        removeWindow(state, id) {
-            state.windows = state.windows.filter(window => window.id !== id);
-        }
+        addWindow(state, window) {
+            state.windows.push(window);
+        },
     },
     actions: {
         setDefaultWidth({ commit }, width) {
@@ -39,6 +39,9 @@ export const windows = {
         },
         setDefaultFloorHeight({ commit }, height) {
             commit('updateDefaultFloorHeight', height);
-        }
+        },
+        addWindow({ commit }, window) {
+            commit('addWindow', window);
+        },
     }
 } 

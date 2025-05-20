@@ -52,10 +52,18 @@ export default class WallDrawingManager {
         this.angleDisplay = null;
         this.dragState = null;
 
+        // Canvas state
+        this.virtualWidth = 10000;  // Large virtual canvas width
+        this.virtualHeight = 10000; // Large virtual canvas height
+        this.minZoom = 0.1;        // Minimum zoom level
+        this.maxZoom = 5;          // Maximum zoom level
+        this.zoomFactor = 0.1;     // How much to zoom per step
+
         // Binding methods
         this.onMouseDown = this.onMouseDown.bind(this);
         this.onMouseMove = this.onMouseMove.bind(this);
         this.onMouseUp = this.onMouseUp.bind(this);
+        this.onWheel = this.onWheel.bind(this);
 
         // Initialize
         this.setupCanvas();
@@ -89,6 +97,11 @@ export default class WallDrawingManager {
         const container = this.canvas.parentElement;
         this.canvas.width = container.offsetWidth;
         this.canvas.height = container.offsetHeight;
+        
+        // Store physical canvas dimensions
+        this.physicalWidth = this.canvas.width;
+        this.physicalHeight = this.canvas.height;
+        
         this.draw(); // Redraw everything when resizing
     }
 
@@ -96,6 +109,7 @@ export default class WallDrawingManager {
         this.canvas.addEventListener('mousedown', this.onMouseDown);
         this.canvas.addEventListener('mousemove', this.onMouseMove);
         this.canvas.addEventListener('mouseup', this.onMouseUp);
+        this.canvas.addEventListener('wheel', this.onWheel);
     }
 
     removeEvents() {
@@ -1119,47 +1133,64 @@ export default class WallDrawingManager {
     }
 
     drawGrid() {
-        const width = this.canvas.width;
-        const height = this.canvas.height;
+        const width = this.virtualWidth;
+        const height = this.virtualHeight;
+
+        // Calculate visible area in world coordinates
+        const visibleLeft = -this.transformManager.panOffset.x / this.transformManager.zoom;
+        const visibleTop = -this.transformManager.panOffset.y / this.transformManager.zoom;
+        const visibleRight = (this.physicalWidth - this.transformManager.panOffset.x) / this.transformManager.zoom;
+        const visibleBottom = (this.physicalHeight - this.transformManager.panOffset.y) / this.transformManager.zoom;
+
+        // Adjust grid size based on zoom level
+        let gridSize = GRID_SIZE;
+        if (this.transformManager.zoom < 0.5) gridSize *= 2;
+        if (this.transformManager.zoom < 0.25) gridSize *= 2;
+
+        // Calculate grid line start and end points
+        const startX = Math.floor(visibleLeft / gridSize) * gridSize;
+        const endX = Math.ceil(visibleRight / gridSize) * gridSize;
+        const startY = Math.floor(visibleTop / gridSize) * gridSize;
+        const endY = Math.ceil(visibleBottom / gridSize) * gridSize;
 
         // Small grid lines
         this.ctx.strokeStyle = '#eee';
-        this.ctx.lineWidth = 1.5;
+        this.ctx.lineWidth = 0.5;
 
         // Draw vertical small grid lines
-        for (let x = 0; x < width; x += GRID_SIZE) {
+        for (let x = startX; x <= endX; x += gridSize) {
             this.ctx.beginPath();
-            this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, height);
+            this.ctx.moveTo(x, startY);
+            this.ctx.lineTo(x, endY);
             this.ctx.stroke();
         }
 
         // Draw horizontal small grid lines
-        for (let y = 0; y < height; y += GRID_SIZE) {
+        for (let y = startY; y <= endY; y += gridSize) {
             this.ctx.beginPath();
-            this.ctx.moveTo(0, y);
-            this.ctx.lineTo(width, y);
+            this.ctx.moveTo(startX, y);
+            this.ctx.lineTo(endX, y);
             this.ctx.stroke();
         }
 
         // Draw larger grid lines (10x size) with darker color
-        const LARGE_GRID_SIZE = GRID_SIZE * 10;
+        const LARGE_GRID_SIZE = gridSize * 10;
         this.ctx.strokeStyle = '#aaa';
         this.ctx.lineWidth = 1;
 
         // Draw vertical large grid lines
-        for (let x = 0; x < width; x += LARGE_GRID_SIZE) {
+        for (let x = Math.floor(startX / LARGE_GRID_SIZE) * LARGE_GRID_SIZE; x <= endX; x += LARGE_GRID_SIZE) {
             this.ctx.beginPath();
-            this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, height);
+            this.ctx.moveTo(x, startY);
+            this.ctx.lineTo(x, endY);
             this.ctx.stroke();
         }
 
         // Draw horizontal large grid lines
-        for (let y = 0; y < height; y += LARGE_GRID_SIZE) {
+        for (let y = Math.floor(startY / LARGE_GRID_SIZE) * LARGE_GRID_SIZE; y <= endY; y += LARGE_GRID_SIZE) {
             this.ctx.beginPath();
-            this.ctx.moveTo(0, y);
-            this.ctx.lineTo(width, y);
+            this.ctx.moveTo(startX, y);
+            this.ctx.lineTo(endX, y);
             this.ctx.stroke();
         }
     }
@@ -2832,5 +2863,41 @@ export default class WallDrawingManager {
             x: isStart ? wall.end.x - wall.start.x : wall.start.x - wall.end.x,
             y: isStart ? wall.end.y - wall.start.y : wall.start.y - wall.end.y
         };
+    }
+
+    // Add a no-op onClick method to prevent errors
+    onClick(e) {
+        // No operation needed for wall clicks (handled by mousedown/up)
+    }
+
+    onWheel(e) {
+        e.preventDefault();
+
+        // Get mouse position before zoom
+        const rect = this.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        // Convert mouse position to world coordinates before zoom
+        const worldX = (mouseX - this.transformManager.panOffset.x) / this.transformManager.zoom;
+        const worldY = (mouseY - this.transformManager.panOffset.y) / this.transformManager.zoom;
+
+        // Calculate new zoom level
+        const zoomDelta = e.deltaY > 0 ? (1 - this.zoomFactor) : (1 + this.zoomFactor);
+        const newZoom = Math.min(Math.max(this.minZoom, this.transformManager.zoom * zoomDelta), this.maxZoom);
+        
+        // Only proceed if zoom actually changed
+        if (newZoom !== this.transformManager.zoom) {
+            // Calculate new pan offset to keep the mouse point stationary
+            const newPanX = mouseX - worldX * newZoom;
+            const newPanY = mouseY - worldY * newZoom;
+
+            // Update transform
+            this.transformManager.zoom = newZoom;
+            this.transformManager.panOffset = { x: newPanX, y: newPanY };
+
+            // Redraw
+            this.draw();
+        }
     }
 }

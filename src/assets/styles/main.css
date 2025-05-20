@@ -657,9 +657,9 @@ canvas {
   }
   
   .direction-button.active {
-    background: #42b983;
-    color: white;
-    border-color: #42b983;
+    background: #d0f0ff;
+    border-color: #0096FF;
+    color: #0096FF;
   }
 
   .editable-value {

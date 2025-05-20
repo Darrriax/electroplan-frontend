@@ -98,8 +98,39 @@ export default class WallEdgeObject {
         }
     }
 
+    // Check if a point is inside any room
+    isPointInsideRoom(point) {
+        const rooms = this.store.state.rooms.rooms || [];
+        
+        for (const room of rooms) {
+            if (this.isPointInPolygon(point, room.path)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Ray casting algorithm to check if a point is inside a polygon
+    isPointInPolygon(point, polygon) {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x, yi = polygon[i].y;
+            const xj = polygon[j].x, yj = polygon[j].y;
+            
+            const intersect = ((yi > point.y) !== (yj > point.y))
+                && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
     // Find nearest wall and calculate position
     findNearestWall(mousePoint, walls) {
+        // First check if mouse is inside any room
+        if (!this.isPointInsideRoom(mousePoint)) {
+            return { wall: null, position: null, distance: Infinity };
+        }
+
         let nearestWall = null;
         let minDistance = Infinity;
         let bestPosition = null;
@@ -141,11 +172,16 @@ export default class WallEdgeObject {
 
             // Only consider walls that are close enough
             if (perpDistance <= this.magnetThreshold / this.zoom) {
-                // Calculate position if this is the closest wall so far
-                if (perpDistance < minDistance) {
-                    minDistance = perpDistance;
-                    nearestWall = wall;
-                    bestPosition = this.calculatePosition(wall, mousePoint);
+                // Calculate potential position
+                const potentialPosition = this.calculatePosition(wall, mousePoint);
+                
+                if (potentialPosition) {
+                    // If this is the closest wall so far, update the best position
+                    if (perpDistance < minDistance) {
+                        minDistance = perpDistance;
+                        nearestWall = wall;
+                        bestPosition = potentialPosition;
+                    }
                 }
             }
         });
@@ -251,89 +287,39 @@ export default class WallEdgeObject {
 
         // Calculate wall angle and determine orientation
         const wallAngle = Math.atan2(wallVector.y, wallVector.x);
-        // Normalize angle to 0-180 degrees for vertical/horizontal detection
-        const normalizedAngle = Math.abs(wallAngle % Math.PI);
 
-        // Project mouse position onto wall normal
+        // Project mouse point onto wall (0=start, 1=end)
+        const mouseProj = ((mousePoint.x - wall.start.x) * wallVector.x + (mousePoint.y - wall.start.y) * wallVector.y) / (wallLength * wallLength);
+
+        // Calculate which side of the wall the mouse is on
         const normalProjection = mouseToWall.x * normalVector.x + mouseToWall.y * normalVector.y;
+        const sideSign = Math.sign(normalProjection) || 1; // 1=one side, -1=other side
 
-        // Convert wall thickness from mm to cm and calculate half thickness
-        const halfThickness = (wall.thickness / 10) / 2;
-
-        // Get the current preview dimensions, fallback to defaults if undefined
-        const dimensions = (this.preview && this.preview.dimensions)
-            ? this.preview.dimensions
-            : { width: 8, height: 8 };
-        const width = dimensions.width || 8;
-        const height = dimensions.height || 8;
-        const halfObjectSize = width / 2;
-
-        // Constrain position along wall length
-        const relativePos = projection / internalLength;
-        const constrainedPos = Math.max(
-            halfObjectSize / internalLength,
-            Math.min(1 - halfObjectSize / internalLength, relativePos)
-        );
-
-        // Calculate constrained base position on internal wall
-        const position = {
-            x: internalStart.x + wallUnitVector.x * (constrainedPos * internalLength),
-            y: internalStart.y + wallUnitVector.y * (constrainedPos * internalLength)
+        // Calculate position along wall length
+        let position = {
+            x: internalStart.x + wallUnitVector.x * projection,
+            y: internalStart.y + wallUnitVector.y * projection
         };
 
-        // Determine side and calculate final position
-        let side, rotation;
+        // Offset position to be outside the wall by half the wall thickness
+        const wallThickness = wall.thickness / 10; // Convert mm to cm
+        position.x += normalVector.x * (wallThickness / 2) * sideSign;
+        position.y += normalVector.y * (wallThickness / 2) * sideSign;
 
-        // For panel, always align with wall
-        if (this.preview && this.preview.type === 'panel') {
-            rotation = wallAngle;
-            side = null; // Not used for panel
+        // Determine which edge the mouse is closer to (start or end)
+        let side = null;
+        if (mouseProj < 0.15) {
+            side = 'start';
+        } else if (mouseProj > 0.85) {
+            side = 'end';
         } else {
-            // For diagonal walls (close to 45 degrees), use normal projection
-            const isDiagonal = Math.abs(Math.abs(normalizedAngle - Math.PI / 4) % (Math.PI / 2)) < Math.PI / 8;
-
-            if (isDiagonal) {
-                if (normalProjection > 0) {
-                    side = 'right';
-                    rotation = wallAngle + Math.PI / 2;
-                    position.x += normalVector.x * (halfThickness + halfObjectSize);
-                    position.y += normalVector.y * (halfThickness + halfObjectSize);
-                } else {
-                    side = 'left';
-                    rotation = wallAngle - Math.PI / 2;
-                    position.x -= normalVector.x * (halfThickness + halfObjectSize);
-                    position.y -= normalVector.y * (halfThickness + halfObjectSize);
-                }
-            } else {
-                const isMoreVertical = Math.abs(normalizedAngle - Math.PI / 2) < Math.PI / 4;
-                if (isMoreVertical) {
-                    if (mouseToWall.x > 0) {
-                        side = 'right';
-                        rotation = wallAngle + Math.PI / 2;
-                        position.x += halfThickness + halfObjectSize;
-                    } else {
-                        side = 'left';
-                        rotation = wallAngle - Math.PI / 2;
-                        position.x -= halfThickness + halfObjectSize;
-                    }
-                } else {
-                    if (mouseToWall.y > 0) {
-                        side = 'bottom';
-                        rotation = wallAngle;
-                        position.y += halfThickness + halfObjectSize;
-                    } else {
-                        side = 'top';
-                        rotation = wallAngle + Math.PI;
-                        position.y -= halfThickness + halfObjectSize;
-                    }
-                }
-            }
+            side = 'center';
         }
 
         return {
             x: position.x,
             y: position.y,
-            rotation,
+            rotation: wallAngle,
             side,
             distanceToWall: perpDistance
         };

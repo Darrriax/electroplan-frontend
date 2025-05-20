@@ -5,7 +5,8 @@ export const doors = {
     defaultWidth: 800, // 80 cm in mm
     defaultHeight: 2000, // 200 cm in mm
     defaultOpeningDirection: 'left',
-    defaultOpeningSide: 'inside'
+    defaultOpeningSide: 'inside',
+    doors: [] // Array to store placed doors
   },
   mutations: {
     setDefaultWidth(state, width) {
@@ -19,6 +20,9 @@ export const doors = {
     },
     setDefaultOpeningSide(state, side) {
       state.defaultOpeningSide = side;
+    },
+    addDoor(state, door) {
+      state.doors.push(door);
     }
   },
   actions: {
@@ -33,12 +37,16 @@ export const doors = {
     },
     updateDefaultOpeningSide({ commit }, side) {
       commit('setDefaultOpeningSide', side);
+    },
+    addDoor({ commit }, door) {
+      commit('addDoor', door);
     }
   },
   getters: {
     defaultWidth: state => state.defaultWidth,
     defaultHeight: state => state.defaultHeight,
     defaultOpeningDirection: state => state.defaultOpeningDirection,
-    defaultOpeningSide: state => state.defaultOpeningSide
+    defaultOpeningSide: state => state.defaultOpeningSide,
+    doors: state => state.doors
   }
 }; 
