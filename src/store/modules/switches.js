@@ -1,16 +1,33 @@
-export const switches = {
+// Vuex module for managing switches
+export default {
   namespaced: true,
   state: {
-    defaultFloorHeight: 900 // 90cm in mm
+    defaultFloorHeight: 900, // 90cm in mm
+    switches: []
   },
   mutations: {
-    updateDefaultFloorHeight(state, height) {
+    setDefaultFloorHeight(state, height) {
       state.defaultFloorHeight = height;
+    },
+    addSwitch(state, switchObj) {
+      state.switches.push(switchObj);
+    },
+    removeSwitch(state, switchId) {
+      state.switches = state.switches.filter(s => s.id !== switchId);
     }
   },
   actions: {
     setDefaultFloorHeight({ commit }, height) {
-      commit('updateDefaultFloorHeight', height);
+      commit('setDefaultFloorHeight', height);
+    },
+    addSwitch({ commit }, switchObj) {
+      commit('addSwitch', switchObj);
+    },
+    removeSwitch({ commit }, switchId) {
+      commit('removeSwitch', switchId);
     }
+  },
+  getters: {
+    getAllSwitches: state => state.switches
   }
 }; 

@@ -1,5 +1,5 @@
 // Panels store module
-export const panels = {
+export default {
     namespaced: true,
     state: {
         defaultWidth: 300, // 30cm in mm
@@ -8,37 +8,40 @@ export const panels = {
         panels: []
     },
     mutations: {
-        updateDefaultWidth(state, width) {
+        setDefaultWidth(state, width) {
             state.defaultWidth = width;
         },
-        updateDefaultHeight(state, height) {
+        setDefaultHeight(state, height) {
             state.defaultHeight = height;
         },
-        updateDefaultFloorHeight(state, height) {
+        setDefaultFloorHeight(state, height) {
             state.defaultFloorHeight = height;
         },
         addPanel(state, panel) {
             state.panels.push(panel);
         },
-        updatePanel(state, { id, updates }) {
-            const index = state.panels.findIndex(panel => panel.id === id);
-            if (index !== -1) {
-                state.panels[index] = { ...state.panels[index], ...updates };
-            }
-        },
-        removePanel(state, id) {
-            state.panels = state.panels.filter(panel => panel.id !== id);
+        removePanel(state, panelId) {
+            state.panels = state.panels.filter(p => p.id !== panelId);
         }
     },
     actions: {
         setDefaultWidth({ commit }, width) {
-            commit('updateDefaultWidth', width);
+            commit('setDefaultWidth', width);
         },
         setDefaultHeight({ commit }, height) {
-            commit('updateDefaultHeight', height);
+            commit('setDefaultHeight', height);
         },
         setDefaultFloorHeight({ commit }, height) {
-            commit('updateDefaultFloorHeight', height);
+            commit('setDefaultFloorHeight', height);
+        },
+        addPanel({ commit }, panel) {
+            commit('addPanel', panel);
+        },
+        removePanel({ commit }, panelId) {
+            commit('removePanel', panelId);
         }
+    },
+    getters: {
+        getAllPanels: state => state.panels
     }
 } 

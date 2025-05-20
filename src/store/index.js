@@ -9,9 +9,11 @@ import {rooms} from "./modules/rooms.js";
 import {history} from "./modules/history.js";
 import {doors} from "./modules/doors.js";
 import {windows} from './modules/windows';
-import {panels} from './modules/panels';
-import {sockets} from './modules/sockets';
-import {switches} from './modules/switches';
+import panels from './modules/panels';
+import sockets from './modules/sockets';
+import switches from './modules/switches';
+import lights from './modules/lights';
+import canvas from './modules/canvas';
 
 export default createStore({
     modules: {
@@ -27,6 +29,8 @@ export default createStore({
         windows,
         panels,
         sockets,
-        switches
+        switches,
+        lights,
+        canvas
     },
 });

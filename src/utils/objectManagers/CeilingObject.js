@@ -1,7 +1,10 @@
 // CeilingObject.js - Manager for ceiling-mounted objects (ceiling lights)
+import { v4 as uuidv4 } from 'uuid';
+
 export default class CeilingObject {
     constructor(store) {
         this.store = store;
+        this.preview = null;
         this.defaultDimensions = {
             diameter: 15 // 15 cm diameter
         };
@@ -35,11 +38,12 @@ export default class CeilingObject {
     // Initialize object preview when tool is selected
     initializePreview(type) {
         return {
+            id: uuidv4(),
             type,
-            dimensions: { ...this.defaultDimensions },
             position: null,
-            room: null, // Reference to the room this object belongs to
-            distances: null // Distances to walls
+            dimensions: { ...this.defaultDimensions },
+            room: null,
+            distances: null
         };
     }
 
@@ -75,6 +79,14 @@ export default class CeilingObject {
 
         const distances = [];
         
+        // First, determine if the room path is clockwise
+        let area = 0;
+        for (let i = 0; i < room.path.length; i++) {
+            const j = (i + 1) % room.path.length;
+            area += (room.path[j].x - room.path[i].x) * (room.path[j].y + room.path[i].y);
+        }
+        const isClockwise = area < 0;
+        
         for (let i = 0; i < room.path.length; i++) {
             const j = (i + 1) % room.path.length;
             const wall = {
@@ -97,10 +109,10 @@ export default class CeilingObject {
                 y: wallVector.y / wallLength
             };
             
-            // Calculate perpendicular vector (normal)
+            // Calculate perpendicular vector (normal), always pointing inward
             const normal = {
-                x: wallUnitVector.y,
-                y: -wallUnitVector.x
+                x: isClockwise ? -wallUnitVector.y : wallUnitVector.y,
+                y: isClockwise ? wallUnitVector.x : -wallUnitVector.x
             };
 
             // Get wall thickness from store (assuming it's stored in mm)
@@ -179,26 +191,23 @@ export default class CeilingObject {
             Math.pow(mousePoint.y - center.y, 2)
         );
 
-        // Define snap threshold (15cm in world units) - reduced from 30cm
+        // Define snap threshold (15cm in world units)
         const snapThreshold = 15;
 
         // Determine final position - snap to center if within threshold
         const position = {
             x: distanceToCenter <= snapThreshold ? center.x : mousePoint.x,
-            y: distanceToCenter <= snapThreshold ? center.y : mousePoint.y,
-            room: room.id
+            y: distanceToCenter <= snapThreshold ? center.y : mousePoint.y
         };
 
         // Calculate distances to walls
         const distances = this.calculateWallDistances(position, room);
 
-        // If we're near the center, add a visual indicator
-        const isNearCenter = distanceToCenter <= snapThreshold;
-
         return {
             ...position,
+            room: room.id,
             distances,
-            isNearCenter
+            isNearCenter: distanceToCenter <= snapThreshold
         };
     }
 
@@ -252,21 +261,21 @@ export default class CeilingObject {
 
     // Draw preview of the object
     drawPreview(ctx, preview) {
-        if (!preview.position) return;
+        if (!preview?.position) return;
 
+        ctx.fillStyle = 'rgba(0, 150, 255, 0.3)';
+        ctx.strokeStyle = '#0096FF';
+        ctx.lineWidth = 1 / this.zoom;
         const { x, y, distances, isNearCenter } = preview.position;
         
         ctx.save();
-        // Apply canvas transformations
         ctx.translate(this.panOffset.x, this.panOffset.y);
         ctx.scale(this.zoom, this.zoom);
 
         // Draw center snap indicator if near center
         if (isNearCenter) {
-            ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
             ctx.lineWidth = 1 / this.zoom;
             
-            // Draw crosshair
             const crosshairSize = 20 / this.zoom;
             ctx.beginPath();
             ctx.moveTo(x - crosshairSize, y);
@@ -275,36 +284,36 @@ export default class CeilingObject {
             ctx.lineTo(x, y + crosshairSize);
             ctx.stroke();
             
-            // Draw circle
             ctx.beginPath();
             ctx.arc(x, y, crosshairSize * 0.7, 0, Math.PI * 2);
             ctx.stroke();
         }
 
-        // Draw circle representing the ceiling light
-        ctx.fillStyle = 'rgba(0, 150, 255, 0.3)';
-        ctx.strokeStyle = '#0096FF';
-        ctx.lineWidth = 1 / this.zoom;
 
-        const radius = this.defaultDimensions.diameter / 2;
+        // Draw concentric circles
+        const outerRadius = 12;
+        const middleRadius = 8;
+        const innerRadius = 4;
 
+        // Draw outer circle with fill
         ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.arc(x, y, outerRadius, 0, Math.PI * 2);
+        ctx.fill(); // Add fill
         ctx.stroke();
 
-        // Draw cross in the center
+        // Draw middle circle
         ctx.beginPath();
-        ctx.moveTo(x - radius/2, y);
-        ctx.lineTo(x + radius/2, y);
-        ctx.moveTo(x, y - radius/2);
-        ctx.lineTo(x, y + radius/2);
+        ctx.arc(x, y, middleRadius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Draw inner circle
+        ctx.beginPath();
+        ctx.arc(x, y, innerRadius, 0, Math.PI * 2);
         ctx.stroke();
 
         // Draw dimensions if distances are available
         if (distances) {
             ctx.strokeStyle = '#666';
-            // Update font styling to match other objects
             ctx.font = `${12 / this.zoom}px Arial`;
             ctx.fillStyle = '#333';
             ctx.textAlign = 'center';
@@ -324,15 +333,11 @@ export default class CeilingObject {
                 }
 
                 // Draw dimension line
-                const dimensionOffset = 20 / this.zoom;
-                
-                // Calculate extension line end point
                 const extensionEnd = {
                     x: x - normal.x * distance,
                     y: y - normal.y * distance
                 };
                 
-                // Draw extension line
                 ctx.beginPath();
                 ctx.moveTo(x, y);
                 ctx.lineTo(extensionEnd.x, extensionEnd.y);
@@ -344,10 +349,9 @@ export default class CeilingObject {
                     y: y - normal.y * (distance / 2)
                 };
                 
-                // Draw text background
                 const text = this.formatDistance(distance);
                 const textWidth = ctx.measureText(text).width + 4;
-                const textHeight = 16 / this.zoom; // Scale text background height with zoom
+                const textHeight = 16 / this.zoom;
                 
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
                 ctx.fillRect(
@@ -357,7 +361,6 @@ export default class CeilingObject {
                     textHeight
                 );
                 
-                // Draw text
                 ctx.fillStyle = '#333';
                 ctx.fillText(text, textPoint.x, textPoint.y);
             });
@@ -368,14 +371,34 @@ export default class CeilingObject {
 
     // Create final object
     createObject(preview) {
-        if (!preview.position) return null;
+        if (!preview?.position) return null;
 
         return {
-            id: Date.now().toString(),
+            id: uuidv4(),
             type: preview.type,
-            position: preview.position,
-            dimensions: preview.dimensions,
-            room: preview.position.room
+            position: {
+                x: preview.position.x,
+                y: preview.position.y,
+                room: preview.position.room
+            }
         };
+    }
+
+    updatePreview(mousePoint) {
+        if (!this.preview) return Infinity;
+
+        // Get all rooms from store
+        const rooms = this.store.state.rooms.rooms || [];
+
+        // Calculate position with room center snapping and wall distances
+        const position = this.calculatePosition(mousePoint, rooms);
+        if (!position) {
+            return Infinity;
+        }
+
+        // Update preview with all calculated information
+        this.preview.position = position;
+
+        return 0;
     }
 } 

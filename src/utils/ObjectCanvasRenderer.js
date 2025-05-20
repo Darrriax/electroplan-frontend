@@ -1,5 +1,4 @@
-import drawDoor from './objectDrawing/drawDoor';
-import drawWindow from './objectDrawing/drawWindow';
+import WallCenteredObject from './objectManagers/WallCenteredObject';
 
 export default class ObjectCanvasRenderer {
   constructor(store, ctx) {
@@ -7,9 +6,18 @@ export default class ObjectCanvasRenderer {
     this.ctx = ctx;
     this.panOffset = { x: 0, y: 0 };
     this.zoom = 1;
+    this.wallCenteredObject = new WallCenteredObject(store);
 
+    // Subscribe to store mutations
     store.subscribe((mutation, state) => {
+      // Listen for object changes
       if (mutation.type.startsWith('doors/') || mutation.type.startsWith('windows/')) {
+        this.redrawAll(state);
+      }
+      
+      // Listen for transform updates
+      if (mutation.type === 'canvas/updateTransform') {
+        this.updateTransform(mutation.payload.panOffset, mutation.payload.zoom);
         this.redrawAll(state);
       }
     });
@@ -18,6 +26,7 @@ export default class ObjectCanvasRenderer {
   updateTransform(panOffset, zoom) {
     this.panOffset = panOffset;
     this.zoom = zoom;
+    this.wallCenteredObject.updateTransform(panOffset, zoom);
   }
 
   // Helper method to check if two points are equal (within a small threshold)
@@ -55,51 +64,63 @@ export default class ObjectCanvasRenderer {
     return doorPosition;
   }
 
+  drawDoor(ctx, door, wall) {
+    if (!door || !wall) return;
+    
+    // Apply current transform
+    ctx.save();
+    ctx.translate(this.panOffset.x, this.panOffset.y);
+    ctx.scale(this.zoom, this.zoom);
+    
+    // Draw the door using WallCenteredObject
+    this.wallCenteredObject.drawFinalObject(ctx, door, wall);
+    
+    ctx.restore();
+  }
+
+  drawWindow(ctx, window, wall) {
+    if (!window || !wall) return;
+    
+    // Apply current transform
+    ctx.save();
+    ctx.translate(this.panOffset.x, this.panOffset.y);
+    ctx.scale(this.zoom, this.zoom);
+    
+    // Draw the window using WallCenteredObject
+    this.wallCenteredObject.drawFinalObject(ctx, window, wall);
+    
+    ctx.restore();
+  }
+
   redrawAll(state) {
     if (!this.ctx) return;
-
-    // Save the current context state
+    
+    // Apply transform
     this.ctx.save();
-
-    // Apply pan and zoom transformations
     this.ctx.translate(this.panOffset.x, this.panOffset.y);
     this.ctx.scale(this.zoom, this.zoom);
 
-    // Draw doors
-    if (state.doors && state.doors.doors) {
-      state.doors.doors.forEach(door => {
-        if (!door.position) return;
-        
-        const plainDoor = {
-          ...door,
-          position: {
-            x: door.position.x,
-            y: door.position.y,
-            rotation: door.position.rotation || 0
-          }
-        };
-        drawDoor(this.ctx, plainDoor);
-      });
-    }
+    // Get all objects from state
+    const doors = state.doors?.doors || [];
+    const windows = state.windows?.windows || [];
+    const walls = state.walls?.walls || [];
 
-    // Draw windows
-    if (state.windows && state.windows.windows) {
-      state.windows.windows.forEach(window => {
-        if (!window.position) return;
-        
-        const plainWindow = {
-          ...window,
-          position: {
-            x: window.position.x,
-            y: window.position.y,
-            rotation: window.position.rotation || 0
-          }
-        };
-        drawWindow(this.ctx, plainWindow);
-      });
-    }
+    // Draw all doors
+    doors.forEach(door => {
+      const wall = walls.find(w => w.id === door.wallId);
+      if (wall) {
+        this.wallCenteredObject.drawFinalObject(this.ctx, door, wall);
+      }
+    });
 
-    // Restore the context state
+    // Draw all windows
+    windows.forEach(window => {
+      const wall = walls.find(w => w.id === window.wallId);
+      if (wall) {
+        this.wallCenteredObject.drawFinalObject(this.ctx, window, wall);
+      }
+    });
+
     this.ctx.restore();
   }
 } 

@@ -94,6 +94,10 @@ import SocketSettingsCard from "../../UI/settings/SocketSettingsCard.vue";
 import LightPanelCard from "../../UI/settings/LightPanelCard.vue";
 import SwitchSettingsCard from "../../UI/settings/SwitchSettingsCard.vue";
 import ObjectCanvasRenderer from '../../../utils/ObjectCanvasRenderer';
+import WallEdgeObject from '../../../utils/objectManagers/WallEdgeObject';
+import WallEdgeObjectRenderer from '../../../utils/WallEdgeObjectRenderer';
+import CeilingObject from '../../../utils/objectManagers/CeilingObject';
+import CeilingObjectRenderer from '../../../utils/CeilingObjectRenderer';
 
 export default {
   name: 'PlanEditor',
@@ -130,10 +134,15 @@ export default {
       lightFloorHeight: 2200, // default for wall light
       switchFloorHeight: 900,
       objectRenderer: null,
+      wallEdgeObjectManager: null,
+      wallEdgeObjectRenderer: null,
+      ceilingObjectManager: null,
+      ceilingObjectRenderer: null,
     };
   },
   computed: {
     ...mapState('project', ['unit']),
+    ...mapState('canvas', ['transform']),
     ...mapGetters({
       isMenuOpen: 'project/isMenuOpen',
       currentTool: 'project/getCurrentTool',
@@ -173,6 +182,38 @@ export default {
         this.objectManager.setTool(newTool);
         this.redraw();
       }
+    },
+    transform: {
+      handler(newTransform) {
+        if (this.objectRenderer) {
+          this.objectRenderer.updateTransform(
+            newTransform.panOffset,
+            newTransform.zoom
+          );
+          this.redraw();
+        }
+      },
+      deep: true
+    },
+    // Watch for changes in doors
+    '$store.state.doors.doors': {
+      handler() {
+        if (this.objectRenderer) {
+          this.objectRenderer.redrawAll(this.$store.state);
+          this.redraw();
+        }
+      },
+      deep: true
+    },
+    // Watch for changes in windows
+    '$store.state.windows.windows': {
+      handler() {
+        if (this.objectRenderer) {
+          this.objectRenderer.redrawAll(this.$store.state);
+          this.redraw();
+        }
+      },
+      deep: true
     }
   },
   mounted() {
@@ -193,6 +234,10 @@ export default {
 
       this.objectRenderer = new ObjectCanvasRenderer(this.$store, this.ctx);
       this.objectRenderer.redrawAll(this.$store.state);
+      this.wallEdgeObjectManager = new WallEdgeObject(this.$store);
+      this.wallEdgeObjectRenderer = new WallEdgeObjectRenderer(this.$store);
+      this.ceilingObjectManager = new CeilingObject(this.$store);
+      this.ceilingObjectRenderer = new CeilingObjectRenderer(this.$store);
     });
 
     // Add keyboard shortcuts
@@ -201,6 +246,13 @@ export default {
     // Set initial tool
     if (!this.currentTool) {
       this.setCurrentTool('wall');
+    }
+  },
+  activated() {
+    // When returning to this component, reload walls from store
+    if (this.wallManager) {
+      this.wallManager.loadFromStore();
+      this.redraw();
     }
   },
   methods: {
@@ -229,9 +281,12 @@ export default {
       this.wallManager = new WallDrawingManager(this.canvas, this.$store);
       this.objectManager = new ObjectManagerFactory(this.$store);
       
+      // Load existing walls from store
+      this.wallManager.loadFromStore();
+      
       // Set up event listeners
       this.canvas.addEventListener('mousemove', this.onMouseMove);
-      this.canvas.addEventListener('click', this.onClick);
+      this.canvas.addEventListener('click', this.handleCanvasClick);
       
       // Initial draw
       this.redraw();
@@ -250,6 +305,12 @@ export default {
       if (this.wallManager) {
         this.wallManager.canvas = this.canvas;
         this.wallManager.ctx = this.canvas.getContext('2d');
+      }
+
+      // Update object renderer transform and redraw objects
+      if (this.objectRenderer) {
+        this.objectRenderer.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
+        this.objectRenderer.redrawAll(this.$store.state);
       }
 
       this.redraw();
@@ -286,45 +347,56 @@ export default {
       
       this.redraw();
     },
-    onClick(e) {
-      if (!this.canvas) return;
+    handleCanvasClick(event) {
+        if (!this.currentTool) return;
 
-      if (this.currentTool === 'wall' && this.wallManager) {
-        this.wallManager.onClick(e);
-      } else if (this.objectManager && this.objectManager.isValidPlacement()) {
-        const newObject = this.objectManager.createObject();
-        if (newObject) {
-          switch (newObject.type) {
+        const rect = this.canvas.getBoundingClientRect();
+        const screenPoint = {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top
+        };
+
+        // Convert screen coordinates to world coordinates
+        const mousePoint = {
+            x: (screenPoint.x - this.wallManager.panOffset.x) / this.wallManager.zoom,
+            y: (screenPoint.y - this.wallManager.panOffset.y) / this.wallManager.zoom
+        };
+
+        switch (this.currentTool) {
+            case 'wall':
+                this.wallManager.onClick(event);
+                break;
             case 'door':
-              this.$store.dispatch('doors/addDoor', newObject);
-              break;
             case 'window':
-              this.$store.dispatch('windows/addWindow', newObject);
-              break;
+                if (this.objectManager && this.objectManager.isValidPlacement()) {
+                    const newObject = this.objectManager.createObject();
+                    if (newObject) {
+                        if (newObject.type === 'door') {
+                            this.$store.dispatch('doors/addDoor', newObject);
+                        } else if (newObject.type === 'window') {
+                            this.$store.dispatch('windows/addWindow', newObject);
+                        }
+                        this.objectManager.setTool(null);
+                    }
+                }
+                break;
             case 'socket':
-              this.$store.dispatch('electrical/addSocket', newObject);
-              break;
+                this.handleSocketCreation(mousePoint);
+                break;
             case 'panel':
-              this.$store.dispatch('electrical/addPanel', newObject);
-              break;
+                this.handlePanelCreation(mousePoint);
+                break;
             case 'ceiling-light':
-              this.$store.dispatch('lighting/addCeilingLight', newObject);
-              break;
+                this.handleCeilingLightCreation(mousePoint);
+                break;
             case 'wall-light':
-              this.$store.dispatch('lighting/addWallLight', newObject);
-              break;
+                this.handleWallLightCreation(mousePoint);
+                break;
             case 'single-switch':
-              this.$store.dispatch('switches/addSingleSwitch', newObject);
-              break;
             case 'double-switch':
-              this.$store.dispatch('switches/addDoubleSwitch', newObject);
-              break;
-            default:
-              break;
-          }
+                this.handleSwitchCreation(mousePoint);
+                break;
         }
-      }
-      this.redraw();
     },
     redraw() {
       if (!this.ctx || !this.canvas) return;
@@ -337,13 +409,36 @@ export default {
         this.wallManager.draw();
       }
 
-      // Update object renderer with current transform
+      // Update object renderer with current transform and redraw all objects
       if (this.objectRenderer && this.wallManager) {
         this.objectRenderer.updateTransform(
           this.wallManager.panOffset,
           this.wallManager.zoom
         );
+        
+        // Force a complete redraw of all objects
         this.objectRenderer.redrawAll(this.$store.state);
+
+        // Explicitly redraw doors and windows
+        const doors = this.$store.state.doors.doors || [];
+        const windows = this.$store.state.windows.windows || [];
+        const walls = this.$store.state.walls.walls || [];
+
+        // Redraw doors
+        doors.forEach(door => {
+          const wall = walls.find(w => w.id === door.wallId);
+          if (wall) {
+            this.objectRenderer.drawDoor(this.ctx, door, wall);
+          }
+        });
+
+        // Redraw windows
+        windows.forEach(window => {
+          const wall = walls.find(w => w.id === window.wallId);
+          if (wall) {
+            this.objectRenderer.drawWindow(this.ctx, window, wall);
+          }
+        });
       }
       
       // Draw object preview if not in wall mode
@@ -354,6 +449,30 @@ export default {
           this.wallManager.zoom
         );
         this.objectManager.drawPreview(this.ctx);
+      }
+
+      // Draw wall edge objects
+      if (this.wallEdgeObjectRenderer) {
+        this.wallEdgeObjectRenderer.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
+        this.wallEdgeObjectRenderer.drawObjects(this.ctx);
+      }
+
+      // Draw ceiling objects
+      if (this.ceilingObjectRenderer) {
+        this.ceilingObjectRenderer.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
+        this.ceilingObjectRenderer.drawObjects(this.ctx);
+      }
+
+      // Draw wall edge object preview
+      if (this.wallEdgeObjectManager?.preview) {
+        this.wallEdgeObjectManager.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
+        this.wallEdgeObjectManager.drawPreview(this.ctx, this.wallEdgeObjectManager.preview);
+      }
+
+      // Draw ceiling object preview
+      if (this.ceilingObjectManager?.preview) {
+        this.ceilingObjectManager.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
+        this.ceilingObjectManager.drawPreview(this.ctx, this.ceilingObjectManager.preview);
       }
     },
     handleKeyboard(event) {
@@ -387,8 +506,9 @@ export default {
     onWheel(event) {
       event.preventDefault();
       if (this.wallManager) {
-        const delta = event.deltaY > 0 ? 0.9 : 1.1;
-        this.wallManager.zoom = Math.min(Math.max(0.1, this.wallManager.zoom * delta), 5);
+        // Let the wall manager handle the zoom
+        this.wallManager.onWheel(event);
+        
         // Update object manager transform state after zoom change
         if (this.objectManager) {
           this.objectManager.updateTransform(
@@ -396,6 +516,16 @@ export default {
             this.wallManager.zoom
           );
         }
+        
+        // Update object renderer with new transform
+        if (this.objectRenderer) {
+          this.objectRenderer.updateTransform(
+            this.wallManager.panOffset,
+            this.wallManager.zoom
+          );
+          this.objectRenderer.redrawAll(this.$store.state);
+        }
+        
         this.redraw();
       }
     },
@@ -503,20 +633,156 @@ export default {
         this.redraw();
       }
     },
+    handleSocketCreation(mousePoint) {
+        if (!this.wallEdgeObjectManager.preview) {
+            this.wallEdgeObjectManager.preview = this.wallEdgeObjectManager.initializePreview('socket');
+            // Set floor height from store
+            this.wallEdgeObjectManager.preview.dimensions.floorHeight = this.socketFloorHeight;
+        }
+
+        const distance = this.wallEdgeObjectManager.updatePreview(mousePoint);
+
+        if (distance < Infinity) {
+            const socket = this.wallEdgeObjectManager.createObject(this.wallEdgeObjectManager.preview);
+            if (socket) {
+                // Ensure floor height is included
+                socket.dimensions.floorHeight = this.socketFloorHeight;
+                this.$store.dispatch('sockets/addSocket', socket);
+                this.wallEdgeObjectManager.preview = null;
+            }
+        }
+    },
+    handlePanelCreation(mousePoint) {
+        if (!this.wallEdgeObjectManager.preview) {
+            this.wallEdgeObjectManager.preview = this.wallEdgeObjectManager.initializePreview('panel');
+            // Set floor height from store
+            this.wallEdgeObjectManager.preview.dimensions.floorHeight = this.panelFloorHeight;
+        }
+
+        const distance = this.wallEdgeObjectManager.updatePreview(mousePoint);
+
+        if (distance < Infinity) {
+            const panel = this.wallEdgeObjectManager.createObject(this.wallEdgeObjectManager.preview);
+            if (panel) {
+                // Ensure floor height is included
+                panel.dimensions.floorHeight = this.panelFloorHeight;
+                this.$store.dispatch('panels/addPanel', panel);
+                this.wallEdgeObjectManager.preview = null;
+            }
+        }
+    },
+
+    handleCeilingLightCreation(mousePoint) {
+        if (!this.ceilingObjectManager.preview) {
+            this.ceilingObjectManager.preview = this.ceilingObjectManager.initializePreview('ceiling-light');
+        }
+
+        const distance = this.ceilingObjectManager.updatePreview(mousePoint);
+
+        if (distance < Infinity) {
+            const light = this.ceilingObjectManager.createObject(this.ceilingObjectManager.preview);
+            if (light) {
+                this.$store.dispatch('lights/addCeilingLight', light);
+                this.ceilingObjectManager.preview = null;
+            }
+        }
+    },
+
+    handleWallLightCreation(mousePoint) {
+        if (!this.wallEdgeObjectManager.preview) {
+            this.wallEdgeObjectManager.preview = this.wallEdgeObjectManager.initializePreview('wall-light');
+            // Set floor height from store
+            this.wallEdgeObjectManager.preview.dimensions.floorHeight = this.lightFloorHeight;
+        }
+
+        const distance = this.wallEdgeObjectManager.updatePreview(mousePoint);
+
+        if (distance < Infinity) {
+            const light = this.wallEdgeObjectManager.createObject(this.wallEdgeObjectManager.preview);
+            if (light) {
+                // Ensure floor height is included
+                light.dimensions.floorHeight = this.lightFloorHeight;
+                this.$store.dispatch('lights/addWallLight', light);
+                this.wallEdgeObjectManager.preview = null;
+            }
+        }
+    },
+
+    handleSwitchCreation(mousePoint) {
+        if (!this.wallEdgeObjectManager.preview) {
+            const type = this.currentTool; // 'single-switch' or 'double-switch'
+            this.wallEdgeObjectManager.preview = this.wallEdgeObjectManager.initializePreview(type);
+            // Set floor height from store
+            this.wallEdgeObjectManager.preview.dimensions.floorHeight = this.switchFloorHeight;
+        }
+
+        const distance = this.wallEdgeObjectManager.updatePreview(mousePoint);
+
+        if (distance < Infinity) {
+            const switchObj = this.wallEdgeObjectManager.createObject(this.wallEdgeObjectManager.preview);
+            if (switchObj) {
+                // Ensure floor height is included
+                switchObj.dimensions.floorHeight = this.switchFloorHeight;
+                this.$store.dispatch('switches/addSwitch', switchObj);
+                this.wallEdgeObjectManager.preview = null;
+            }
+        }
+    },
     beforeUnmount() {
       // Clean up event listeners
       window.removeEventListener('keydown', this.handleKeyboard);
       
       if (this.canvas) {
         this.canvas.removeEventListener('mousemove', this.onMouseMove);
-        this.canvas.removeEventListener('click', this.onClick);
+        this.canvas.removeEventListener('click', this.handleCanvasClick);
       }
 
       // Clean up resize observer
       if (this.resizeObserver) {
         this.resizeObserver.disconnect();
       }
-    }
+    },
+    handleMouseMove(event) {
+        const rect = this.canvas.getBoundingClientRect();
+        const screenPoint = {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top
+        };
+
+        // Convert screen coordinates to world coordinates
+        const mousePoint = {
+            x: (screenPoint.x - this.wallManager.panOffset.x) / this.wallManager.zoom,
+            y: (screenPoint.y - this.wallManager.panOffset.y) / this.wallManager.zoom
+        };
+
+        switch (this.currentTool) {
+            case 'wall':
+                this.wallManager.handleMouseMove(mousePoint);
+                break;
+            case 'door':
+            case 'window':
+                this.objectManager.handleMouseMove(mousePoint);
+                break;
+            case 'socket':
+            case 'panel':
+            case 'wall-light':
+            case 'single-switch':
+            case 'double-switch':
+                if (this.wallEdgeObjectManager) {
+                    this.wallEdgeObjectManager.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
+                    this.wallEdgeObjectManager.updatePreview(mousePoint);
+                }
+                break;
+            case 'ceiling-light':
+                if (this.ceilingObjectManager) {
+                    this.ceilingObjectManager.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
+                    this.ceilingObjectManager.updatePreview(mousePoint);
+                }
+                break;
+        }
+
+        this.redraw();
+    },
   }
 }
 </script>

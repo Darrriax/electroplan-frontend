@@ -740,42 +740,47 @@ export default class WallCenteredObject {
 
     // Create final object
     createObject() {
-        if (!this.preview || !this.preview.wall || !this.preview.position) return null;
+        if (!this.preview || !this.preview.wall) return null;
 
-        // Convert dimensions to mm for storage
-        const dimensions = {
-            length: this.preview.dimensions.length * 10, // cm to mm
-            thickness: this.preview.dimensions.thickness * 10 // cm to mm
-        };
-
+        // Create base object with common properties
         const baseObject = {
             id: Date.now().toString(),
             type: this.preview.type,
-            wall: this.preview.wall.id,
-            position: this.preview.position,
-            dimensions: dimensions,
+            wallId: this.preview.wall.id,
+            position: {
+                x: this.preview.position.x,
+                y: this.preview.position.y,
+                rotation: this.preview.position.rotation
+            },
+            dimensions: {
+                length: this.preview.dimensions.length * 10, // cm to mm
+                height: this.preview.dimensions.height * 10, // cm to mm
+                thickness: this.preview.dimensions.thickness * 10, // cm to mm
+                floorHeight: this.preview.dimensions.floorHeight ? this.preview.dimensions.floorHeight * 10 : null // cm to mm
+            },
             centerOffset: this.preview.centerOffset
         };
 
-        // Add type-specific properties
-        if (this.preview.type === 'door') {
-            return {
-                ...baseObject,
-                openingDirection: this.preview.openingDirection || this.store.state.doors.defaultOpeningDirection,
-                openingSide: this.preview.openingSide || this.store.state.doors.defaultOpeningSide
-            };
-        } else if (this.preview.type === 'window') {
-            return {
-                ...baseObject,
-                dimensions: {
-                    ...dimensions,
-                    height: this.store.state.windows.defaultHeight,
-                    floorHeight: this.store.state.windows.defaultFloorHeight
-                }
-            };
+        // Add tool-specific properties
+        switch (this.preview.type) {
+            case 'door':
+                return {
+                    ...baseObject,
+                    openingDirection: this.preview.openingDirection || 
+                                    this.store.state.doors?.defaultOpeningDirection || 
+                                    'left',
+                    openingSide: this.preview.openingSide || 
+                                this.store.state.doors?.defaultOpeningSide || 
+                                'inside'
+                };
+            case 'window':
+                return {
+                    ...baseObject,
+                    floorHeight: this.preview.dimensions.floorHeight || 1000
+                };
+            default:
+                return baseObject;
         }
-
-        return baseObject;
     }
 
     // Helper method to calculate distance from point to line
@@ -834,5 +839,125 @@ export default class WallCenteredObject {
             return;
         }
         this.initializePreview(type);
+    }
+
+    // Draw final object (used by ObjectCanvasRenderer)
+    drawFinalObject(ctx, object, wall) {
+        if (!ctx || !object || !wall) return;
+
+        // Set black color for all final objects
+        ctx.strokeStyle = '#000000';
+        ctx.fillStyle = '#000000';
+        ctx.lineWidth = 1;
+
+        // Calculate position and rotation
+        const length = object.dimensions.length / 10; // Convert mm to cm
+        const thickness = wall.thickness / 10; // Convert wall thickness from mm to cm
+
+        // Save context state
+        ctx.save();
+        
+        // Move to object position
+        ctx.translate(object.position.x, object.position.y);
+        ctx.rotate(object.position.rotation);
+
+        // Draw based on object type
+        switch (object.type) {
+            case 'door':
+                this.drawFinalDoorIndicator(ctx, object, length, thickness);
+                break;
+            case 'window':
+                this.drawFinalWindowIndicator(ctx, length, thickness);
+                break;
+        }
+
+        // Restore context state
+        ctx.restore();
+    }
+
+    // Draw final door indicators in black
+    drawFinalDoorIndicator(ctx, door, length, thickness) {
+        // Draw door frame with semi-transparent fill
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.1)'; // Semi-transparent black fill
+        ctx.strokeStyle = '#000000';
+        ctx.rect(-length/2, -thickness/2, length, thickness);
+        ctx.fill();  // Fill first
+        ctx.stroke(); // Then stroke
+
+        // Calculate door leaf Y position based on opening side
+        const doorY = door.openingSide === 'inside' ? -thickness/2 : thickness/2;
+
+        // Draw door swing arc
+        ctx.beginPath();
+        ctx.strokeStyle = '#000000';
+
+        // Determine arc parameters based on opening direction and side
+        const radius = length;
+        let startX, startY, startAngle, endAngle, counterClockwise;
+
+        if (door.openingDirection === 'right') {
+            // For outside configuration, shift the arc center to the left
+            startX = door.openingSide === 'inside' ? length/2 : -length/2;
+            startY = doorY;
+            if (door.openingSide === 'inside') {
+                // Right Inside
+                startAngle = Math.PI * 0.5; // Start at 90 degrees
+                endAngle = Math.PI; // End at 180 degrees
+                counterClockwise = false;
+            } else {
+                // Right Outside
+                startAngle = Math.PI * 1.5; // Start at 270 degrees
+                endAngle = Math.PI * 2; // End at 360 degrees (0 degrees)
+                counterClockwise = false;
+            }
+        } else { // left
+            // For outside configuration, shift the arc center to the right
+            startX = door.openingSide === 'inside' ? -length/2 : length/2;
+            startY = doorY;
+            if (door.openingSide === 'inside') {
+                // Left Inside
+                startAngle = 0;
+                endAngle = Math.PI * 0.5; // End at 90 degrees
+                counterClockwise = false;
+            } else {
+                // Left Outside
+                startAngle = Math.PI;
+                endAngle = Math.PI * 1.5; // End at 270 degrees
+                counterClockwise = false;
+            }
+        }
+
+        // Draw the arc
+        ctx.arc(startX, startY, radius, startAngle, endAngle, counterClockwise);
+        ctx.stroke();
+
+        // Draw the door leaf line
+        ctx.beginPath();
+        ctx.lineWidth = 2;
+
+        // Draw door leaf line
+        ctx.moveTo(-length/2, doorY);
+        ctx.lineTo(length/2, doorY);
+        ctx.stroke();
+    }
+
+    // Draw final window indicators in black
+    drawFinalWindowIndicator(ctx, length, thickness) {
+        // Draw window frame with semi-transparent fill
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.1)'; // Semi-transparent black fill
+        ctx.strokeStyle = '#000000';
+        ctx.rect(-length/2, -thickness/2, length, thickness);
+        ctx.fill();  // Fill first
+        ctx.stroke(); // Then stroke
+
+        // Draw window panes
+        ctx.beginPath();
+        ctx.moveTo(-length/4, -thickness/2);
+        ctx.lineTo(-length/4, thickness/2);
+        ctx.moveTo(length/4, -thickness/2);
+        ctx.lineTo(length/4, thickness/2);
+        ctx.stroke();
     }
 } 

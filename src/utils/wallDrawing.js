@@ -1405,7 +1405,7 @@ export default class WallDrawingManager {
             if (!room.path || room.path.length < 3) return;
 
             // Fill the room with semi-transparent white
-            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            this.ctx.fillStyle = 'rgba(255, 255, 255)';
             this.ctx.beginPath();
             this.ctx.moveTo(room.path[0].x, room.path[0].y);
 
@@ -2895,6 +2895,12 @@ export default class WallDrawingManager {
             // Update transform
             this.transformManager.zoom = newZoom;
             this.transformManager.panOffset = { x: newPanX, y: newPanY };
+
+            // Update store with new transform
+            this.store.commit('canvas/updateTransform', {
+                zoom: newZoom,
+                panOffset: { x: newPanX, y: newPanY }
+            });
 
             // Redraw
             this.draw();

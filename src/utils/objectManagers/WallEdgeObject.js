@@ -479,28 +479,38 @@ export default class WallEdgeObject {
         ctx.translate(x, y);
         ctx.rotate(rotation);
 
-        // Draw square/rectangle representing the object
+        // Set preview colors
         ctx.fillStyle = 'rgba(0, 150, 255, 0.3)';
         ctx.strokeStyle = '#0096FF';
-        ctx.lineWidth = 1 / this.zoom;
+        ctx.lineWidth = 1;
 
-        // For panel, use width from preview and fixed thickness 8cm
-        let width = preview.dimensions.width;
-        let drawThickness = 8; // cm
-        if (preview.type !== 'panel') {
-            drawThickness = preview.dimensions.height || 8;
+        // Handle different object types
+        if (preview.type === 'single-switch' || preview.type === 'double-switch') {
+            this.drawSwitchPreview(ctx, preview);
+        } else if (preview.type === 'wall-light') {
+            this.drawWallLightPreview(ctx, preview);
+        } else if (preview.type === 'socket') {
+            this.drawSocketPreview(ctx, preview);
+        } else if (preview.type === 'panel') {
+            this.drawPanelPreview(ctx, preview);
+        } else {
+            // Draw square/rectangle representing other objects
+            let width = preview.dimensions.width;
+            let drawThickness = 8; // cm
+            if (preview.type !== 'panel') {
+                drawThickness = preview.dimensions.height || 8;
+            }
+
+            ctx.beginPath();
+            ctx.rect(-width/2, -drawThickness/2, width, drawThickness);
+            ctx.fill();
+            ctx.stroke();
+
+            // Draw connection point indicator
+            ctx.beginPath();
+            ctx.arc(0, 0, 1, 0, Math.PI * 2);
+            ctx.fill();
         }
-
-        ctx.beginPath();
-        ctx.rect(-width/2, -drawThickness/2, width, drawThickness);
-        ctx.fill();
-        ctx.stroke();
-
-        // Draw connection point indicator
-        ctx.beginPath();
-        ctx.arc(0, 0, 1, 0, Math.PI * 2);
-        ctx.fillStyle = '#0096FF';
-        ctx.fill();
 
         ctx.restore();
 
@@ -659,9 +669,223 @@ export default class WallEdgeObject {
         );
     }
 
+    // Draw preview for switches
+    drawSwitchPreview(ctx, preview) {
+        // Dimensions (same as in drawSwitch)
+        const baseWidth = 10; // Width of the switch base on wall
+        const radius = baseWidth / 2; // Radius of the semicircle
+        const stickLength = 12; // Length of the angled line
+        const endLength = 3; // Length of the bent end
+
+        // Draw base line on wall
+        ctx.beginPath();
+        ctx.moveTo(-baseWidth/2, 0);
+        ctx.lineTo(baseWidth/2, 0);
+        ctx.stroke();
+
+        // Draw semicircle attached to wall
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI, true);
+        ctx.fill(); // Add fill for preview
+        ctx.stroke();
+
+        if (preview.type === 'single-switch') {
+            // Calculate 70-degree angle points
+            const angleInDegrees = 70;
+            const angleInRadians = (angleInDegrees * Math.PI) / 180;
+            
+            // Calculate end point of angled line
+            const stickEndX = stickLength * Math.cos(angleInRadians);
+            const stickEndY = -stickLength * Math.sin(angleInRadians);
+
+            // Draw angled line from semicircle
+            ctx.beginPath();
+            ctx.moveTo(0, -radius);
+            ctx.lineTo(stickEndX, stickEndY);
+            ctx.stroke();
+
+            // Calculate perpendicular angle for end line
+            const perpAngle = angleInRadians + Math.PI/2;
+            const perpX = endLength * Math.cos(perpAngle);
+            const perpY = -endLength * Math.sin(perpAngle);
+
+            // Draw bent end line
+            ctx.beginPath();
+            ctx.moveTo(stickEndX, stickEndY);
+            ctx.lineTo(stickEndX + perpX, stickEndY + perpY);
+            ctx.stroke();
+        } else if (preview.type === 'double-switch') {
+            // First line
+            const angle1Degrees = 70;
+            const angle1Radians = (angle1Degrees * Math.PI) / 180;
+            
+            const stick1EndX = stickLength * Math.cos(angle1Radians);
+            const stick1EndY = -stickLength * Math.sin(angle1Radians);
+
+            ctx.beginPath();
+            ctx.moveTo(0, -radius);
+            ctx.lineTo(stick1EndX, stick1EndY);
+            ctx.stroke();
+
+            // First bent end
+            const perp1Angle = angle1Radians + Math.PI/2;
+            const perp1X = endLength * Math.cos(perp1Angle);
+            const perp1Y = -endLength * Math.sin(perp1Angle);
+
+            ctx.beginPath();
+            ctx.moveTo(stick1EndX, stick1EndY);
+            ctx.lineTo(stick1EndX + perp1X, stick1EndY + perp1Y);
+            ctx.stroke();
+
+            // Second line at a different angle
+            const angle2Degrees = 100;
+            const angle2Radians = (angle2Degrees * Math.PI) / 180;
+            
+            const stick2EndX = stickLength * Math.cos(angle2Radians);
+            const stick2EndY = -stickLength * Math.sin(angle2Radians);
+
+            ctx.beginPath();
+            ctx.moveTo(0, -radius);
+            ctx.lineTo(stick2EndX, stick2EndY);
+            ctx.stroke();
+
+            // Second bent end
+            const perp2Angle = angle2Radians + Math.PI/2;
+            const perp2X = endLength * Math.cos(perp2Angle);
+            const perp2Y = -endLength * Math.sin(perp2Angle);
+
+            ctx.beginPath();
+            ctx.moveTo(stick2EndX, stick2EndY);
+            ctx.lineTo(stick2EndX + perp2X, stick2EndY + perp2Y);
+            ctx.stroke();
+        }
+
+        // Draw connection point indicator
+        ctx.beginPath();
+        ctx.arc(0, 0, 1, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Draw preview for wall lights
+    drawWallLightPreview(ctx, preview) {
+        const { side } = preview.position;
+
+        // Draw concentric semicircles
+        const middleRadius = 8; // Middle circle radius in cm
+        const innerRadius = 4; // Smallest circle radius in cm
+
+        // Determine the arc direction based on which side of the wall the light is placed
+        const startAngle = side === 'right' ? 0 : Math.PI;
+        const endAngle = side === 'right' ? Math.PI : 0;
+        const counterclockwise = side === 'left';
+
+        // Draw middle semicircle with fill for preview
+        ctx.beginPath();
+        ctx.arc(0, 0, middleRadius, startAngle, endAngle, counterclockwise);
+        ctx.fill(); // Add fill for preview
+        ctx.stroke();
+
+        // Draw inner semicircle
+        ctx.beginPath();
+        ctx.arc(0, 0, innerRadius, startAngle, endAngle, counterclockwise);
+        ctx.stroke();
+
+        // Draw base line (connection to wall)
+        const baseLength = 4; // Length of base line in cm
+        ctx.beginPath();
+        ctx.moveTo(-baseLength/2, 0);
+        ctx.lineTo(baseLength/2, 0);
+        ctx.stroke();
+
+        // Draw connection point indicator
+        ctx.beginPath();
+        ctx.arc(0, 0, 1, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Draw preview for sockets
+    drawSocketPreview(ctx, preview) {
+        // Dimensions (same as in drawSocket)
+        const baseWidth = 10; // Width of the socket base on wall
+        const radius = baseWidth / 2; // Radius of the semicircle
+        const lineLength = 6; // Length of the straight line
+
+        // Draw base line on wall
+        ctx.beginPath();
+        ctx.moveTo(-baseWidth/2, 0);
+        ctx.lineTo(baseWidth/2, 0);
+        ctx.stroke();
+
+        // Draw semicircle attached to wall
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI, true);
+        ctx.fill(); // Add fill for preview
+        ctx.stroke();
+
+        // Draw straight line from semicircle
+        ctx.beginPath();
+        ctx.moveTo(0, -radius);
+        ctx.lineTo(0, -(radius + lineLength));
+        ctx.stroke();
+
+        // Draw connection point indicator
+        ctx.beginPath();
+        ctx.arc(0, 0, 1, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Draw preview for electrical panel
+    drawPanelPreview(ctx, preview) {
+        // Get panel dimensions
+        const width = preview.dimensions.width;
+        const thickness = 8; // Fixed 8cm thickness
+        const wallExtension = 14; // How far the panel extends from the wall
+        
+        // Calculate offset to position panel correctly relative to wall
+        // Move the panel 6cm into the wall, leaving 2cm extending out
+        const offset = -(thickness - wallExtension) / 2;
+        ctx.translate(0, offset);
+        
+        // Draw main panel rectangle
+        ctx.beginPath();
+        ctx.rect(-width/2, -thickness/2, width, thickness);
+        ctx.fill();
+        ctx.stroke();
+
+        // Draw vertical lines inside (representing the ventilation slots)
+        const numLines = Math.floor(width / 2); // One line every 2cm
+        const lineSpacing = width / numLines;
+        const lineHeight = thickness * 0.7; // Lines are 70% of panel thickness
+        const startY = -lineHeight/2;
+        const endY = lineHeight/2;
+
+        // Draw the vertical lines
+        for (let i = 1; i < numLines; i++) {
+            const x = -width/2 + i * lineSpacing;
+            ctx.beginPath();
+            ctx.moveTo(x, startY);
+            ctx.lineTo(x, endY);
+            ctx.stroke();
+        }
+
+        // Draw the mounting bracket on top
+        const bracketWidth = width * 0.2;
+        const bracketHeight = thickness * 0.15;
+        
+        ctx.beginPath();
+        ctx.rect(-bracketWidth/2, -thickness/2 - bracketHeight, bracketWidth, bracketHeight);
+        ctx.fill();
+        ctx.stroke();
+
+        // Draw connection point indicator
+        ctx.beginPath();
+        ctx.arc(0, 0, 1, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
     // Create final object
     createObject(preview) {
-        if (!preview.wall || !preview.position) return null;
+        if (!preview || !preview.wall || !preview.position) return null;
 
         return {
             id: Date.now().toString(),
@@ -673,7 +897,10 @@ export default class WallEdgeObject {
                 rotation: preview.position.rotation,
                 side: preview.position.side
             },
-            dimensions: preview.dimensions
+            dimensions: {
+                width: preview.dimensions.width,
+                height: preview.dimensions.height
+            }
         };
     }
 
