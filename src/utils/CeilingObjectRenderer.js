@@ -13,14 +13,15 @@ export default class CeilingObjectRenderer {
     drawObjects(ctx) {
         // Get all ceiling lights from store
         const ceilingLights = this.store.getters['lights/getAllCeilingLights'] || [];
+        const hoveredLightIds = this.store.getters['lights/getHoveredLightIds'] || [];
 
         // Draw each ceiling light
         ceilingLights.forEach(light => {
-            this.drawCeilingLight(ctx, light);
+            this.drawCeilingLight(ctx, light, hoveredLightIds.includes(light.id));
         });
     }
 
-    drawCeilingLight(ctx, light) {
+    drawCeilingLight(ctx, light, isHovered) {
         const { x, y } = light.position;
 
         // Save context state
@@ -33,12 +34,24 @@ export default class CeilingObjectRenderer {
 
         // Set styles
         ctx.strokeStyle = '#008000'; // Green color
-        ctx.lineWidth = 1;
+        ctx.lineWidth = isHovered ? 3 : 1.5; // Increased line width for better visibility
 
         // Draw concentric circles
         const outerRadius = 12; // Largest circle radius in cm
         const middleRadius = 8; // Middle circle radius in cm
         const innerRadius = 4; // Smallest circle radius in cm
+
+        // Draw highlight background if hovered
+        if (isHovered) {
+            ctx.fillStyle = 'rgba(0, 128, 0, 0.15)'; // Slightly more opaque
+            ctx.beginPath();
+            ctx.arc(0, 0, outerRadius + 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Add glow effect
+            ctx.shadowColor = 'rgba(0, 128, 0, 0.5)';
+            ctx.shadowBlur = 5;
+        }
 
         // Draw outer circle
         ctx.beginPath();

@@ -12,7 +12,7 @@ export default class WallEdgeObject {
             wallLight: {
                 width: 8,
                 height: 8,
-                heightFromFloor: 220 // cm
+                heightFromFloor: 2200 // mm (changed from cm to mm)
             },
             socket: {
                 width: 8,

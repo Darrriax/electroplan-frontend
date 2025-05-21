@@ -62,6 +62,7 @@
             :unit="unit"
             :is-wall-light="isWallLightToolActive"
             @update:floor-height="updateLightFloorHeight"
+            @hover-change="redraw"
             class="settings"
         />
         <SwitchSettingsCard
@@ -69,6 +70,7 @@
             :floor-height="switchFloorHeight"
             :unit="unit"
             @update:floor-height="updateSwitchFloorHeight"
+            @hover-change="redraw"
             class="switch-settings"
         />
         <div class="editor-canvas-container">

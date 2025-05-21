@@ -18,6 +18,8 @@ export default class WallEdgeObjectRenderer {
         const wallLights = this.store.getters['lights/getAllWallLights'] || [];
         const switches = this.store.getters['switches/getAllSwitches'] || [];
         const walls = this.store.state.walls.walls || [];
+        const hoveredLightIds = this.store.getters['lights/getHoveredLightIds'] || [];
+        const hoveredSwitchIds = this.store.getters['switches/getHoveredSwitchIds'] || [];
 
         // Group objects by position and height
         const objectGroups = this.groupObjectsByPositionAndHeight([
@@ -39,7 +41,7 @@ export default class WallEdgeObjectRenderer {
         switches.forEach(switchObj => {
             const wall = walls.find(w => w.id === switchObj.wall);
             if (wall) {
-                this.drawSwitch(ctx, switchObj, wall);
+                this.drawSwitch(ctx, switchObj, wall, hoveredSwitchIds.includes(switchObj.id));
             }
         });
 
@@ -55,7 +57,7 @@ export default class WallEdgeObjectRenderer {
         wallLights.forEach(light => {
             const wall = walls.find(w => w.id === light.wall);
             if (wall) {
-                this.drawWallLight(ctx, light, wall);
+                this.drawWallLight(ctx, light, wall, hoveredLightIds.includes(light.id));
             }
         });
 
@@ -185,22 +187,22 @@ export default class WallEdgeObjectRenderer {
         let displayValue;
         let unitLabel;
 
-        // For wall lights, the height is already in mm, so convert accordingly
-        const heightInCm = objectType === 'wall-light' ? height / 10 : height;
+        // All heights should be in millimeters
+        const heightInMM = height;
 
-        // Convert height from cm to the target unit
+        // Convert height from mm to the target unit
         switch (unit) {
             case 'mm':
-                displayValue = Math.round(heightInCm); // Already in mm
+                displayValue = Math.round(heightInMM);
                 unitLabel = 'mm';
                 break;
             case 'm':
-                displayValue = (heightInCm / 1000).toFixed(2); // Convert from mm to m
+                displayValue = (heightInMM / 1000).toFixed(2);
                 unitLabel = 'm';
                 break;
             case 'cm':
             default:
-                displayValue = Math.round(heightInCm / 10); // Convert from mm to cm
+                displayValue = Math.round(heightInMM / 10);
                 unitLabel = 'cm';
                 break;
         }
@@ -430,7 +432,7 @@ export default class WallEdgeObjectRenderer {
     }
 
     // Draw a single wall light
-    drawWallLight(ctx, light, wall) {
+    drawWallLight(ctx, light, wall, isHovered) {
         const { x, y, rotation, side } = light.position;
 
         // Save context state
@@ -442,9 +444,9 @@ export default class WallEdgeObjectRenderer {
         ctx.translate(x, y);
         ctx.rotate(rotation + Math.PI);
 
-        // Set styles - change to green
+        // Set styles
         ctx.strokeStyle = '#008000'; // Green color
-        ctx.lineWidth = 1;
+        ctx.lineWidth = isHovered ? 3 : 1.5; // Increased line width for better visibility
 
         // Draw concentric semicircles
         const middleRadius = 8; // Middle circle radius in cm
@@ -454,6 +456,20 @@ export default class WallEdgeObjectRenderer {
         const startAngle = side === 'right' ? 0 : Math.PI;
         const endAngle = side === 'right' ? Math.PI : 0;
         const counterclockwise = side === 'left';
+
+        // Draw highlight if hovered
+        if (isHovered) {
+            ctx.fillStyle = 'rgba(0, 128, 0, 0.15)'; // Slightly more opaque
+            ctx.beginPath();
+            ctx.arc(0, 0, middleRadius + 3, startAngle, endAngle, counterclockwise);
+            ctx.lineTo(0, 0);
+            ctx.closePath();
+            ctx.fill();
+
+            // Add glow effect
+            ctx.shadowColor = 'rgba(0, 128, 0, 0.5)';
+            ctx.shadowBlur = 5;
+        }
 
         // Draw middle semicircle
         ctx.beginPath();
@@ -539,9 +555,8 @@ export default class WallEdgeObjectRenderer {
     }
 
     // Draw a single switch
-    drawSwitch(ctx, switchObj, wall) {
-        const { x, y, rotation, side } = switchObj.position;
-        const floorHeight = switchObj.dimensions.floorHeight || 900; // Default 90cm from floor
+    drawSwitch(ctx, switchObj, wall, isHovered) {
+        const { x, y, rotation } = switchObj.position;
 
         // Save context state
         ctx.save();
@@ -554,7 +569,13 @@ export default class WallEdgeObjectRenderer {
 
         // Set styles
         ctx.strokeStyle = '#FF0000'; // Red color
-        ctx.lineWidth = 1; // Standard line width
+        ctx.lineWidth = isHovered ? 3 : 1.5; // Thicker line when hovered
+
+        // Add glow effect when hovered
+        if (isHovered) {
+            ctx.shadowColor = 'rgba(255, 0, 0, 0.4)';
+            ctx.shadowBlur = 4;
+        }
 
         // Dimensions
         const baseWidth = 10; // Width of the switch base on wall

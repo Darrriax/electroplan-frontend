@@ -1,6 +1,6 @@
 <template>
   <transition name="fade">
-    <div class="socket-settings-card">
+    <div class="settings-card">
       <div class="header">Socket Settings</div>
       <div class="settings-section">
         <label>Height from Floor:</label>
@@ -126,18 +126,4 @@ export default {
   }
 }
 </script>
-
-<style scoped>
-.socket-settings-card {
-  margin-top: 210px;
-  left: 0;
-  width: 160px;
-  background: white;
-  border-radius: 10px;
-  padding: 8px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-  z-index: 1000;
-  position: fixed;
-}
-</style>
 
