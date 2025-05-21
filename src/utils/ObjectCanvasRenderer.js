@@ -72,6 +72,9 @@ export default class ObjectCanvasRenderer {
     ctx.translate(this.panOffset.x, this.panOffset.y);
     ctx.scale(this.zoom, this.zoom);
     
+    // Set line width before drawing
+    ctx.lineWidth = 1;
+    
     // Draw the door using WallCenteredObject
     this.wallCenteredObject.drawFinalObject(ctx, door, wall);
     
@@ -85,6 +88,9 @@ export default class ObjectCanvasRenderer {
     ctx.save();
     ctx.translate(this.panOffset.x, this.panOffset.y);
     ctx.scale(this.zoom, this.zoom);
+    
+    // Set line width before drawing
+    ctx.lineWidth = 1;
     
     // Draw the window using WallCenteredObject
     this.wallCenteredObject.drawFinalObject(ctx, window, wall);

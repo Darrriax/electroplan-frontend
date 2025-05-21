@@ -198,22 +198,89 @@ export default class WallEdgeObject {
         return Math.abs(p1.x - p2.x) < threshold && Math.abs(p1.y - p2.y) < threshold;
     }
 
+    // Check if a position is valid (no overlapping objects at same height)
+    isValidPosition(wall, position, height) {
+        if (!wall || !position) return false;
+
+        // Get all objects on this wall
+        const existingObjects = [
+            ...(this.store.state.sockets.sockets || []),
+            ...(this.store.state.switches.switches || [])
+        ].filter(obj => obj.wall === wall.id);
+
+        // Calculate wall vector for distance calculations
+        const wallVector = {
+            x: wall.end.x - wall.start.x,
+            y: wall.end.y - wall.start.y
+        };
+        const wallUnitVector = {
+            x: wallVector.x / Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y),
+            y: wallVector.y / Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y)
+        };
+
+        // Check each existing object
+        for (const obj of existingObjects) {
+            // Skip if at different height
+            if (obj.dimensions.floorHeight !== height) continue;
+
+            // Calculate distance along wall between objects
+            const objVector = {
+                x: obj.position.x - wall.start.x,
+                y: obj.position.y - wall.start.y
+            };
+            const newObjVector = {
+                x: position.x - wall.start.x,
+                y: position.y - wall.start.y
+            };
+
+            const objProjection = objVector.x * wallUnitVector.x + objVector.y * wallUnitVector.y;
+            const newObjProjection = newObjVector.x * wallUnitVector.x + newObjVector.y * wallUnitVector.y;
+            
+            const distance = Math.abs(newObjProjection - objProjection);
+
+            // If the position is snapped (7cm spacing), it's valid
+            if (Math.abs(distance - 7) < 0.1) {
+                continue;
+            }
+            
+            // Objects overlap if distance is less than their combined widths (8cm each)
+            // and they're not properly snapped together
+            if (distance < 8) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // Calculate object position relative to wall edge
     calculatePosition(wall, mousePoint) {
         if (!wall || !mousePoint) return null;
 
+        // If we have a snapped preview position, use that
+        if (this.preview?.position?.snapped) {
+            return {
+                x: this.preview.position.x,
+                y: this.preview.position.y,
+                rotation: this.preview.position.rotation,
+                side: this.preview.position.side,
+                distanceToWall: 0,
+                snapped: true
+            };
+        }
+
         // Get all walls from store
         const walls = this.store.state.walls.walls || [];
+        const rooms = this.store.state.rooms.rooms || [];
 
-        // Find connected walls
-        const connectedWalls = walls.filter(w => 
-            w.id !== wall.id && (
-                this.pointsAreEqual(w.start, wall.start) ||
-                this.pointsAreEqual(w.start, wall.end) ||
-                this.pointsAreEqual(w.end, wall.start) ||
-                this.pointsAreEqual(w.end, wall.end)
-            )
-        );
+        // Only get sockets and switches for magnetic snapping
+        const existingObjects = [];
+        if (this.preview && (this.preview.type === 'socket' || this.preview.type === 'single-switch' || this.preview.type === 'double-switch')) {
+            existingObjects.push(
+                ...(this.store.state.sockets.sockets || []),
+                ...(this.store.state.switches.switches || [])
+            );
+        }
 
         // Calculate wall vector and length
         const wallVector = {
@@ -229,99 +296,106 @@ export default class WallEdgeObject {
             y: wallVector.y / wallLength
         };
 
-        // Calculate wall normal vector
+        // Calculate wall normal vector (pointing to the right of the wall direction)
         const normalVector = {
             x: -wallVector.y / wallLength,
             y: wallVector.x / wallLength
         };
 
-        // Find connected walls at start and end
-        const startWalls = connectedWalls.filter(w => 
-            this.pointsAreEqual(w.start, wall.start) ||
-            this.pointsAreEqual(w.end, wall.start)
-        );
-        const endWalls = connectedWalls.filter(w => 
-            this.pointsAreEqual(w.start, wall.end) ||
-            this.pointsAreEqual(w.end, wall.end)
-        );
-
-        // Calculate internal wall points considering HALF of adjacent wall thicknesses
-        const maxStartThickness = Math.max(...startWalls.map(w => w.thickness / 2), 0) / 10; // Convert mm to cm and take half
-        const maxEndThickness = Math.max(...endWalls.map(w => w.thickness / 2), 0) / 10;
-
-        // Calculate internal start and end points
-        const internalStart = {
-            x: wall.start.x + wallUnitVector.x * maxStartThickness,
-            y: wall.start.y + wallUnitVector.y * maxStartThickness
-        };
-        const internalEnd = {
-            x: wall.end.x - wallUnitVector.x * maxEndThickness,
-            y: wall.end.y - wallUnitVector.y * maxEndThickness
-        };
-
-        // Calculate internal wall length
-        const internalLength = Math.sqrt(
-            Math.pow(internalEnd.x - internalStart.x, 2) +
-            Math.pow(internalEnd.y - internalStart.y, 2)
-        );
-
-        // Calculate mouse position relative to internal wall
+        // Calculate mouse position relative to wall
         const mouseVector = {
-            x: mousePoint.x - internalStart.x,
-            y: mousePoint.y - internalStart.y
+            x: mousePoint.x - wall.start.x,
+            y: mousePoint.y - wall.start.y
         };
 
-        // Project mouse point onto internal wall line
+        // Project mouse position onto wall
         const projection = mouseVector.x * wallUnitVector.x + mouseVector.y * wallUnitVector.y;
-        const projectionPoint = {
-            x: internalStart.x + wallUnitVector.x * projection,
-            y: internalStart.y + wallUnitVector.y * projection
+
+        // Clamp projection to wall length
+        const clampedProjection = Math.max(0, Math.min(wallLength, projection));
+
+        // Calculate position on wall
+        let objectPosition = {
+            x: wall.start.x + wallUnitVector.x * clampedProjection,
+            y: wall.start.y + wallUnitVector.y * clampedProjection
         };
 
-        // Calculate perpendicular distance and side
-        const mouseToWall = {
-            x: mousePoint.x - projectionPoint.x,
-            y: mousePoint.y - projectionPoint.y
-        };
-        const perpDistance = Math.sqrt(mouseToWall.x * mouseToWall.x + mouseToWall.y * mouseToWall.y);
+        // Only apply magnetic snapping for sockets and switches
+        if (this.preview && (this.preview.type === 'socket' || this.preview.type === 'single-switch' || this.preview.type === 'double-switch')) {
+            const SNAP_DISTANCE = 15; // Snap threshold in cm
+            const OBJECT_SPACING = 7; // Required spacing between objects in cm
 
-        // Calculate wall angle and determine orientation
-        const wallAngle = Math.atan2(wallVector.y, wallVector.x);
+            // Find the nearest existing object for snapping
+            let nearestObject = null;
+            let minDistance = Infinity;
 
-        // Project mouse point onto wall (0=start, 1=end)
-        const mouseProj = ((mousePoint.x - wall.start.x) * wallVector.x + (mousePoint.y - wall.start.y) * wallVector.y) / (wallLength * wallLength);
+            for (const obj of existingObjects) {
+                if (obj.wall !== wall.id) continue;
 
-        // Calculate which side of the wall the mouse is on
-        const normalProjection = mouseToWall.x * normalVector.x + mouseToWall.y * normalVector.y;
-        const sideSign = Math.sign(normalProjection) || 1; // 1=one side, -1=other side
+                // Skip objects at different heights
+                if (obj.dimensions.floorHeight !== this.preview.dimensions.floorHeight) continue;
 
-        // Calculate position along wall length
-        let position = {
-            x: internalStart.x + wallUnitVector.x * projection,
-            y: internalStart.y + wallUnitVector.y * projection
-        };
+                // Calculate the position along the wall for both objects
+                const objVector = {
+                    x: obj.position.x - wall.start.x,
+                    y: obj.position.y - wall.start.y
+                };
+                const objProjection = objVector.x * wallUnitVector.x + objVector.y * wallUnitVector.y;
+                
+                // Calculate distance along the wall
+                const distanceAlongWall = Math.abs(projection - objProjection);
 
-        // Offset position to be outside the wall by half the wall thickness
-        const wallThickness = wall.thickness / 10; // Convert mm to cm
-        position.x += normalVector.x * (wallThickness / 2) * sideSign;
-        position.y += normalVector.y * (wallThickness / 2) * sideSign;
+                if (distanceAlongWall < SNAP_DISTANCE && distanceAlongWall < minDistance) {
+                    minDistance = distanceAlongWall;
+                    nearestObject = {
+                        object: obj,
+                        projection: objProjection
+                    };
+                }
+            }
 
-        // Determine which edge the mouse is closer to (start or end)
-        let side = null;
-        if (mouseProj < 0.15) {
-            side = 'start';
-        } else if (mouseProj > 0.85) {
-            side = 'end';
-        } else {
-            side = 'center';
+            // If we found a nearby object, snap to it
+            if (nearestObject) {
+                // Determine which side to snap to based on mouse position
+                const snapDirection = projection > nearestObject.projection ? 1 : -1;
+                
+                // Calculate new position along the wall
+                const newProjection = nearestObject.projection + (OBJECT_SPACING * snapDirection);
+                
+                // Update position while maintaining the same distance from wall
+                objectPosition = {
+                    x: wall.start.x + wallUnitVector.x * newProjection,
+                    y: wall.start.y + wallUnitVector.y * newProjection
+                };
+            }
         }
 
+        // Calculate which side of the wall the mouse is on
+        const mouseOnRightSide = mouseVector.x * normalVector.x + mouseVector.y * normalVector.y > 0;
+
+        // Determine the correct side and position based on which edge we're attaching to
+        const wallThickness = wall.thickness / 10; // Convert mm to cm
+        let sideSign = mouseOnRightSide ? 1 : -1;
+        
+        // Offset position to be inside the room by half the wall thickness
+        objectPosition.x += normalVector.x * (wallThickness / 2) * sideSign;
+        objectPosition.y += normalVector.y * (wallThickness / 2) * sideSign;
+
+        // Calculate base rotation from wall direction
+        let rotation = Math.atan2(wallVector.y, wallVector.x);
+        
+        // Rotation depends only on which side we're attaching from
+        if (mouseOnRightSide) {
+            rotation += Math.PI; // When attaching from right edge, rotate to face left
+        }
+
+        // Return the final position and rotation
         return {
-            x: position.x,
-            y: position.y,
-            rotation: wallAngle,
-            side,
-            distanceToWall: perpDistance
+            x: objectPosition.x,
+            y: objectPosition.y,
+            rotation: rotation,
+            side: mouseOnRightSide ? 'right' : 'left',
+            distanceToWall: Math.abs(projection)
         };
     }
 
@@ -770,6 +844,9 @@ export default class WallEdgeObject {
     drawWallLightPreview(ctx, preview) {
         const { side } = preview.position;
 
+        // Add 180-degree rotation
+        ctx.rotate(Math.PI);
+
         // Draw concentric semicircles
         const middleRadius = 8; // Middle circle radius in cm
         const innerRadius = 4; // Smallest circle radius in cm
@@ -898,8 +975,7 @@ export default class WallEdgeObject {
                 side: preview.position.side
             },
             dimensions: {
-                width: preview.dimensions.width,
-                height: preview.dimensions.height
+                ...preview.dimensions
             }
         };
     }
@@ -910,12 +986,148 @@ export default class WallEdgeObject {
         // Get all walls from store
         const walls = this.store.state.walls.walls || [];
 
-        // Find nearest wall and calculate position
+        // Find nearest wall and calculate initial position
         const { wall, position, distance } = this.findNearestWall(mousePoint, walls);
 
+        // If we're not near a wall, clear preview and return
+        if (!position || !wall) {
+            this.preview.position = null;
+            this.preview.wall = null;
+            return Infinity;
+        }
+
+        // Calculate wall vector and unit vector
+        const wallVector = {
+            x: wall.end.x - wall.start.x,
+            y: wall.end.y - wall.start.y
+        };
+        const wallLength = Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y);
+        const wallUnitVector = {
+            x: wallVector.x / wallLength,
+            y: wallVector.y / wallLength
+        };
+
+        // Calculate wall normal vector
+        const normalVector = {
+            x: -wallVector.y / wallLength,
+            y: wallVector.x / wallLength
+        };
+
+        // For sockets and switches, check for magnetic snapping
+        if (this.preview.type === 'socket' || this.preview.type === 'single-switch' || this.preview.type === 'double-switch') {
+            const SNAP_DISTANCE = 15; // Snap threshold in cm
+            const OBJECT_SPACING = 7; // Required spacing between objects in cm
+
+            // Get existing sockets and switches
+            const existingObjects = [
+                ...(this.store.state.sockets.sockets || []),
+                ...(this.store.state.switches.switches || [])
+            ].filter(obj => obj.wall === wall.id);
+
+            // Project mouse point onto wall
+            const mouseVector = {
+                x: mousePoint.x - wall.start.x,
+                y: mousePoint.y - wall.start.y
+            };
+            const mouseProjection = mouseVector.x * wallUnitVector.x + mouseVector.y * wallUnitVector.y;
+
+            // Find nearest object for snapping
+            let nearestObject = null;
+            let minDistance = Infinity;
+
+            for (const obj of existingObjects) {
+                // Skip objects at different heights
+                if (obj.dimensions.floorHeight !== this.preview.dimensions.floorHeight) continue;
+
+                // Calculate object's position along the wall
+                const objVector = {
+                    x: obj.position.x - wall.start.x,
+                    y: obj.position.y - wall.start.y
+                };
+                const objProjection = objVector.x * wallUnitVector.x + objVector.y * wallUnitVector.y;
+                
+                // Calculate distance along the wall
+                const distanceAlongWall = Math.abs(mouseProjection - objProjection);
+                
+                if (distanceAlongWall < SNAP_DISTANCE && distanceAlongWall < minDistance) {
+                    minDistance = distanceAlongWall;
+                    nearestObject = {
+                        object: obj,
+                        projection: objProjection
+                    };
+                }
+            }
+
+            // If we found a nearby object, snap to it
+            if (nearestObject) {
+                // Determine snap direction based on mouse position
+                const snapDirection = mouseProjection > nearestObject.projection ? 1 : -1;
+                
+                // Calculate snapped position
+                const newProjection = nearestObject.projection + (OBJECT_SPACING * snapDirection);
+                
+                // Calculate which side of the wall the mouse is on
+                const mouseToWall = {
+                    x: mousePoint.x - (wall.start.x + wallUnitVector.x * mouseProjection),
+                    y: mousePoint.y - (wall.start.y + wallUnitVector.y * mouseProjection)
+                };
+                const normalProjection = mouseToWall.x * normalVector.x + mouseToWall.y * normalVector.y;
+                const mouseOnRightSide = normalProjection > 0;
+
+                // Update preview position while maintaining wall alignment
+                const wallThickness = wall.thickness / 10; // Convert mm to cm
+                const sideOffset = (wallThickness / 2) * (mouseOnRightSide ? 1 : -1);
+
+                position.x = wall.start.x + wallUnitVector.x * newProjection + normalVector.x * sideOffset;
+                position.y = wall.start.y + wallUnitVector.y * newProjection + normalVector.y * sideOffset;
+                position.rotation = Math.atan2(wallVector.y, wallVector.x) + (mouseOnRightSide ? Math.PI : 0);
+                position.side = mouseOnRightSide ? 'right' : 'left';
+                position.snapped = true;
+            }
+        }
+
+        // Update preview with final position
         this.preview.position = position;
         this.preview.wall = wall;
 
         return distance;
+    }
+
+    // Check if current preview is valid for placement
+    isValidPlacement() {
+        if (!this.preview || !this.preview.position || !this.preview.wall) {
+            return {
+                valid: false,
+                error: 'Invalid placement position'
+            };
+        }
+
+        // Get the wall - the preview.wall is already the wall object, not just an ID
+        const wall = this.preview.wall;
+        if (!wall) {
+            return {
+                valid: false,
+                error: 'Wall not found'
+            };
+        }
+
+        // Check for overlapping objects at same height
+        const isValid = this.isValidPosition(
+            wall, 
+            this.preview.position, 
+            this.preview.dimensions.floorHeight
+        );
+
+        if (!isValid) {
+            return {
+                valid: false,
+                error: 'Cannot place object here - overlaps with existing object at same height'
+            };
+        }
+
+        return {
+            valid: true,
+            error: null
+        };
     }
 } 

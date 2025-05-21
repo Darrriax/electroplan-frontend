@@ -160,8 +160,12 @@ export default class WallCenteredObject {
     calculatePosition(wall, mousePoint) {
         if (!wall || !mousePoint) return null;
 
-        // Get all walls from store
+        // Get all walls and objects from store
         const walls = this.store.state.walls.walls || [];
+        const existingObjects = [
+            ...(this.store.state.doors.doors || []),
+            ...(this.store.state.windows.windows || [])
+        ].filter(obj => obj.wallId === wall.id);
 
         // Find connected walls
         const connectedWalls = walls.filter(w => 
@@ -241,13 +245,74 @@ export default class WallCenteredObject {
 
         // Get object length (in cm)
         const objectLength = this.preview?.dimensions?.length || 100;
-
-        // Calculate minimum and maximum allowed positions
         const halfObjectLength = objectLength / 2;
-        const minPos = halfObjectLength / internalLength;
-        const maxPos = 1 - halfObjectLength / internalLength;
 
-        // Constrain position to internal wall length considering object length
+        // Calculate minimum spacing between objects (in cm)
+        const minSpacing = 10; // 10cm minimum spacing between objects
+
+        // Sort existing objects by their position along the wall
+        const sortedObjects = existingObjects
+            .map(obj => ({
+                ...obj,
+                position: obj.centerOffset / internalLength
+            }))
+            .sort((a, b) => a.position - b.position);
+
+        // Find available spaces between objects
+        let availableSpaces = [];
+        let lastEnd = 0;
+
+        // Add space before first object
+        if (sortedObjects.length === 0 || sortedObjects[0].position > minSpacing / internalLength + halfObjectLength / internalLength) {
+            availableSpaces.push({ start: 0, end: sortedObjects.length ? sortedObjects[0].position : 1 });
+        }
+
+        // Add spaces between objects
+        for (let i = 0; i < sortedObjects.length - 1; i++) {
+            const currentObj = sortedObjects[i];
+            const nextObj = sortedObjects[i + 1];
+            const currentObjLength = currentObj.dimensions.length / 10; // Convert mm to cm
+            const nextObjLength = nextObj.dimensions.length / 10;
+            
+            const spaceStart = currentObj.position + (currentObjLength/2 + minSpacing) / internalLength;
+            const spaceEnd = nextObj.position - (nextObjLength/2 + minSpacing) / internalLength;
+            
+            if (spaceEnd - spaceStart >= objectLength / internalLength) {
+                availableSpaces.push({ start: spaceStart, end: spaceEnd });
+            }
+        }
+
+        // Add space after last object
+        if (sortedObjects.length > 0) {
+            const lastObj = sortedObjects[sortedObjects.length - 1];
+            const lastObjLength = lastObj.dimensions.length / 10;
+            const spaceStart = lastObj.position + (lastObjLength/2 + minSpacing) / internalLength;
+            
+            if (1 - spaceStart >= objectLength / internalLength) {
+                availableSpaces.push({ start: spaceStart, end: 1 });
+            }
+        }
+
+        // Find the best available space for the new object
+        let bestSpace = null;
+        let minDistance = Infinity;
+        
+        for (const space of availableSpaces) {
+            const spaceCenter = (space.start + space.end) / 2;
+            const distance = Math.abs(relativePos - spaceCenter);
+            
+            if (distance < minDistance) {
+                minDistance = distance;
+                bestSpace = space;
+            }
+        }
+
+        // If no valid space is found, return null
+        if (!bestSpace) return null;
+
+        // Calculate constrained position within the best available space
+        const minPos = bestSpace.start + halfObjectLength / internalLength;
+        const maxPos = bestSpace.end - halfObjectLength / internalLength;
         const constrainedPos = Math.max(minPos, Math.min(maxPos, relativePos));
 
         // Calculate actual position on internal wall
@@ -672,7 +737,7 @@ export default class WallCenteredObject {
         const doorY = openingSide === 'inside' ? -thickness/2 : thickness/2;
 
         if (openingDirection === 'right') {
-            // For outside configuration, shift the arc center to the left
+            // For right-opening doors
             startX = openingSide === 'inside' ? length/2 : -length/2;
             startY = doorY;
             if (openingSide === 'inside') {
@@ -686,8 +751,8 @@ export default class WallCenteredObject {
                 endAngle = Math.PI * 2; // End at 360 degrees (0 degrees)
                 counterClockwise = false;
             }
-        } else { // left
-            // For outside configuration, shift the arc center to the right
+        } else {
+            // For left-opening doors
             startX = openingSide === 'inside' ? -length/2 : length/2;
             startY = doorY;
             if (openingSide === 'inside') {
@@ -717,6 +782,33 @@ export default class WallCenteredObject {
         ctx.moveTo(-length/2, doorY);
         ctx.lineTo(length/2, doorY);
         ctx.stroke();
+
+        // Calculate and draw the perpendicular line from arc end to door
+        ctx.beginPath();
+        ctx.lineWidth = 1 / this.zoom;
+        
+        // Calculate end point of arc based on opening direction and side
+        let arcEndX, arcEndY;
+        if (openingDirection === 'right') {
+            if (openingSide === 'inside') {
+                // Right Inside
+                arcEndX = startX - radius * Math.sin(endAngle);
+                arcEndY = startY - radius * Math.cos(endAngle);
+            } else {
+                // Right Outside
+                arcEndX = startX + radius * Math.sin(endAngle);
+                arcEndY = startY - radius * Math.cos(endAngle);
+            }
+        } else {
+            // For left-opening doors, use the original calculation
+            arcEndX = startX + radius * Math.cos(endAngle);
+            arcEndY = startY + radius * Math.sin(endAngle);
+        }
+        
+        // Draw perpendicular line
+        ctx.moveTo(arcEndX, arcEndY);
+        ctx.lineTo(arcEndX, doorY);
+        ctx.stroke();
     }
 
     // Draw window-specific indicators
@@ -742,6 +834,9 @@ export default class WallCenteredObject {
     createObject() {
         if (!this.preview || !this.preview.wall) return null;
 
+        // Store current preview type and settings
+        const currentType = this.preview.type;
+
         // Create base object with common properties
         const baseObject = {
             id: Date.now().toString(),
@@ -761,10 +856,11 @@ export default class WallCenteredObject {
             centerOffset: this.preview.centerOffset
         };
 
-        // Add tool-specific properties
+        // Create the final object based on type
+        let finalObject;
         switch (this.preview.type) {
             case 'door':
-                return {
+                finalObject = {
                     ...baseObject,
                     openingDirection: this.preview.openingDirection || 
                                     this.store.state.doors?.defaultOpeningDirection || 
@@ -773,14 +869,23 @@ export default class WallCenteredObject {
                                 this.store.state.doors?.defaultOpeningSide || 
                                 'inside'
                 };
+                break;
             case 'window':
-                return {
+                finalObject = {
                     ...baseObject,
                     floorHeight: this.preview.dimensions.floorHeight || 1000
                 };
+                break;
             default:
-                return baseObject;
+                finalObject = baseObject;
         }
+
+        // Reset position and wall reference but maintain other preview settings
+        this.preview.position = null;
+        this.preview.wall = null;
+        this.preview.centerOffset = 0;
+
+        return finalObject;
     }
 
     // Helper method to calculate distance from point to line
@@ -823,21 +928,12 @@ export default class WallCenteredObject {
         return dot >= 0 && dot <= wallLength;
     }
 
-    // Update door properties
-    updateDoorProperties(properties) {
-        if (this.preview && this.preview.type === 'door') {
-            this.preview = {
-                ...this.preview,
-                ...properties
-            };
-        }
-    }
-
     setTool(type) {
         if (!type) {
             this.preview = null;
             return;
         }
+        // Initialize preview and maintain it for continuous placement
         this.initializePreview(type);
     }
 
@@ -897,7 +993,7 @@ export default class WallCenteredObject {
         let startX, startY, startAngle, endAngle, counterClockwise;
 
         if (door.openingDirection === 'right') {
-            // For outside configuration, shift the arc center to the left
+            // For right-opening doors
             startX = door.openingSide === 'inside' ? length/2 : -length/2;
             startY = doorY;
             if (door.openingSide === 'inside') {
@@ -911,8 +1007,8 @@ export default class WallCenteredObject {
                 endAngle = Math.PI * 2; // End at 360 degrees (0 degrees)
                 counterClockwise = false;
             }
-        } else { // left
-            // For outside configuration, shift the arc center to the right
+        } else {
+            // For left-opening doors
             startX = door.openingSide === 'inside' ? -length/2 : length/2;
             startY = doorY;
             if (door.openingSide === 'inside') {
@@ -939,6 +1035,34 @@ export default class WallCenteredObject {
         // Draw door leaf line
         ctx.moveTo(-length/2, doorY);
         ctx.lineTo(length/2, doorY);
+        ctx.stroke();
+
+        // Calculate and draw the perpendicular line from arc end to door
+        ctx.beginPath();
+        ctx.lineWidth = 1;
+        
+        // Calculate end point of arc based on opening direction and side
+        let arcEndX, arcEndY;
+        if (door.openingDirection === 'right') {
+            if (door.openingSide === 'inside') {
+                // Right Inside
+                arcEndX = startX - radius * Math.sin(endAngle);
+                arcEndY = startY - radius * Math.cos(endAngle);
+            } else {
+                // Right Outside
+                arcEndX = startX + radius * Math.sin(endAngle);
+                arcEndY = startY - radius * Math.cos(endAngle);
+            }
+        } else {
+            // For left-opening doors, use the original calculation
+            arcEndX = startX + radius * Math.cos(endAngle);
+            arcEndY = startY + radius * Math.sin(endAngle);
+        }
+        
+        
+        // Draw perpendicular line
+        ctx.moveTo(arcEndX, arcEndY);
+        ctx.lineTo(arcEndX, doorY);
         ctx.stroke();
     }
 

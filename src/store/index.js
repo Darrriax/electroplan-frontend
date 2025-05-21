@@ -14,6 +14,7 @@ import sockets from './modules/sockets';
 import switches from './modules/switches';
 import lights from './modules/lights';
 import canvas from './modules/canvas';
+import {notifications} from './modules/notifications';
 
 export default createStore({
     modules: {
@@ -31,6 +32,7 @@ export default createStore({
         sockets,
         switches,
         lights,
-        canvas
+        canvas,
+        notifications
     },
 });

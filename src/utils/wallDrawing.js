@@ -1416,32 +1416,35 @@ export default class WallDrawingManager {
             this.ctx.closePath();
             this.ctx.fill();
 
-            // Calculate room center
-            const center = this.calculatePolygonCentroid(room.path);
+            // Only show height and area labels in original-plan mode
+            if (this.store.state.project.currentMode === 'original-plan') {
+                // Calculate room center
+                const center = this.calculatePolygonCentroid(room.path);
 
-            // Get wall height from store (assuming it's in millimeters)
-            const wallHeight = this.store.getters['walls/defaultHeight'] || 2700; // Default 2700mm if not set
-            const heightInCm = Math.round(wallHeight / 10); // Convert to cm
+                // Get wall height from store (assuming it's in millimeters)
+                const wallHeight = this.store.getters['walls/defaultHeight'] || 2700; // Default 2700mm if not set
+                const heightInCm = Math.round(wallHeight / 10); // Convert to cm
 
-            // Calculate internal area in square meters
-            const internalArea = this.calculateInternalRoomArea(room);
-            const areaInSqM = (internalArea / 10000).toFixed(2); // Convert from sq cm to sq m
+                // Calculate internal area in square meters
+                const internalArea = this.calculateInternalRoomArea(room);
+                const areaInSqM = (internalArea / 10000).toFixed(2); // Convert from sq cm to sq m
 
-            // Draw height label
-            this.drawRoundedLabel(
-                center.x,
-                center.y - 20,
-                `H=${heightInCm}`,
-                '#2196F3' // Blue color for height
-            );
+                // Draw height label
+                this.drawRoundedLabel(
+                    center.x,
+                    center.y - 20,
+                    `H=${heightInCm}`,
+                    '#2196F3' // Blue color for height
+                );
 
-            // Draw area label
-            this.drawRoundedLabel(
-                center.x,
-                center.y + 20,
-                `S=${areaInSqM} м²`,
-                '#F44336' // Red color for area
-            );
+                // Draw area label
+                this.drawRoundedLabel(
+                    center.x,
+                    center.y + 20,
+                    `S=${areaInSqM} м²`,
+                    '#F44336' // Red color for area
+                );
+            }
         });
     }
 

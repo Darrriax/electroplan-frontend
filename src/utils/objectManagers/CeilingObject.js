@@ -181,6 +181,21 @@ export default class CeilingObject {
         const room = this.findContainingRoom(mousePoint, rooms);
         if (!room) return null;
 
+        // Calculate distances to walls first
+        const distances = this.calculateWallDistances(mousePoint, room);
+        if (!distances || distances.length === 0) return null;
+
+        // Get minimum distance to any wall
+        const minDistance = Math.min(...distances.map(d => d.distance));
+
+        // Get the object radius (half of diameter)
+        const objectRadius = this.defaultDimensions.diameter / 2;
+
+        // If too close to any wall, return null to prevent placement
+        if (minDistance < objectRadius) {
+            return null;
+        }
+
         // Calculate room center
         const center = this.calculateRoomCenter(room);
         if (!center) return null;
@@ -200,13 +215,15 @@ export default class CeilingObject {
             y: distanceToCenter <= snapThreshold ? center.y : mousePoint.y
         };
 
-        // Calculate distances to walls
-        const distances = this.calculateWallDistances(position, room);
+        // Recalculate distances for the final position if it was snapped to center
+        const finalDistances = distanceToCenter <= snapThreshold ? 
+            this.calculateWallDistances(position, room) : 
+            distances;
 
         return {
             ...position,
             room: room.id,
-            distances,
+            distances: finalDistances,
             isNearCenter: distanceToCenter <= snapThreshold
         };
     }

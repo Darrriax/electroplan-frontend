@@ -1,6 +1,7 @@
 <template>
   <project-layout @undo="undoAction" @redo="redoAction">
     <div class="plan-editor">
+      <NotificationToast />
       <ToolSidebar
           :tools="editorTools"
           :visible="isMenuOpen"
@@ -98,6 +99,7 @@ import WallEdgeObject from '../../../utils/objectManagers/WallEdgeObject';
 import WallEdgeObjectRenderer from '../../../utils/WallEdgeObjectRenderer';
 import CeilingObject from '../../../utils/objectManagers/CeilingObject';
 import CeilingObjectRenderer from '../../../utils/CeilingObjectRenderer';
+import NotificationToast from '../../UI/elements/NotificationToast.vue';
 
 export default {
   name: 'PlanEditor',
@@ -111,6 +113,7 @@ export default {
     SocketSettingsCard,
     LightPanelCard,
     SwitchSettingsCard,
+    NotificationToast,
   },
   data() {
     return {
@@ -376,7 +379,8 @@ export default {
                         } else if (newObject.type === 'window') {
                             this.$store.dispatch('windows/addWindow', newObject);
                         }
-                        this.objectManager.setTool(null);
+                        // Reinitialize the preview for continuous placement
+                        this.objectManager.setTool(newObject.type);
                     }
                 }
                 break;
@@ -643,12 +647,20 @@ export default {
         const distance = this.wallEdgeObjectManager.updatePreview(mousePoint);
 
         if (distance < Infinity) {
-            const socket = this.wallEdgeObjectManager.createObject(this.wallEdgeObjectManager.preview);
-            if (socket) {
-                // Ensure floor height is included
-                socket.dimensions.floorHeight = this.socketFloorHeight;
-                this.$store.dispatch('sockets/addSocket', socket);
-                this.wallEdgeObjectManager.preview = null;
+            // Check if placement is valid
+            const validationResult = this.wallEdgeObjectManager.isValidPlacement();
+            
+            if (validationResult.valid) {
+                const socket = this.wallEdgeObjectManager.createObject(this.wallEdgeObjectManager.preview);
+                if (socket) {
+                    // Ensure floor height is included
+                    socket.dimensions.floorHeight = this.socketFloorHeight;
+                    this.$store.dispatch('sockets/addSocket', socket);
+                    this.wallEdgeObjectManager.preview = null;
+                }
+            } else {
+                // Show error message
+                this.$store.dispatch('notifications/showError', validationResult.error);
             }
         }
     },
@@ -662,12 +674,20 @@ export default {
         const distance = this.wallEdgeObjectManager.updatePreview(mousePoint);
 
         if (distance < Infinity) {
-            const panel = this.wallEdgeObjectManager.createObject(this.wallEdgeObjectManager.preview);
-            if (panel) {
-                // Ensure floor height is included
-                panel.dimensions.floorHeight = this.panelFloorHeight;
-                this.$store.dispatch('panels/addPanel', panel);
-                this.wallEdgeObjectManager.preview = null;
+            // Check if placement is valid
+            const validationResult = this.wallEdgeObjectManager.isValidPlacement();
+            
+            if (validationResult.valid) {
+                const panel = this.wallEdgeObjectManager.createObject(this.wallEdgeObjectManager.preview);
+                if (panel) {
+                    // Ensure floor height is included
+                    panel.dimensions.floorHeight = this.panelFloorHeight;
+                    this.$store.dispatch('panels/addPanel', panel);
+                    this.wallEdgeObjectManager.preview = null;
+                }
+            } else {
+                // Show error message
+                this.$store.dispatch('notifications/showError', validationResult.error);
             }
         }
     },
@@ -710,8 +730,7 @@ export default {
 
     handleSwitchCreation(mousePoint) {
         if (!this.wallEdgeObjectManager.preview) {
-            const type = this.currentTool; // 'single-switch' or 'double-switch'
-            this.wallEdgeObjectManager.preview = this.wallEdgeObjectManager.initializePreview(type);
+            this.wallEdgeObjectManager.preview = this.wallEdgeObjectManager.initializePreview(this.currentTool);
             // Set floor height from store
             this.wallEdgeObjectManager.preview.dimensions.floorHeight = this.switchFloorHeight;
         }
@@ -719,12 +738,20 @@ export default {
         const distance = this.wallEdgeObjectManager.updatePreview(mousePoint);
 
         if (distance < Infinity) {
-            const switchObj = this.wallEdgeObjectManager.createObject(this.wallEdgeObjectManager.preview);
-            if (switchObj) {
-                // Ensure floor height is included
-                switchObj.dimensions.floorHeight = this.switchFloorHeight;
-                this.$store.dispatch('switches/addSwitch', switchObj);
-                this.wallEdgeObjectManager.preview = null;
+            // Check if placement is valid
+            const validationResult = this.wallEdgeObjectManager.isValidPlacement();
+            
+            if (validationResult.valid) {
+                const switchObj = this.wallEdgeObjectManager.createObject(this.wallEdgeObjectManager.preview);
+                if (switchObj) {
+                    // Ensure floor height is included
+                    switchObj.dimensions.floorHeight = this.switchFloorHeight;
+                    this.$store.dispatch('switches/addSwitch', switchObj);
+                    this.wallEdgeObjectManager.preview = null;
+                }
+            } else {
+                // Show error message
+                this.$store.dispatch('notifications/showError', validationResult.error);
             }
         }
     },

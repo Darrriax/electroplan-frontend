@@ -12,10 +12,30 @@
 
       <!-- Права панель -->
       <div class="navbar-right d-flex align-items-center gap-2">
-        <button-default icon="fa-solid fa-layer-group" label="Original Plan" @click="selectOriginalPlan"/>
-        <button-default icon="fa-solid fa-plug" label="Power Sockets" @click="selectPowerSockets"/>
-        <button-default icon="fa-solid fa-lightbulb" label="Light" @click="selectLight"/>
-        <button-default icon="fa-solid fa-toggle-on" label="Switches" @click="selectSwitches"/>
+        <button-default 
+          icon="fa-solid fa-layer-group" 
+          label="Original Plan" 
+          @click="selectOriginalPlan"
+          :class="{ 'mode-active': currentMode === 'original-plan' }"
+        />
+        <button-default 
+          icon="fa-solid fa-plug" 
+          label="Power Sockets" 
+          @click="selectPowerSockets"
+          :class="{ 'mode-active': currentMode === 'power-sockets' }"
+        />
+        <button-default 
+          icon="fa-solid fa-lightbulb" 
+          label="Light" 
+          @click="selectLight"
+          :class="{ 'mode-active': currentMode === 'light' }"
+        />
+        <button-default 
+          icon="fa-solid fa-toggle-on" 
+          label="Switches" 
+          @click="selectSwitches"
+          :class="{ 'mode-active': currentMode === 'switches' }"
+        />
 
         <div class="divider"/>
 
@@ -39,7 +59,7 @@
 
 <script>
 import ButtonDefault from "../buttons/ButtonDefault.vue"
-import { mapActions } from "vuex"
+import { mapActions, mapState } from "vuex"
 
 export default {
   name: "ProjectNavbar",
@@ -50,6 +70,9 @@ export default {
     return {
       selectedUnit: 'cm'
     }
+  },
+  computed: {
+    ...mapState('project', ['currentMode'])
   },
   watch: {
     selectedUnit(newVal) {
@@ -118,5 +141,10 @@ export default {
   border-radius: 4px;
   background: #fff;
   font-size: 14px;
+}
+
+.mode-active {
+  background-color: #FFA500 !important;
+  color: white !important;
 }
 </style>

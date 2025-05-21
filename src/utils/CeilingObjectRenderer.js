@@ -33,7 +33,7 @@ export default class CeilingObjectRenderer {
 
         // Set styles
         ctx.strokeStyle = '#008000'; // Green color
-        ctx.lineWidth = 1 / this.zoom;
+        ctx.lineWidth = 1;
 
         // Draw concentric circles
         const outerRadius = 12; // Largest circle radius in cm

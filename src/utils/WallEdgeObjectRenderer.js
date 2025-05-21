@@ -19,6 +19,14 @@ export default class WallEdgeObjectRenderer {
         const switches = this.store.getters['switches/getAllSwitches'] || [];
         const walls = this.store.state.walls.walls || [];
 
+        // Group objects by position and height
+        const objectGroups = this.groupObjectsByPositionAndHeight([
+            ...sockets.map(obj => ({ ...obj, type: 'socket' })),
+            ...panels.map(obj => ({ ...obj, type: 'panel' })),
+            ...wallLights.map(obj => ({ ...obj, type: 'wall-light' })),
+            ...switches.map(obj => ({ ...obj, type: 'switch' }))
+        ]);
+
         // Draw each socket
         sockets.forEach(socket => {
             const wall = walls.find(w => w.id === socket.wall);
@@ -50,6 +58,332 @@ export default class WallEdgeObjectRenderer {
                 this.drawWallLight(ctx, light, wall);
             }
         });
+
+        // Get current mode
+        const currentMode = this.store.state.project.currentMode;
+
+        // Draw height labels based on current mode
+        objectGroups.forEach(group => {
+            const objectType = group.objects[0].type;
+            const shouldShowLabel = (
+                // Show socket heights in both power-sockets and switches modes
+                (objectType === 'socket' && (currentMode === 'power-sockets' || currentMode === 'switches')) ||
+                // Show panel heights in both power-sockets and switches modes
+                (objectType === 'panel' && (currentMode === 'power-sockets' || currentMode === 'switches')) ||
+                (objectType === 'wall-light' && currentMode === 'light') ||
+                (objectType === 'switch' && (currentMode === 'power-sockets' || currentMode === 'switches'))
+            );
+
+            if (shouldShowLabel) {
+                this.drawHeightLabel(ctx, group);
+            }
+        });
+    }
+
+    // Group objects that are within 8cm of each other and have the same height
+    groupObjectsByPositionAndHeight(objects) {
+        const groups = [];
+        const processed = new Set();
+
+        // First, handle wall lights and panels - each gets its own group
+        objects.forEach(obj => {
+            if ((obj.type === 'wall-light' || obj.type === 'panel') && !processed.has(obj.id)) {
+                processed.add(obj.id);
+                groups.push({
+                    objects: [obj],
+                    position: obj.position,
+                    height: Math.round(obj.dimensions.floorHeight),
+                    center: {
+                        x: obj.position.x,
+                        y: obj.position.y
+                    },
+                    verticalOffset: 0
+                });
+            }
+        });
+
+        // Helper function to find all connected sockets and switches recursively
+        const findConnectedObjects = (obj, height, connectedGroup) => {
+            objects.forEach(other => {
+                if (other.id === obj.id || processed.has(other.id)) return;
+                
+                // Only group sockets and switches
+                if (other.type !== 'socket' && other.type !== 'switch') return;
+                
+                // Check if objects are within 8cm and have the same height
+                const distance = Math.sqrt(
+                    Math.pow(other.position.x - obj.position.x, 2) +
+                    Math.pow(other.position.y - obj.position.y, 2)
+                );
+
+                if (distance <= 8 && Math.round(other.dimensions.floorHeight) === height) {
+                    connectedGroup.push(other);
+                    processed.add(other.id);
+                    // Recursively find objects connected to this one
+                    findConnectedObjects(other, height, connectedGroup);
+                }
+            });
+        };
+
+        // Process remaining objects (sockets and switches)
+        objects.forEach(obj => {
+            if (processed.has(obj.id)) return;
+            
+            // Skip non-socket/switch objects as they've been handled above
+            if (obj.type !== 'socket' && obj.type !== 'switch') return;
+
+            const height = Math.round(obj.dimensions.floorHeight);
+            const connectedGroup = [obj];
+            processed.add(obj.id);
+
+            // Find all objects connected to this one (directly or indirectly)
+            findConnectedObjects(obj, height, connectedGroup);
+
+            if (connectedGroup.length > 0) {
+                // Calculate center point for the entire group
+                const center = {
+                    x: connectedGroup.reduce((sum, obj) => sum + obj.position.x, 0) / connectedGroup.length,
+                    y: connectedGroup.reduce((sum, obj) => sum + obj.position.y, 0) / connectedGroup.length
+                };
+
+                groups.push({
+                    objects: connectedGroup,
+                    position: connectedGroup[0].position,
+                    height: height,
+                    center: center,
+                    verticalOffset: 0
+                });
+            }
+        });
+
+        // Sort groups by height to stack labels if needed
+        groups.sort((a, b) => b.height - a.height);
+        
+        // Assign vertical offsets to overlapping groups
+        groups.forEach((group, i) => {
+            for (let j = 0; j < i; j++) {
+                const prevGroup = groups[j];
+                const distance = Math.sqrt(
+                    Math.pow(group.center.x - prevGroup.center.x, 2) +
+                    Math.pow(group.center.y - prevGroup.center.y, 2)
+                );
+                
+                // If centers are close, stack the labels
+                if (distance < 30) {
+                    group.verticalOffset = prevGroup.verticalOffset + 30;
+                    break;
+                }
+            }
+        });
+
+        return groups;
+    }
+
+    // Convert height to display units based on project settings
+    convertToDisplayUnits(height, objectType) {
+        const unit = this.store.state.project.unit;
+        let displayValue;
+        let unitLabel;
+
+        // For wall lights, the height is already in mm, so convert accordingly
+        const heightInCm = objectType === 'wall-light' ? height / 10 : height;
+
+        // Convert height from cm to the target unit
+        switch (unit) {
+            case 'mm':
+                displayValue = Math.round(heightInCm); // Already in mm
+                unitLabel = 'mm';
+                break;
+            case 'm':
+                displayValue = (heightInCm / 1000).toFixed(2); // Convert from mm to m
+                unitLabel = 'm';
+                break;
+            case 'cm':
+            default:
+                displayValue = Math.round(heightInCm / 10); // Convert from mm to cm
+                unitLabel = 'cm';
+                break;
+        }
+
+        return { value: displayValue, unit: unitLabel };
+    }
+
+    // Calculate label position based on wall orientation and nearby objects
+    calculateLabelPosition(group, wall) {
+        const { x, y } = group.center;
+        const baseOffset = 20; // Base offset from the wall
+        
+        // Determine wall orientation by checking its angle
+        const wallAngle = Math.atan2(
+            wall.end.y - wall.start.y,
+            wall.end.x - wall.start.x
+        );
+
+        // Get object's side relative to the wall
+        const side = group.objects[0].position.side;
+        
+        // Calculate perpendicular direction to the wall
+        const perpendicularAngle = wallAngle + (side === 'right' ? -Math.PI/2 : Math.PI/2);
+
+        // Find nearby objects at different heights
+        const allObjects = [
+            ...(this.store.state.sockets.sockets || []),
+            ...(this.store.state.switches.switches || [])
+        ];
+
+        // Filter objects that are near this position
+        const nearbyObjects = allObjects.filter(obj => {
+            if (obj.wall !== wall.id) return false;
+            
+            // Calculate distance between centers
+            const dx = obj.position.x - x;
+            const dy = obj.position.y - y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Consider objects within 15cm as nearby
+            return distance < 15;
+        });
+
+        // Sort nearby objects by height
+        const sortedObjects = nearbyObjects.sort((a, b) => 
+            a.dimensions.floorHeight - b.dimensions.floorHeight
+        );
+
+        // Find position of current group in the sorted array
+        const currentIndex = sortedObjects.findIndex(obj => 
+            obj.dimensions.floorHeight === group.objects[0].dimensions.floorHeight
+        );
+
+        // Calculate additional offset based on position in stack
+        const additionalOffset = currentIndex * 10; // Add 20cm for each object below
+
+        // Calculate final offset position using perpendicular angle
+        const totalOffset = baseOffset + additionalOffset;
+        const offsetX = totalOffset * Math.cos(perpendicularAngle);
+        const offsetY = totalOffset * Math.sin(perpendicularAngle);
+
+        return {
+            x: x + offsetX,
+            y: y + offsetY,
+            angle: wallAngle // Pass the wall angle to rotate the label
+        };
+    }
+
+    // Draw rounded rectangle labels parallel to the wall
+    drawRoundedLabel(ctx, x, y, text, textColor, angle = 0, socketCount = null, switchCount = null) {
+        // Text measurements with smaller font
+        ctx.font = '10px Arial';
+        const metrics = ctx.measureText(text);
+        const countText = socketCount || switchCount ? 
+            `+${socketCount}${switchCount ? '+' + switchCount : ''}` : '';
+        const countMetrics = countText ? ctx.measureText(countText) : { width: 0 };
+        const padding = 4;
+        const width = metrics.width + (countText ? countMetrics.width + padding * 2 : 0) + padding * 2;
+        const height = 16; // Fixed small height
+        const radius = 4; // Smaller border radius
+
+        // Save the current context state
+        ctx.save();
+        
+        // Translate to the label position and rotate
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+
+        // Draw rounded rectangle centered at origin (0,0)
+        ctx.beginPath();
+        ctx.moveTo(-width/2 + radius, -height/2);
+        ctx.lineTo(width/2 - radius, -height/2);
+        ctx.arcTo(width/2, -height/2, width/2, -height/2 + radius, radius);
+        ctx.lineTo(width/2, height/2 - radius);
+        ctx.arcTo(width/2, height/2, width/2 - radius, height/2, radius);
+        ctx.lineTo(-width/2 + radius, height/2);
+        ctx.arcTo(-width/2, height/2, -width/2, height/2 - radius, radius);
+        ctx.lineTo(-width/2, -height/2 + radius);
+        ctx.arcTo(-width/2, -height/2, -width/2 + radius, -height/2, radius);
+        ctx.closePath();
+
+        // Fill and stroke
+        ctx.fillStyle = 'white';
+        ctx.fill();
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 0.5; // Thinner border
+        ctx.stroke();
+
+        // Draw height text (always left-aligned)
+        ctx.fillStyle = textColor;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, -width/2 + padding, 0);
+
+        // Draw count text if provided (right-aligned)
+        if (countText) {
+            // Draw socket count in green
+            if (socketCount > 0) {
+                ctx.fillStyle = '#008000'; // Green for sockets
+                ctx.textAlign = 'right';
+                const rightEdge = width/2 - padding;
+                const switchSpace = switchCount > 0 ? ctx.measureText(`+${switchCount}`).width + 2 : 0;
+                ctx.fillText(`+${socketCount}`, rightEdge - switchSpace, 0);
+            }
+
+            // Draw switch count in red if there are switches
+            if (switchCount > 0) {
+                ctx.fillStyle = '#FF0000'; // Red for switches
+                ctx.textAlign = 'right';
+                ctx.fillText(`+${switchCount}`, width/2 - padding, 0);
+            }
+        }
+
+        // Restore the context state
+        ctx.restore();
+    }
+
+    // Draw height label for a group of objects
+    drawHeightLabel(ctx, group) {
+        // Save context state
+        ctx.save();
+        
+        // Apply canvas transforms
+        ctx.translate(this.panOffset.x, this.panOffset.y);
+        ctx.scale(this.zoom, this.zoom);
+
+        // Find the wall this object is attached to
+        const firstObject = group.objects[0];
+        const wall = this.store.state.walls.walls.find(w => w.id === firstObject.wall);
+        
+        if (!wall) {
+            ctx.restore();
+            return;
+        }
+
+        // Calculate label position based on wall orientation and nearby objects
+        const labelPos = this.calculateLabelPosition(group, wall);
+        
+        // Get the height from the floor
+        const heightFromFloor = group.objects[0].dimensions.floorHeight;
+        
+        // Convert height to display units but only show the number
+        const { value: displayHeight } = this.convertToDisplayUnits(heightFromFloor, firstObject.type);
+        const text = `H=${displayHeight}`;
+
+        // Count sockets and switches separately
+        const socketCount = group.objects.filter(obj => obj.type === 'socket').length;
+        const switchCount = group.objects.filter(obj => obj.type === 'switch').length;
+
+        // Draw rounded rectangle label with rotation and counts
+        this.drawRoundedLabel(
+            ctx, 
+            labelPos.x, 
+            labelPos.y, 
+            text, 
+            '#2196F3', 
+            labelPos.angle,
+            socketCount > 0 ? socketCount : null,
+            switchCount > 0 ? switchCount : null
+        );
+
+        // Restore context state
+        ctx.restore();
     }
 
     // Draw a single socket
@@ -106,7 +440,7 @@ export default class WallEdgeObjectRenderer {
         ctx.translate(this.panOffset.x, this.panOffset.y);
         ctx.scale(this.zoom, this.zoom);
         ctx.translate(x, y);
-        ctx.rotate(rotation);
+        ctx.rotate(rotation + Math.PI);
 
         // Set styles - change to green
         ctx.strokeStyle = '#008000'; // Green color
@@ -117,8 +451,6 @@ export default class WallEdgeObjectRenderer {
         const innerRadius = 4; // Smallest circle radius in cm
 
         // Determine the arc direction based on which side of the wall the light is placed
-        // If side is 'right', draw semicircles facing right (0 to PI)
-        // If side is 'left', draw semicircles facing left (PI to 0)
         const startAngle = side === 'right' ? 0 : Math.PI;
         const endAngle = side === 'right' ? Math.PI : 0;
         const counterclockwise = side === 'left';
