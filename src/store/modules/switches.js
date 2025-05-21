@@ -58,11 +58,13 @@ export default {
     setDefaultFloorHeight({ commit }, height) {
       commit('setDefaultFloorHeight', height);
     },
-    addSwitch({ commit }, switchObj) {
+    addSwitch({ commit, dispatch }, switchObj) {
       commit('addSwitch', switchObj);
+      dispatch('notifyProjectModule');
     },
-    removeSwitch({ commit }, switchId) {
+    removeSwitch({ commit, dispatch }, switchId) {
       commit('removeSwitch', switchId);
+      dispatch('notifyProjectModule');
     },
     async connectGroupToSwitch({ commit, dispatch }, { switchId, connectionNumber, groupId, groupData }) {
       // First disconnect any existing connections to this group
@@ -70,11 +72,13 @@ export default {
       
       // Then make the new connection with the full group data
       commit('connectGroupToSwitch', { switchId, connectionNumber, groupId, groupData });
+      dispatch('notifyProjectModule');
     },
-    disconnectGroupFromSwitch({ commit }, { switchId, connectionNumber }) {
+    disconnectGroupFromSwitch({ commit, dispatch }, { switchId, connectionNumber }) {
       commit('disconnectGroupFromSwitch', { switchId, connectionNumber });
+      dispatch('notifyProjectModule');
     },
-    async disconnectGroupFromAllSwitches({ state, commit }, groupId) {
+    async disconnectGroupFromAllSwitches({ state, commit, dispatch }, groupId) {
       state.switches.forEach(switchObj => {
         if (switchObj.type === 'single-switch' && switchObj.connectedGroup?.id === groupId) {
           commit('disconnectGroupFromSwitch', { switchId: switchObj.id, connectionNumber: 1 });
@@ -87,6 +91,20 @@ export default {
           }
         }
       });
+      dispatch('notifyProjectModule');
+    },
+    // Action to notify project module of changes
+    notifyProjectModule({ state, dispatch }) {
+      // Create switches data object, excluding UI state (hoveredSwitchIds)
+      // and excluding default values that are restored on module initialization
+      const switchesData = {
+        switches: state.switches
+      };
+
+      dispatch('project/updateFromModule', {
+        type: 'switches',
+        elements: switchesData
+      }, { root: true });
     }
   },
   getters: {

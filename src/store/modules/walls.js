@@ -53,11 +53,15 @@ export const walls = {
 
         updateDefaultHeight(state, height) {
             state.defaultHeight = height;
+        },
+
+        removeWall(state, id) {
+            state.walls = state.walls.filter(wall => wall.id !== id);
         }
     },
 
     actions: {
-        createWall({commit, state}, {start, end}) {
+        createWall({commit, state, dispatch}, {start, end}) {
             const wall = {
                 start,
                 end,
@@ -65,11 +69,15 @@ export const walls = {
                 height: state.defaultHeight
             };
             commit('addWall', wall);
+            // Notify project module of the change
+            dispatch('notifyProjectModule');
             return wall;
         },
 
-        updateWall({ commit }, { id, updates }) {
+        updateWall({ commit, dispatch }, { id, updates }) {
             commit('updateWall', { id, updates });
+            // Notify project module of the change
+            dispatch('notifyProjectModule');
         },
 
         updateDefaultThickness({ commit }, thickness) {
@@ -79,6 +87,32 @@ export const walls = {
         updateDefaultHeight({ commit }, height) {
             commit('updateDefaultHeight', height);
         },
+
+        addWall({ commit, dispatch }, wall) {
+            commit('addWall', wall);
+            // Notify project module of the change
+            dispatch('notifyProjectModule');
+        },
+
+        removeWall({ commit, dispatch }, id) {
+            commit('removeWall', id);
+            // Notify project module of the change
+            dispatch('notifyProjectModule');
+        },
+
+        setWalls({ commit, dispatch }, walls) {
+            commit('setWalls', walls);
+            // Notify project module of the change
+            dispatch('notifyProjectModule');
+        },
+
+        // Action to notify project module of changes
+        notifyProjectModule({ state, dispatch }) {
+            dispatch('project/updateFromModule', {
+                type: 'walls',
+                elements: state.walls
+            }, { root: true });
+        }
     },
 
     getters: {

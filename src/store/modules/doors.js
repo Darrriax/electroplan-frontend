@@ -38,8 +38,17 @@ export const doors = {
     updateDefaultOpeningSide({ commit }, side) {
       commit('setDefaultOpeningSide', side);
     },
-    addDoor({ commit }, door) {
+    addDoor({ commit, dispatch }, door) {
       commit('addDoor', door);
+      // Notify project module of the change
+      dispatch('notifyProjectModule');
+    },
+    // Action to notify project module of changes
+    notifyProjectModule({ state, dispatch }) {
+      dispatch('project/updateFromModule', {
+        type: 'doors',
+        elements: state.doors
+      }, { root: true });
     }
   },
   getters: {

@@ -49,9 +49,39 @@ export const rooms = {
         }
     },
 
+    actions: {
+        setRooms({ commit, dispatch }, rooms) {
+            commit('setRooms', rooms);
+            dispatch('notifyProjectModule');
+        },
+
+        addRoom({ commit, dispatch }, room) {
+            commit('addRoom', room);
+            dispatch('notifyProjectModule');
+        },
+
+        updateRoom({ commit, dispatch }, payload) {
+            commit('updateRoom', payload);
+            dispatch('notifyProjectModule');
+        },
+
+        selectRoom({ commit }, id) {
+            commit('selectRoom', id);
+        },
+
+        // Action to notify project module of changes
+        notifyProjectModule({ state, dispatch }) {
+            dispatch('project/updateFromModule', {
+                type: 'rooms',
+                elements: state.rooms
+            }, { root: true });
+        }
+    },
+
     getters: {
         selectedRoom: (state) => {
             return state.rooms.find(room => room.id === state.selectedRoomId);
-        }
+        },
+        getAllRooms: (state) => state.rooms
     }
 };

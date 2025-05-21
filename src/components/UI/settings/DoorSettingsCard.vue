@@ -16,7 +16,6 @@
           >{{ displayWidth }}</span>
           <button @click="increaseWidth" :disabled="width >= 1500">+</button>
         </div>
-        <div v-if="widthError" class="error-message">{{ widthError }}</div>
       </div>
 
       <div class="preset-grid">
@@ -44,7 +43,6 @@
           >{{ displayHeight }}</span>
           <button @click="increaseHeight" :disabled="isHeightExceedingWall">+</button>
         </div>
-        <div v-if="heightError" class="error-message">{{ heightError }}</div>
       </div>
 
       <div class="preset-grid">
@@ -141,9 +139,7 @@ export default {
         m: { width: 0.05, height: 0.1 }
       },
       openingDirection: 'left',
-      openingSide: 'inside',
-      heightError: null,
-      widthError: null
+      openingSide: 'inside'
     }
   },
   computed: {
@@ -186,6 +182,7 @@ export default {
       'updateDefaultOpeningDirection',
       'updateDefaultOpeningSide'
     ]),
+    ...mapActions('reports', ['showMessage']),
     convertToCurrentUnit(valueMM) {
       switch (this.unit) {
         case 'cm':
@@ -209,26 +206,24 @@ export default {
     },
     validateHeight(height) {
       if (height > this.wallHeight) {
-        this.heightError = `Door height cannot exceed wall height (${this.convertToCurrentUnit(this.wallHeight)} ${this.unit})`;
+        this.showMessage(`Error: Door height cannot exceed wall height (${this.convertToCurrentUnit(this.wallHeight)} ${this.unit})`);
         return false;
       }
       if (height < 1800) {
-        this.heightError = `Door height cannot be less than ${this.convertToCurrentUnit(1800)} ${this.unit}`;
+        this.showMessage(`Error: Door height cannot be less than ${this.convertToCurrentUnit(1800)} ${this.unit}`);
         return false;
       }
-      this.heightError = null;
       return true;
     },
     validateWidth(width) {
       if (width < 500) {
-        this.widthError = `Door width cannot be less than ${this.convertToCurrentUnit(500)} ${this.unit}`;
+        this.showMessage(`Error: Door width cannot be less than ${this.convertToCurrentUnit(500)} ${this.unit}`);
         return false;
       }
       if (width > 1500) {
-        this.widthError = `Door width cannot exceed ${this.convertToCurrentUnit(1500)} ${this.unit}`;
+        this.showMessage(`Error: Door width cannot exceed ${this.convertToCurrentUnit(1500)} ${this.unit}`);
         return false;
       }
-      this.widthError = null;
       return true;
     },
     increaseWidth() {

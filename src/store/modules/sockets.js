@@ -20,11 +20,20 @@ export default {
     setDefaultFloorHeight({ commit }, height) {
       commit('updateDefaultFloorHeight', height);
     },
-    addSocket({ commit }, socket) {
+    addSocket({ commit, dispatch }, socket) {
       commit('addSocket', socket);
+      dispatch('notifyProjectModule');
     },
-    removeSocket({ commit }, socketId) {
+    removeSocket({ commit, dispatch }, socketId) {
       commit('removeSocket', socketId);
+      dispatch('notifyProjectModule');
+    },
+    // Action to notify project module of changes
+    notifyProjectModule({ state, dispatch }) {
+      dispatch('project/updateFromModule', {
+        type: 'sockets',
+        elements: state.sockets
+      }, { root: true });
     }
   },
   getters: {

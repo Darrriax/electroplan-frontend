@@ -291,33 +291,38 @@ a:hover {
 
 /*__________________________________NAVIGATION____________________________________*/
 .project-content {
-    padding-top: 110px;
+    padding-top: 120px; /* Increased to account for both navbars */
+    flex: 1;
+    overflow-y: auto;
 }
 
-.nav-container {
-    padding: 5px 0;
+/* Main navigation styles */
+.navigation .nav-container {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
-    z-index: 1000;
+    z-index: 10001;
+    background: white;
+    padding: 5px 0;
 }
 
-.project-navbar {
+/* Project navbar styles */
+.project-navbar .nav-container {
     position: fixed;
-    top: 58px;
+    top: 60px; /* Position below main navigation */
     left: 0;
     right: 0;
-    z-index: 999;
+    z-index: 10000;
+    background: white;
     padding: 5px 0;
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
 }
 
 .nav-box {
     background: rgba(255, 255, 255, 0.35);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-
     padding: 10px 60px;
     display: flex;
     justify-content: space-between;

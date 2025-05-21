@@ -19,6 +19,10 @@ const urls = {
         profile: 'users/profile',
         password: 'users/change-password',
     },
+    project: {
+        base: 'projects',
+        byId: (id) => `projects/${id}`,
+    }
 }
 
 const defaultConfig = {
@@ -93,4 +97,37 @@ export const AccountApi = {
         const data = {oldPassword, password, passwordConfirmation};
         return DefaultApiInstance.put(url, data);
     },
+};
+
+export const ProjectApi = {
+    // Get project by ID
+    getProject(id) {
+        const url = urls.project.byId(id);
+        return DefaultApiInstance.get(url);
+    },
+
+    // Save new project or update existing one
+    saveProject(projectData) {
+        if (projectData.id) {
+            // Update existing project
+            const url = urls.project.byId(projectData.id);
+            return DefaultApiInstance.put(url, projectData);
+        } else {
+            // Create new project
+            const url = urls.project.base;
+            return DefaultApiInstance.post(url, projectData);
+        }
+    },
+
+    // Get all projects for current user
+    getAllProjects() {
+        const url = urls.project.base;
+        return DefaultApiInstance.get(url);
+    },
+
+    // Delete project
+    deleteProject(id) {
+        const url = urls.project.byId(id);
+        return DefaultApiInstance.delete(url);
+    }
 };

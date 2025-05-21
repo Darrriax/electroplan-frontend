@@ -1,7 +1,7 @@
 <template>
   <project-layout @undo="undoAction" @redo="redoAction">
     <div class="plan-editor">
-      <NotificationToast />
+
       <ToolSidebar
           :tools="editorTools"
           :visible="isMenuOpen"
@@ -80,6 +80,7 @@
         </div>
       </div>
     </div>
+    <message :label="message" />
   </project-layout>
 </template>
 
@@ -102,6 +103,7 @@ import WallEdgeObjectRenderer from '../../../utils/WallEdgeObjectRenderer';
 import CeilingObject from '../../../utils/objectManagers/CeilingObject';
 import CeilingObjectRenderer from '../../../utils/CeilingObjectRenderer';
 import NotificationToast from '../../UI/elements/NotificationToast.vue';
+import Message from "../../UI/elements/Message.vue";
 
 export default {
   name: 'PlanEditor',
@@ -116,6 +118,7 @@ export default {
     LightPanelCard,
     SwitchSettingsCard,
     NotificationToast,
+    Message,
   },
   data() {
     return {
@@ -155,6 +158,9 @@ export default {
       editorTools: 'project/getCurrentModeTools',
       wallThickness: 'walls/defaultThickness',
       wallHeight: 'walls/defaultHeight'
+    }),
+    ...mapGetters('reports', {
+      message: 'getMessage',
     }),
     isWallToolActive() {
       return this.currentTool === 'wall';
@@ -200,26 +206,122 @@ export default {
       },
       deep: true
     },
-    // Watch for changes in doors
-    '$store.state.doors.doors': {
-      handler() {
+    // Watch for changes in walls
+    '$store.state.walls.walls': {
+      handler(newWalls) {
+        // Ensure walls are synced with project module
+        this.$store.dispatch('walls/notifyProjectModule');
         if (this.objectRenderer) {
           this.objectRenderer.redrawAll(this.$store.state);
           this.redraw();
         }
       },
-      deep: true
+      deep: true,
+      immediate: true
     },
     // Watch for changes in windows
     '$store.state.windows.windows': {
-      handler() {
+      handler(newWindows) {
+        // Ensure windows are synced with project module
+        this.$store.dispatch('windows/notifyProjectModule');
         if (this.objectRenderer) {
           this.objectRenderer.redrawAll(this.$store.state);
           this.redraw();
         }
       },
-      deep: true
-    }
+      deep: true,
+      immediate: true
+    },
+    // Watch for changes in doors
+    '$store.state.doors.doors': {
+      handler(newDoors) {
+        // Ensure doors are synced with project module
+        this.$store.dispatch('doors/notifyProjectModule');
+        if (this.objectRenderer) {
+          this.objectRenderer.redrawAll(this.$store.state);
+          this.redraw();
+        }
+      },
+      deep: true,
+      immediate: true
+    },
+    // Watch for changes in rooms
+    '$store.state.rooms.rooms': {
+      handler(newRooms) {
+        // Ensure rooms are synced with project module
+        this.$store.dispatch('rooms/notifyProjectModule');
+        if (this.objectRenderer) {
+          this.objectRenderer.redrawAll(this.$store.state);
+          this.redraw();
+        }
+      },
+      deep: true,
+      immediate: true
+    },
+    // Watch for changes in sockets
+    '$store.state.sockets.sockets': {
+      handler(newSockets) {
+        // Ensure sockets are synced with project module
+        this.$store.dispatch('sockets/notifyProjectModule');
+        if (this.objectRenderer) {
+          this.objectRenderer.redrawAll(this.$store.state);
+          this.redraw();
+        }
+      },
+      deep: true,
+      immediate: true
+    },
+    // Watch for changes in panels
+    '$store.state.panels.panels': {
+      handler(newPanels) {
+        // Ensure panels are synced with project module
+        this.$store.dispatch('panels/notifyProjectModule');
+        if (this.objectRenderer) {
+          this.objectRenderer.redrawAll(this.$store.state);
+          this.redraw();
+        }
+      },
+      deep: true,
+      immediate: true
+    },
+    // Watch for changes in lights (both ceiling and wall)
+    '$store.state.lights.ceilingLights': {
+      handler() {
+        // Ensure lights are synced with project module
+        this.$store.dispatch('lights/notifyProjectModule');
+        if (this.objectRenderer) {
+          this.objectRenderer.redrawAll(this.$store.state);
+          this.redraw();
+        }
+      },
+      deep: true,
+      immediate: true
+    },
+    '$store.state.lights.wallLights': {
+      handler() {
+        // Ensure lights are synced with project module
+        this.$store.dispatch('lights/notifyProjectModule');
+        if (this.objectRenderer) {
+          this.objectRenderer.redrawAll(this.$store.state);
+          this.redraw();
+        }
+      },
+      deep: true,
+      immediate: true
+    },
+    // Watch for changes in switches
+    '$store.state.switches.switches': {
+      handler(newSwitches) {
+        // Ensure switches are synced with project module
+        this.$store.dispatch('switches/notifyProjectModule');
+        if (this.objectRenderer) {
+          this.objectRenderer.redrawAll(this.$store.state);
+          this.redraw();
+        }
+      },
+      deep: true,
+      immediate: true
+    },
   },
   mounted() {
     // Initialize canvas after component is mounted
@@ -243,6 +345,9 @@ export default {
       this.wallEdgeObjectRenderer = new WallEdgeObjectRenderer(this.$store);
       this.ceilingObjectManager = new CeilingObject(this.$store);
       this.ceilingObjectRenderer = new CeilingObjectRenderer(this.$store);
+
+      // Initialize project data
+      this.$store.dispatch('project/initializeProjectData');
     });
 
     // Add keyboard shortcuts
@@ -662,7 +767,7 @@ export default {
                 }
             } else {
                 // Show error message
-                this.$store.dispatch('notifications/showError', validationResult.error);
+                this.$store.dispatch('reports/showMessage', 'Error: ' + validationResult.error);
             }
         }
     },
@@ -689,7 +794,7 @@ export default {
                 }
             } else {
                 // Show error message
-                this.$store.dispatch('notifications/showError', validationResult.error);
+                this.$store.dispatch('reports/showMessage', 'Error: ' + validationResult.error);
             }
         }
     },
@@ -753,7 +858,7 @@ export default {
                 }
             } else {
                 // Show error message
-                this.$store.dispatch('notifications/showError', validationResult.error);
+                this.$store.dispatch('reports/showMessage', 'Error: ' + validationResult.error);
             }
         }
     },

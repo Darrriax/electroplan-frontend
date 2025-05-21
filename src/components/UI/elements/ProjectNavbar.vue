@@ -1,10 +1,11 @@
 <template>
-  <div class="nav-container">
+  <div>
+    <div class="nav-container" :class="{ 'blur-effect': showProjectDataModal }">
     <div class="nav-box m-auto d-flex justify-content-between text-center px-2">
       <!-- Ліва панель -->
       <div class="navbar-left d-flex align-items-center gap-2">
         <button-default icon="fa-solid fa-bars" @click="toggleMenu"/>
-        <button-default icon="fa-solid fa-floppy-disk" label="Save" @click="saveProject"/>
+          <button-default icon="fa-solid fa-floppy-disk" label="Save" @click="handleSaveClick"/>
         <button-default icon="fa-solid fa-rotate-left" label="Undo" @click="undoAction"/>
         <button-default icon="fa-solid fa-rotate-right" label="Redo" @click="redoAction"/>
         <button-default icon="fa-solid fa-rotate" label="Center" @click="centerPlan"/>
@@ -54,25 +55,45 @@
         <button-default icon="fa-solid fa-info-circle" @click="openProjectInfo"/>
       </div>
     </div>
+    </div>
+
+    <!-- Project Data Modal -->
+    <project-data-modal
+      :show="showProjectDataModal"
+      :initial-project-name="projectName"
+      :initial-customer-name="customerName"
+      @save="handleProjectDataSave"
+      @close="showProjectDataModal = false"
+    />
   </div>
 </template>
 
 <script>
 import ButtonDefault from "../buttons/ButtonDefault.vue"
+import ProjectDataModal from "../modals/ProjectDataModal.vue"
 import { mapActions, mapState } from "vuex"
 
 export default {
   name: "ProjectNavbar",
   components: {
     ButtonDefault,
+    ProjectDataModal
   },
   data() {
     return {
-      selectedUnit: 'cm'
+      selectedUnit: 'cm',
+      showProjectDataModal: false
     }
   },
   computed: {
-    ...mapState('project', ['currentMode'])
+    ...mapState('project', [
+      'currentMode',
+      'projectName',
+      'customer'
+    ]),
+    customerName() {
+      return this.customer
+    }
   },
   watch: {
     selectedUnit(newVal) {
@@ -92,13 +113,58 @@ export default {
   },
   methods: {
     ...mapActions({
-      setMode: 'project/setMode'
+      setMode: 'project/setMode',
+      saveProject: 'project/saveProject'
     }),
     toggleMenu() {
       this.$store.commit('project/toggleMenu')
     },
     centerPlan() {},
-    saveProject() {},
+    async handleSaveClick() {
+      // Check if we have project name and customer
+      if (!this.projectName || !this.customer) {
+        this.showProjectDataModal = true;
+      } else {
+        await this.saveProjectToBackend();
+      }
+    },
+    async handleProjectDataSave({ projectName, customerName }) {
+      // Initialize empty project structure first
+      this.$store.commit('project/initializeProjectData', {
+        name: projectName,
+        customer: customerName,
+        data: {
+          walls: [],
+          doors: [],
+          windows: [],
+          rooms: [],
+          panels: [],
+          sockets: [],
+          switches: { switches: [] },
+          lights: {
+            ceilingLights: [],
+            wallLights: [],
+            lightGroups: []
+          },
+          scale: 1,
+          unit: this.selectedUnit
+        }
+      });
+      
+      // Then sync with all modules to gather any existing data
+      await this.$store.dispatch('project/initializeProjectData');
+      
+      this.showProjectDataModal = false;
+      await this.saveProjectToBackend();
+    },
+    async saveProjectToBackend() {
+      try {
+        await this.saveProject();
+        this.$store.dispatch('reports/showMessage', 'Project saved successfully');
+      } catch (error) {
+        this.$store.dispatch('reports/showMessage', 'Error: Failed to save project: ' + (error.message || 'Unknown error'));
+      }
+    },
     undoAction() {
       // Emit an event to be caught by parent components
       this.$emit('undo');
@@ -128,6 +194,22 @@ export default {
 </script>
 
 <style scoped>
+.nav-container {
+  position: fixed;
+  top: 58px;
+  left: 0;
+  right: 0;
+  background: white;
+  z-index: 10000;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: filter 0.3s ease;
+}
+
+.blur-effect {
+  filter: blur(5px);
+  pointer-events: none;
+}
+
 .divider {
   width: 1px;
   height: 24px;
@@ -146,5 +228,11 @@ export default {
 .mode-active {
   background-color: #FFA500 !important;
   color: white !important;
+}
+
+/* Set font size for all elements in the navbar */
+:deep(.button-default),
+:deep(.nav-box) {
+  font-size: 14px;
 }
 </style>

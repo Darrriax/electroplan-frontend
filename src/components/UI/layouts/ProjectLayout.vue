@@ -2,10 +2,16 @@
   <AppLoader v-if="loadingStatus"/>
   <div class="project-wrap">
     <div class="sidebar_container"></div>
-    <div class="min-vh-100 displayFlexColumn project-content">
-      <navigation class="navigation"/>
-      <projectNavbar class="project-navbar" @undo="handleUndo" @redo="handleRedo"/>
+    <div class="min-vh-100 displayFlexColumn">
+      <div class="navigation">
+        <navigation/>
+      </div>
+      <div class="project-navbar">
+        <projectNavbar @undo="handleUndo" @redo="handleRedo"/>
+      </div>
+      <div class="project-content">
       <slot/>
+      </div>
     </div>
   </div>
 </template>
@@ -38,3 +44,20 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.project-wrap {
+  display: flex;
+  min-height: 100vh;
+}
+
+.displayFlexColumn {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.navigation, .project-navbar {
+  flex-shrink: 0;
+}
+</style>

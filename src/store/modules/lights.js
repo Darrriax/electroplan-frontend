@@ -58,31 +58,60 @@ export default {
         setDefaultFloorHeight({ commit }, height) {
             commit('setDefaultFloorHeight', height);
         },
-        addCeilingLight({ commit }, light) {
+        addCeilingLight({ commit, dispatch }, light) {
             commit('addCeilingLight', light);
+            dispatch('notifyProjectModule');
         },
-        addWallLight({ commit }, light) {
+        addWallLight({ commit, dispatch }, light) {
             commit('addWallLight', light);
+            dispatch('notifyProjectModule');
         },
-        removeCeilingLight({ commit }, lightId) {
+        removeCeilingLight({ commit, dispatch }, lightId) {
             commit('removeCeilingLight', lightId);
+            dispatch('notifyProjectModule');
         },
-        removeWallLight({ commit }, lightId) {
+        removeWallLight({ commit, dispatch }, lightId) {
             commit('removeWallLight', lightId);
+            dispatch('notifyProjectModule');
         },
-        createLightGroup({ commit }, name) {
+        setHoveredLight({ commit, dispatch }, lightIds) {
+            commit('setHoveredLight', lightIds);
+            dispatch('notifyProjectModule');
+        },
+        createLightGroup({ commit, dispatch }, name) {
             const id = 'group-' + Date.now();
             commit('createLightGroup', { id, name });
+            dispatch('notifyProjectModule');
             return id;
         },
-        addLightToGroup({ commit }, { groupId, light }) {
+        addLightToGroup({ commit, dispatch }, { groupId, light }) {
             commit('addLightToGroup', { groupId, light });
+            dispatch('notifyProjectModule');
         },
-        removeLightFromGroup({ commit }, { groupId, lightId }) {
+        removeLightFromGroup({ commit, dispatch }, { groupId, lightId }) {
             commit('removeLightFromGroup', { groupId, lightId });
+            dispatch('notifyProjectModule');
         },
-        setSelectedGroup({ commit }, groupId) {
+        setSelectedGroup({ commit, dispatch }, groupId) {
             commit('setSelectedGroup', groupId);
+            dispatch('notifyProjectModule');
+        },
+        // Action to notify project module of changes
+        notifyProjectModule({ state, dispatch }) {
+            // Create a complete lights data object that includes all light-related information
+            // excluding UI states (hoveredLightIds and selectedGroupId)
+            const lightsData = {
+                // Individual lights arrays
+                ceilingLights: state.ceilingLights.map(light => ({ ...light, type: 'ceiling' })),
+                wallLights: state.wallLights.map(light => ({ ...light, type: 'wall-light' })),
+                // Group data
+                lightGroups: state.lightGroups
+            };
+
+            dispatch('project/updateFromModule', {
+                type: 'lights',
+                elements: lightsData
+            }, { root: true });
         }
     },
     getters: {

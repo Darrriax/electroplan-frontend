@@ -34,11 +34,20 @@ export default {
         setDefaultFloorHeight({ commit }, height) {
             commit('setDefaultFloorHeight', height);
         },
-        addPanel({ commit }, panel) {
+        addPanel({ commit, dispatch }, panel) {
             commit('addPanel', panel);
+            dispatch('notifyProjectModule');
         },
-        removePanel({ commit }, panelId) {
+        removePanel({ commit, dispatch }, panelId) {
             commit('removePanel', panelId);
+            dispatch('notifyProjectModule');
+        },
+        // Action to notify project module of changes
+        notifyProjectModule({ state, dispatch }) {
+            dispatch('project/updateFromModule', {
+                type: 'panels',
+                elements: state.panels
+            }, { root: true });
         }
     },
     getters: {

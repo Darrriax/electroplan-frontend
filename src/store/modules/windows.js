@@ -25,10 +25,7 @@ export const windows = {
             if (index !== -1) {
                 state.windows[index] = { ...state.windows[index], ...updates };
             }
-        },
-        addWindow(state, window) {
-            state.windows.push(window);
-        },
+        }
     },
     actions: {
         setDefaultWidth({ commit }, width) {
@@ -40,8 +37,22 @@ export const windows = {
         setDefaultFloorHeight({ commit }, height) {
             commit('updateDefaultFloorHeight', height);
         },
-        addWindow({ commit }, window) {
+        addWindow({ commit, dispatch }, window) {
             commit('addWindow', window);
+            // Notify project module of the change
+            dispatch('notifyProjectModule');
         },
+        updateWindow({ commit, dispatch }, payload) {
+            commit('updateWindow', payload);
+            // Notify project module of the change
+            dispatch('notifyProjectModule');
+        },
+        // Action to notify project module of changes
+        notifyProjectModule({ state, dispatch }) {
+            dispatch('project/updateFromModule', {
+                type: 'windows',
+                elements: state.windows
+            }, { root: true });
+        }
     }
 } 
