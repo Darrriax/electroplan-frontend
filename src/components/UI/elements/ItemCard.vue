@@ -4,11 +4,12 @@
     <div class="description-box d-flex row">
       <div class="col-10">
         <div class="d-flex justify-content-center flex-column align-items-start ms-2">
-          <div class="card-title-text primary-text"> {{ title }}</div>
+          <div class="card-title-text primary-text">{{ title }}</div>
           <div class="card-title-text small-text fw-bold">Customer: {{ customer }}</div>
         </div>
-        <div class="d-flex justify-content-center flex-column align-items-start mt-3 ms-2">
-          <div class="secondary-text small-text">Last changes: {{ lastChanges }}</div>
+        <div class="d-flex justify-content-center flex-column align-items-start mt-2 ms-2">
+          <div class="secondary-text small-text">Last changes:</div>
+          <div class="secondary-text small-text">{{ lastChanges }}</div>
         </div>
       </div>
       <div class="col-2 d-flex justify-content-center flex-column align-items-center gap-2">
@@ -77,7 +78,8 @@ export default {
 .description-box {
   position: relative;
   background: white;
-  height: 80px;
+  height: 100px;
+  padding: 10px 0;
   display: flex;
   border-radius: 10px;
   text-align: center;

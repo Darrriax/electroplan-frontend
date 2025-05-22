@@ -8,7 +8,10 @@
     </div>
     <h3 class="text-center my-3">My projects</h3>
     <hr>
-    <div v-if="loading" class="text-center">
+    <div v-if="error" class="alert alert-danger text-center" role="alert">
+      {{ error }}
+    </div>
+    <div v-else-if="loading" class="text-center">
       <div class="spinner-border" role="status">
         <span class="visually-hidden">Loading...</span>
       </div>
@@ -18,11 +21,11 @@
     </div>
     <div v-else class="projects d-flex row row-cols-4 align-items-center justify-content-center gap-4 mx-5 px-5">
       <item-card
-        v-for="project in projects"
+        v-for="project in formattedProjects"
         :key="project.id"
         src="../public/images/plan.jpg"
-        :last-changes="project.lastUpdated"
-        :title="project.title"
+        :last-changes="formatDate(project.updatedAt)"
+        :title="project.name"
         :customer="project.customer"
         @click="openProject(project.id)"
       />
@@ -48,12 +51,21 @@ export default {
     return {
       projects: [],
       loading: true,
+      error: null,
     };
   },
   computed: {
     ...mapGetters('user', {
       getUserFullName: 'getUserFullName',
     }),
+    formattedProjects() {
+      return this.projects.map(project => ({
+        id: project.id,
+        name: project.name || 'Untitled Project',
+        customer: project.customer || 'No Customer',
+        updatedAt: project.updatedAt,
+      }));
+    }
   },
   methods: {
     goToProject() {
@@ -62,13 +74,29 @@ export default {
     openProject(id) {
       router.push(`/plan-editor/${id}`);
     },
+    formatDate(dateString) {
+      if (!dateString) return 'Never';
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    },
     async loadProjects() {
       try {
         this.loading = true;
+        this.error = null;
         const response = await ProjectApi.getAllProjects();
-        this.projects = response.data.projectShortResponses;
+        this.projects = response.data.projectShortResponses || [];
+        if (this.error) {
+          console.error('Error message:', this.error);
+        }
       } catch (error) {
         console.error('Failed to load projects:', error);
+        this.error = 'Failed to load projects. Please try again later.';
       } finally {
         this.loading = false;
       }
@@ -79,3 +107,18 @@ export default {
   },
 }
 </script>
+
+<style scoped>
+.home {
+  min-height: 200px;
+}
+
+.projects {
+  min-height: 200px;
+}
+
+.title-text {
+  font-size: 2rem;
+  font-weight: bold;
+}
+</style>
