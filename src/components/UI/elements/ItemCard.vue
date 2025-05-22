@@ -1,5 +1,5 @@
 <template>
-  <div class="image-card">
+  <div class="image-card" @click="$emit('click')">
     <img :src="src" alt="image" class="image"/>
     <div class="description-box d-flex row">
       <div class="col-10">
@@ -13,8 +13,8 @@
         </div>
       </div>
       <div class="col-2 d-flex justify-content-center flex-column align-items-center gap-2">
-        <button-default icon="fa-solid fa-pen"/>
-        <button-default icon="fa-solid fa-share-nodes"/>
+        <button-default icon="fa-solid fa-pen" @click.stop="$emit('edit')"/>
+        <button-default icon="fa-solid fa-trash" class="delete-button" @click.stop="$emit('delete')"/>
       </div>
     </div>
   </div>
@@ -48,7 +48,8 @@ export default {
       type: String,
       required: true
     },
-  }
+  },
+  emits: ['edit', 'delete', 'click']
 }
 </script>
 
@@ -63,6 +64,12 @@ export default {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  cursor: pointer;
+  transition: transform 0.2s ease-in-out;
+}
+
+.image-card:hover {
+  transform: translateY(-5px);
 }
 
 .image {
@@ -85,5 +92,13 @@ export default {
   text-align: center;
   z-index: 1;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1), 0 15px 25px rgba(0, 0, 0, 0.15);
+}
+
+.delete-button {
+  color: #dc3545;
+}
+
+.delete-button:hover {
+  color: #bb2d3b;
 }
 </style>

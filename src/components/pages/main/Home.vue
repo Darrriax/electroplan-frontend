@@ -28,14 +28,25 @@
         :title="project.name"
         :customer="project.customer"
         @click="openProject(project.id)"
+        @edit="editProject(project)"
+        @delete="deleteProject(project.id)"
       />
     </div>
+
+    <project-data-modal
+      :show="showProjectDataModal"
+      :initial-project-name="editingProject.name"
+      :initial-customer-name="editingProject.customer"
+      @save="handleProjectDataSave"
+      @close="showProjectDataModal = false"
+    />
   </layout>
 </template>
 <script>
 import Layout from "../../UI/layouts/Layout.vue";
 import ButtonAction from "../../UI/buttons/ButtonAction.vue";
 import ItemCard from "../../UI/elements/ItemCard.vue";
+import ProjectDataModal from "../../UI/modals/ProjectDataModal.vue";
 import {mapGetters} from "vuex";
 import router from "../../../router/index.js";
 import { ProjectApi } from "../../../api/api";
@@ -46,12 +57,19 @@ export default {
     Layout,
     ButtonAction,
     ItemCard,
+    ProjectDataModal
   },
   data() {
     return {
       projects: [],
       loading: true,
       error: null,
+      showProjectDataModal: false,
+      editingProject: {
+        id: null,
+        name: '',
+        customer: ''
+      }
     };
   },
   computed: {
@@ -64,6 +82,7 @@ export default {
         name: project.name || 'Untitled Project',
         customer: project.customer || 'No Customer',
         updatedAt: project.updatedAt,
+        data: project.data || {}
       }));
     }
   },
@@ -73,6 +92,51 @@ export default {
     },
     openProject(id) {
       router.push(`/plan-editor/${id}`);
+    },
+    editProject(project) {
+      this.editingProject = { ...project };
+      this.showProjectDataModal = true;
+    },
+    async handleProjectDataSave({ projectName, customerName }) {
+      try {
+        this.loading = true;
+        // Get the current project data first
+        const currentProject = await ProjectApi.getProject(this.editingProject.id);
+        
+        // Update only name and customer while preserving the existing data
+        await ProjectApi.saveProject({
+          id: this.editingProject.id,
+          name: projectName,
+          customer: customerName,
+          data: currentProject.data.data, // Preserve the existing project data
+          createdAt: currentProject.data.createdAt,
+          updatedAt: new Date().toISOString()
+        });
+        
+        await this.loadProjects(); // Reload the projects list
+        this.showProjectDataModal = false;
+      } catch (error) {
+        console.error('Failed to update project:', error);
+        this.error = 'Failed to update project. Please try again later.';
+      } finally {
+        this.loading = false;
+      }
+    },
+    async deleteProject(id) {
+      try {
+        if (!confirm('Are you sure you want to delete this project?')) {
+          return;
+        }
+        
+        this.loading = true;
+        await ProjectApi.deleteProject(id);
+        await this.loadProjects(); // Reload the projects list
+      } catch (error) {
+        console.error('Failed to delete project:', error);
+        this.error = 'Failed to delete project. Please try again later.';
+      } finally {
+        this.loading = false;
+      }
     },
     formatDate(dateString) {
       if (!dateString) return 'Never';

@@ -4,7 +4,7 @@
     <div class="modal-overlay" @click.self="handleClose">
       <div class="card-box col-sm-8 col-md-6 col-lg-4 col-xxl-4 m-auto">
         <div class="d-flex justify-content-between align-items-center p-4">
-          <h3 class="mb-0">Add project data</h3>
+          <h3 class="mb-0">{{ isEditing ? 'Edit project data' : 'Add project data' }}</h3>
           <button-default 
               @click="handleClose" 
               icon="fa-solid fa-xmark" 
@@ -30,7 +30,7 @@
             />
             
             <div class="text-center">
-              <button-simple label="Save project" class="set-min-width mt-4"/>
+              <button-simple :label="isEditing ? 'Save changes' : 'Save project'" class="set-min-width mt-4"/>
             </div>
           </div>
         </form>
@@ -67,16 +67,42 @@ export default {
   },
   data() {
     return {
-      projectName: this.initialProjectName,
-      customerName: this.initialCustomerName,
+      projectName: '',
+      customerName: '',
       errors: {
         projectName: '',
         customerName: ''
       }
     }
   },
+  computed: {
+    isEditing() {
+      return Boolean(this.initialProjectName || this.initialCustomerName);
+    }
+  },
+  watch: {
+    show(newVal) {
+      if (newVal) {
+        // When modal opens, initialize with provided values
+        this.projectName = this.initialProjectName;
+        this.customerName = this.initialCustomerName;
+        // Reset errors
+        this.errors = {
+          projectName: '',
+          customerName: ''
+        };
+      }
+    }
+  },
   methods: {
     handleClose() {
+      // Reset form when closing
+      this.projectName = '';
+      this.customerName = '';
+      this.errors = {
+        projectName: '',
+        customerName: ''
+      };
       this.$emit('close');
     },
     handleSubmit() {
@@ -102,6 +128,12 @@ export default {
           projectName: this.projectName.trim(),
           customerName: this.customerName.trim()
         });
+        
+        // Only reset if not editing
+        if (!this.isEditing) {
+          this.projectName = '';
+          this.customerName = '';
+        }
       }
     }
   }
