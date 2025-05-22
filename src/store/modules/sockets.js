@@ -14,6 +14,13 @@ export default {
     },
     removeSocket(state, socketId) {
       state.sockets = state.sockets.filter(s => s.id !== socketId);
+    },
+    setSockets(state, sockets) {
+      state.sockets = sockets;
+    },
+    resetState(state) {
+      state.sockets = [];
+      state.defaultFloorHeight = 300;
     }
   },
   actions: {
@@ -27,6 +34,13 @@ export default {
     removeSocket({ commit, dispatch }, socketId) {
       commit('removeSocket', socketId);
       dispatch('notifyProjectModule');
+    },
+    setSockets({ commit, dispatch }, sockets) {
+      commit('setSockets', sockets);
+      dispatch('notifyProjectModule');
+    },
+    resetState({ commit }) {
+      commit('resetState');
     },
     // Action to notify project module of changes
     notifyProjectModule({ state, dispatch }) {

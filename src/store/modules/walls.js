@@ -15,7 +15,12 @@ export const walls = {
         setWalls(state, walls) {
             state.walls = walls;
         },
-
+        resetState(state) {
+            state.walls = [];
+            state.defaultThickness = 100;
+            state.defaultHeight = 2800;
+            state.unit = 'mm';
+        },
         addWall(state, wall) {
             const length = Math.sqrt(
                 Math.pow(wall.end.x - wall.start.x, 2) +
@@ -47,11 +52,11 @@ export const walls = {
             }
         },
 
-        updateDefaultThickness(state, thickness) {
+        setDefaultThickness(state, thickness) {
             state.defaultThickness = thickness;
         },
 
-        updateDefaultHeight(state, height) {
+        setDefaultHeight(state, height) {
             state.defaultHeight = height;
         },
 
@@ -81,11 +86,11 @@ export const walls = {
         },
 
         updateDefaultThickness({ commit }, thickness) {
-            commit('updateDefaultThickness', thickness);
+            commit('setDefaultThickness', thickness);
         },
 
         updateDefaultHeight({ commit }, height) {
-            commit('updateDefaultHeight', height);
+            commit('setDefaultHeight', height);
         },
 
         addWall({ commit, dispatch }, wall) {
@@ -104,6 +109,10 @@ export const walls = {
             commit('setWalls', walls);
             // Notify project module of the change
             dispatch('notifyProjectModule');
+        },
+
+        resetState({ commit }) {
+            commit('resetState');
         },
 
         // Action to notify project module of changes

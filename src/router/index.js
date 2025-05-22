@@ -4,6 +4,7 @@ import Login from "../components/pages/auth/Login.vue";
 import Registration from "../components/pages/auth/Registration.vue";
 import {createRouter, createWebHistory} from "vue-router";
 import PlanEditor from "../components/pages/project/PlanEditor.vue";
+import store from '../store';
 
 const routes = [
     {
@@ -44,13 +45,34 @@ const routes = [
         }
     },
     {
-        path: '/plan-editor',
+        path: '/plan-editor/:id',
         component: PlanEditor,
         name: 'planEditor',
         meta: {
             requiresAuth: false,
             title: 'Проектування електромонтажу',
+        },
+        props: true,
+        async beforeEnter(to, from, next) {
+            try {
+                // Load project data before entering the route
+                await store.dispatch('project/loadProject', to.params.id);
+                next();
+            } catch (error) {
+                console.error('Failed to load project:', error);
+                next('/home'); // Redirect to home on error
+            }
         }
+    },
+    {
+        path: '/plan-editor',
+        component: PlanEditor,
+        name: 'newProject',
+        meta: {
+            requiresAuth: false,
+            title: 'Новий проект',
+        },
+        props: { id: null }
     },
 ];
 

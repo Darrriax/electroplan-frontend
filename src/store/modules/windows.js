@@ -8,43 +8,54 @@ export const windows = {
         windows: []
     },
     mutations: {
-        updateDefaultWidth(state, width) {
+        setDefaultWidth(state, width) {
             state.defaultWidth = width;
         },
-        updateDefaultHeight(state, height) {
+        setDefaultHeight(state, height) {
             state.defaultHeight = height;
         },
-        updateDefaultFloorHeight(state, height) {
+        setDefaultFloorHeight(state, height) {
             state.defaultFloorHeight = height;
         },
         addWindow(state, window) {
             state.windows.push(window);
+        },
+        setWindows(state, windows) {
+            state.windows = windows;
         },
         updateWindow(state, { id, updates }) {
             const index = state.windows.findIndex(window => window.id === id);
             if (index !== -1) {
                 state.windows[index] = { ...state.windows[index], ...updates };
             }
+        },
+        resetState(state) {
+            state.defaultWidth = 1000;
+            state.defaultHeight = 1200;
+            state.defaultFloorHeight = 900;
+            state.windows = [];
         }
     },
     actions: {
-        setDefaultWidth({ commit }, width) {
-            commit('updateDefaultWidth', width);
+        updateDefaultWidth({ commit }, width) {
+            commit('setDefaultWidth', width);
         },
-        setDefaultHeight({ commit }, height) {
-            commit('updateDefaultHeight', height);
+        updateDefaultHeight({ commit }, height) {
+            commit('setDefaultHeight', height);
         },
-        setDefaultFloorHeight({ commit }, height) {
-            commit('updateDefaultFloorHeight', height);
+        updateDefaultFloorHeight({ commit }, height) {
+            commit('setDefaultFloorHeight', height);
         },
         addWindow({ commit, dispatch }, window) {
             commit('addWindow', window);
-            // Notify project module of the change
+            dispatch('notifyProjectModule');
+        },
+        setWindows({ commit, dispatch }, windows) {
+            commit('setWindows', windows);
             dispatch('notifyProjectModule');
         },
         updateWindow({ commit, dispatch }, payload) {
             commit('updateWindow', payload);
-            // Notify project module of the change
             dispatch('notifyProjectModule');
         },
         // Action to notify project module of changes
@@ -53,6 +64,9 @@ export const windows = {
                 type: 'windows',
                 elements: state.windows
             }, { root: true });
+        },
+        resetState({ commit }) {
+            commit('resetState');
         }
     }
 } 

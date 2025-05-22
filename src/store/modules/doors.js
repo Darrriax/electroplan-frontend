@@ -12,6 +12,13 @@ export const doors = {
     setDefaultWidth(state, width) {
       state.defaultWidth = width;
     },
+    resetState(state) {
+      state.defaultWidth = 800;
+      state.defaultHeight = 2000;
+      state.defaultOpeningDirection = 'left';
+      state.defaultOpeningSide = 'inside';
+      state.doors = [];
+    },
     setDefaultHeight(state, height) {
       state.defaultHeight = height;
     },
@@ -23,6 +30,9 @@ export const doors = {
     },
     addDoor(state, door) {
       state.doors.push(door);
+    },
+    setDoors(state, doors) {
+      state.doors = doors;
     }
   },
   actions: {
@@ -43,12 +53,19 @@ export const doors = {
       // Notify project module of the change
       dispatch('notifyProjectModule');
     },
+    setDoors({ commit, dispatch }, doors) {
+      commit('setDoors', doors);
+      dispatch('notifyProjectModule');
+    },
     // Action to notify project module of changes
     notifyProjectModule({ state, dispatch }) {
       dispatch('project/updateFromModule', {
         type: 'doors',
         elements: state.doors
       }, { root: true });
+    },
+    resetState({ commit }) {
+      commit('resetState');
     }
   },
   getters: {

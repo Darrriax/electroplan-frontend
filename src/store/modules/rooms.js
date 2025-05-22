@@ -46,6 +46,10 @@ export const rooms = {
 
         selectRoom(state, id) {
             state.selectedRoomId = id;
+        },
+
+        resetState(state) {
+            state.rooms = [];
         }
     },
 
@@ -67,6 +71,10 @@ export const rooms = {
 
         selectRoom({ commit }, id) {
             commit('selectRoom', id);
+        },
+
+        resetState({ commit }) {
+            commit('resetState');
         },
 
         // Action to notify project module of changes

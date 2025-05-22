@@ -52,6 +52,20 @@ export default {
         },
         setSelectedGroup(state, groupId) {
             state.selectedGroupId = groupId;
+        },
+        addLightGroup(state, group) {
+            state.lightGroups.push(group);
+        },
+        setLights(state, { ceilingLights, wallLights, lightGroups }) {
+            state.ceilingLights = ceilingLights || [];
+            state.wallLights = wallLights || [];
+            state.lightGroups = lightGroups || [];
+        },
+        resetState(state) {
+            state.ceilingLights = [];
+            state.wallLights = [];
+            state.lightGroups = [];
+            state.defaultFloorHeight = 2200;
         }
     },
     actions: {
@@ -96,22 +110,26 @@ export default {
             commit('setSelectedGroup', groupId);
             dispatch('notifyProjectModule');
         },
-        // Action to notify project module of changes
+        addLightGroup({ commit, dispatch }, group) {
+            commit('addLightGroup', group);
+            dispatch('notifyProjectModule');
+        },
+        setLights({ commit, dispatch }, lights) {
+            commit('setLights', lights);
+            dispatch('notifyProjectModule');
+        },
         notifyProjectModule({ state, dispatch }) {
-            // Create a complete lights data object that includes all light-related information
-            // excluding UI states (hoveredLightIds and selectedGroupId)
-            const lightsData = {
-                // Individual lights arrays
-                ceilingLights: state.ceilingLights.map(light => ({ ...light, type: 'ceiling' })),
-                wallLights: state.wallLights.map(light => ({ ...light, type: 'wall-light' })),
-                // Group data
-                lightGroups: state.lightGroups
-            };
-
             dispatch('project/updateFromModule', {
                 type: 'lights',
-                elements: lightsData
+                elements: {
+                    ceilingLights: state.ceilingLights,
+                    wallLights: state.wallLights,
+                    lightGroups: state.lightGroups
+                }
             }, { root: true });
+        },
+        resetState({ commit }) {
+            commit('resetState');
         }
     },
     getters: {
@@ -119,7 +137,6 @@ export default {
         getAllWallLights: state => state.wallLights,
         getHoveredLightIds: state => state.hoveredLightIds,
         getLightGroups: state => state.lightGroups,
-        // Get lights that are not in any group
         getUngroupedCeilingLights: state => {
             const groupedLightIds = new Set(
                 state.lightGroups.flatMap(group => 
@@ -158,6 +175,9 @@ export default {
                     return null;
                 }).filter(Boolean)
             };
-        }
+        },
+        ceilingLights: state => state.ceilingLights,
+        wallLights: state => state.wallLights,
+        lightGroups: state => state.lightGroups
     }
 }; 

@@ -70,6 +70,31 @@ export const project = {
             if (createdAt !== undefined) state.createdAt = createdAt;
             if (updatedAt !== undefined) state.updatedAt = updatedAt;
         },
+        resetState(state) {
+            state.projectId = null;
+            state.projectName = '';
+            state.customer = '';
+            state.createdAt = null;
+            state.updatedAt = null;
+            state.projectData = {
+                walls: [],
+                doors: [],
+                windows: [],
+                rooms: [],
+                panels: [],
+                sockets: [],
+                switches: { switches: [] },
+                lights: {
+                    ceilingLights: [],
+                    wallLights: [],
+                    lightGroups: []
+                }
+            };
+            state.currentTool = null;
+            state.currentMode = 'original-plan';
+            state.scale = 1;
+            state.unit = 'cm';
+        },
         updateCustomer(state, customerName) {
             state.customer = customerName;
             state.updatedAt = new Date().toISOString();
@@ -338,7 +363,7 @@ export const project = {
                 throw error;
             }
         },
-        async loadProject({ commit }, projectId) {
+        async loadProject({ commit, dispatch }, projectId) {
             try {
                 const response = await ProjectApi.getProject(projectId);
                 const { data, name, customer, createdAt, updatedAt } = response.data;
@@ -353,17 +378,33 @@ export const project = {
                 });
 
                 // Update project data and respective modules
-                Object.entries(data).forEach(([type, elements]) => {
-                    if (type !== 'scale' && type !== 'unit') {
-                        commit('updateProjectElements', { type, elements });
-                        // Update the respective module
-                        const mutationType = `${type}/setElements`;
-                        commit(mutationType, elements, { root: true });
-                    }
-                });
+                if (data.walls) {
+                    dispatch('walls/setWalls', data.walls, { root: true });
+                }
+                if (data.doors) {
+                    dispatch('doors/setDoors', data.doors, { root: true });
+                }
+                if (data.windows) {
+                    dispatch('windows/setWindows', data.windows, { root: true });
+                }
+                if (data.rooms) {
+                    dispatch('rooms/setRooms', data.rooms, { root: true });
+                }
+                if (data.panels) {
+                    dispatch('panels/setPanels', data.panels, { root: true });
+                }
+                if (data.sockets) {
+                    dispatch('sockets/setSockets', data.sockets, { root: true });
+                }
+                if (data.switches?.switches) {
+                    dispatch('switches/setSwitches', data.switches.switches, { root: true });
+                }
+                if (data.lights) {
+                    dispatch('lights/setLights', data.lights, { root: true });
+                }
 
-                commit('setUnit', data.unit);
-                commit('setScale', data.scale);
+                commit('setUnit', data.unit || 'cm');
+                commit('setScale', data.scale || 1);
 
                 return response.data;
             } catch (error) {
@@ -380,6 +421,22 @@ export const project = {
         },
         syncModuleElements({ commit }, { type, elements }) {
             commit('syncElements', { type, elements });
+        },
+        async resetAll({ commit, dispatch }) {
+            // Reset all individual modules
+            await Promise.all([
+                dispatch('walls/resetState', null, { root: true }),
+                dispatch('doors/resetState', null, { root: true }),
+                dispatch('windows/resetState', null, { root: true }),
+                dispatch('rooms/resetState', null, { root: true }),
+                dispatch('panels/resetState', null, { root: true }),
+                dispatch('sockets/resetState', null, { root: true }),
+                dispatch('switches/resetState', null, { root: true }),
+                dispatch('lights/resetState', null, { root: true })
+            ]);
+            
+            // Reset project state
+            commit('resetState');
         }
     },
     getters: {

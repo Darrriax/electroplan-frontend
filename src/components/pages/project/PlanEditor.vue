@@ -1,8 +1,18 @@
 <template>
   <project-layout @undo="undoAction" @redo="redoAction">
     <div class="plan-editor">
+      <div v-if="loading" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading project...</div>
+      </div>
+
+      <div class="save-button" @click="saveProject">
+        <i class="fas fa-save"></i>
+        <span>Save Project</span>
+      </div>
 
       <ToolSidebar
+          v-if="!loading"
           :tools="editorTools"
           :visible="isMenuOpen"
           :current-tool="currentTool"
@@ -104,9 +114,17 @@ import CeilingObject from '../../../utils/objectManagers/CeilingObject';
 import CeilingObjectRenderer from '../../../utils/CeilingObjectRenderer';
 import NotificationToast from '../../UI/elements/NotificationToast.vue';
 import Message from "../../UI/elements/Message.vue";
+import { ProjectApi } from '../../../api/api';
 
 export default {
   name: 'PlanEditor',
+  props: {
+    id: {
+      type: String,
+      required: false,
+      default: null
+    }
+  },
   components: {
     ProjectLayout,
     ToolSidebar,
@@ -139,13 +157,16 @@ export default {
       panelHeight: 210,
       panelFloorHeight: 1200,
       socketFloorHeight: 300,
-      lightFloorHeight: 2200, // default for wall light
+      lightFloorHeight: 2200,
       switchFloorHeight: 900,
       objectRenderer: null,
       wallEdgeObjectManager: null,
       wallEdgeObjectRenderer: null,
       ceilingObjectManager: null,
       ceilingObjectRenderer: null,
+      projectData: null,
+      loading: true,
+      isCanvasInitialized: false
     };
   },
   computed: {
@@ -322,41 +343,56 @@ export default {
       deep: true,
       immediate: true
     },
+    isCanvasInitialized: {
+      immediate: true,
+      handler(isInitialized) {
+        if (isInitialized && this.objectRenderer) {
+          this.$nextTick(() => {
+            this.objectRenderer.redrawAll(this.$store.state);
+            this.redraw();
+          });
+        }
+      }
+    }
+  },
+  async created() {
+    try {
+      if (!this.id) {
+        // Reset all modules before initializing new project
+        await this.$store.dispatch('project/resetAll');
+        // Initialize new project
+        await this.$store.dispatch('project/initializeProjectData', {
+          name: 'Untitled Project',
+          customer: '',
+          data: {
+            walls: [],
+            doors: [],
+            windows: [],
+            rooms: [],
+            panels: [],
+            sockets: [],
+            switches: { switches: [] },
+            lights: {
+              ceilingLights: [],
+              wallLights: [],
+              lightGroups: []
+            },
+            scale: 1,
+            unit: 'cm'
+          }
+        });
+      }
+      // For existing projects, data is already loaded by the router
+    } catch (error) {
+      console.error('Failed to initialize project:', error);
+      this.$store.dispatch('reports/setMessage', 'Failed to initialize project');
+    }
   },
   mounted() {
-    // Initialize canvas after component is mounted
     this.$nextTick(() => {
       this.initializeCanvas();
-      
-      // Set up resize observer
-      this.resizeObserver = new ResizeObserver(entries => {
-        for (let entry of entries) {
-          if (entry.target === this.canvas.parentElement) {
-            this.resizeCanvas();
-          }
-        }
-      });
-      
-      this.resizeObserver.observe(this.canvas.parentElement);
-
-      this.objectRenderer = new ObjectCanvasRenderer(this.$store, this.ctx);
-      this.objectRenderer.redrawAll(this.$store.state);
-      this.wallEdgeObjectManager = new WallEdgeObject(this.$store);
-      this.wallEdgeObjectRenderer = new WallEdgeObjectRenderer(this.$store);
-      this.ceilingObjectManager = new CeilingObject(this.$store);
-      this.ceilingObjectRenderer = new CeilingObjectRenderer(this.$store);
-
-      // Initialize project data
-      this.$store.dispatch('project/initializeProjectData');
+      this.loading = false;
     });
-
-    // Add keyboard shortcuts
-    window.addEventListener('keydown', this.handleKeyboard);
-
-    // Set initial tool
-    if (!this.currentTool) {
-      this.setCurrentTool('wall');
-    }
   },
   activated() {
     // When returning to this component, reload walls from store
@@ -391,15 +427,46 @@ export default {
       this.wallManager = new WallDrawingManager(this.canvas, this.$store);
       this.objectManager = new ObjectManagerFactory(this.$store);
       
-      // Load existing walls from store
-      this.wallManager.loadFromStore();
+      // Initialize renderers
+      this.objectRenderer = new ObjectCanvasRenderer(this.$store, this.ctx);
+      this.wallEdgeObjectManager = new WallEdgeObject(this.$store);
+      this.wallEdgeObjectRenderer = new WallEdgeObjectRenderer(this.$store);
+      this.ceilingObjectManager = new CeilingObject(this.$store);
+      this.ceilingObjectRenderer = new CeilingObjectRenderer(this.$store);
       
       // Set up event listeners
       this.canvas.addEventListener('mousemove', this.onMouseMove);
       this.canvas.addEventListener('click', this.handleCanvasClick);
       
-      // Initial draw
-      this.redraw();
+      // Set up resize observer
+      this.resizeObserver = new ResizeObserver(entries => {
+        for (let entry of entries) {
+          if (entry.target === this.canvas.parentElement) {
+            this.resizeCanvas();
+          }
+        }
+      });
+      
+      this.resizeObserver.observe(this.canvas.parentElement);
+
+      // Add keyboard shortcuts
+      window.addEventListener('keydown', this.handleKeyboard);
+
+      // Set initial tool if none selected
+      if (!this.currentTool) {
+        this.setCurrentTool('wall');
+      }
+
+      // Load existing walls from store and force a complete redraw
+      this.wallManager.loadFromStore();
+      
+      // Force a complete redraw of all elements
+      this.$nextTick(() => {
+        if (this.objectRenderer) {
+          this.objectRenderer.redrawAll(this.$store.state);
+          this.redraw();
+        }
+      });
     },
     resizeCanvas() {
       if (!this.canvas) return;
@@ -917,6 +984,18 @@ export default {
 
         this.redraw();
     },
+    async saveProject() {
+      try {
+        const savedProject = await this.$store.dispatch('project/saveProject');
+        // After successful save, redirect to the project's edit page with its ID
+        if (!this.id) {
+          this.$router.replace(`/plan-editor/${savedProject.id}`);
+        }
+      } catch (error) {
+        console.error('Failed to save project:', error);
+        this.$store.dispatch('reports/setMessage', 'Failed to save project');
+      }
+    }
   }
 }
 </script>
@@ -965,5 +1044,64 @@ export default {
   top: 20px;
   right: 20px;
   z-index: 1000;
+}
+
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.9);
+  z-index: 1000;
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading-text {
+  margin-top: 1rem;
+  font-size: 1.2rem;
+  color: #333;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.save-button {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 1000;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  transition: background-color 0.2s;
+}
+
+.save-button:hover {
+  background-color: #45a049;
+}
+
+.save-button i {
+  font-size: 16px;
 }
 </style>

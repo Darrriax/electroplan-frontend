@@ -52,6 +52,13 @@ export default {
       if (index !== -1) {
         state.switches.splice(index, 1, updatedSwitch);
       }
+    },
+    setSwitches(state, switches) {
+      state.switches = switches;
+    },
+    resetState(state) {
+      state.switches = [];
+      state.defaultFloorHeight = 900;
     }
   },
   actions: {
@@ -93,17 +100,18 @@ export default {
       });
       dispatch('notifyProjectModule');
     },
+    setSwitches({ commit, dispatch }, switches) {
+      commit('setSwitches', switches);
+      dispatch('notifyProjectModule');
+    },
+    resetState({ commit }) {
+      commit('resetState');
+    },
     // Action to notify project module of changes
     notifyProjectModule({ state, dispatch }) {
-      // Create switches data object, excluding UI state (hoveredSwitchIds)
-      // and excluding default values that are restored on module initialization
-      const switchesData = {
-        switches: state.switches
-      };
-
       dispatch('project/updateFromModule', {
         type: 'switches',
-        elements: switchesData
+        elements: { switches: state.switches }
       }, { root: true });
     }
   },
@@ -124,6 +132,7 @@ export default {
         ].filter(Boolean);
       }
       return [];
-    }
+    },
+    switches: state => state.switches
   }
 }; 

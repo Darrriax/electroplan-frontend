@@ -22,6 +22,15 @@ export default {
         },
         removePanel(state, panelId) {
             state.panels = state.panels.filter(p => p.id !== panelId);
+        },
+        setPanels(state, panels) {
+            state.panels = panels;
+        },
+        resetState(state) {
+            state.panels = [];
+            state.defaultWidth = 300;
+            state.defaultHeight = 210;
+            state.defaultFloorHeight = 1200;
         }
     },
     actions: {
@@ -42,6 +51,13 @@ export default {
             commit('removePanel', panelId);
             dispatch('notifyProjectModule');
         },
+        setPanels({ commit, dispatch }, panels) {
+            commit('setPanels', panels);
+            dispatch('notifyProjectModule');
+        },
+        resetState({ commit }) {
+            commit('resetState');
+        },
         // Action to notify project module of changes
         notifyProjectModule({ state, dispatch }) {
             dispatch('project/updateFromModule', {
@@ -51,6 +67,7 @@ export default {
         }
     },
     getters: {
-        getAllPanels: state => state.panels
+        getAllPanels: state => state.panels,
+        panels: state => state.panels
     }
 } 
