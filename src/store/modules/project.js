@@ -235,7 +235,7 @@ export const project = {
         updateFromModule({ commit }, { type, elements }) {
             commit('updateProjectElements', { type, elements });
         },
-        async saveProject({ state }) {
+        async saveProject({ state, commit }) {
             try {
                 // Ensure projectData exists
                 const projectData = {

@@ -1,8 +1,6 @@
 import axios from "axios";
 import {decryptData} from "../mixins/encryption.js";
 
-const tokenData = decryptData(localStorage.getItem('token'));
-
 let token = '';
 
 export function setToken(newToken) {
@@ -45,37 +43,35 @@ export const DefaultApiInstance = axios.create(defaultConfig);
 export const FormDataApiInstance = axios.create(formDataConfig);
 
 DefaultApiInstance.interceptors.request.use(function (config) {
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    } else {
-        config.headers.Authorization = `Bearer ${tokenData}`;
+    const currentToken = token || decryptData(localStorage.getItem('token'));
+    if (currentToken) {
+        config.headers.Authorization = `Bearer ${currentToken}`;
     }
     return config;
 });
 
 FormDataApiInstance.interceptors.request.use(function (config) {
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    } else {
-        config.headers.Authorization = `Bearer ${tokenData}`;
+    const currentToken = token || decryptData(localStorage.getItem('token'));
+    if (currentToken) {
+        config.headers.Authorization = `Bearer ${currentToken}`;
     }
     return config;
 });
 
 export const AuthApi = {
-    // Вказуємо всю необхідну інформацію, щоб зареєструватися і мати доступ до системи
+    // Register with all required information to access the system
     register(name, surname, phoneNumber, email, password, passwordConfirmation) {
         const url = urls.auth.register;
         const data = {name, surname, phoneNumber, email, password, passwordConfirmation};
         return DefaultApiInstance.post(url, data);
     },
-    // Після реєстрації можемо залогінитися на допомогою імейлу та паролю
+    // Login with email and password after registration
     login(email, password) {
         const url = urls.auth.login;
         const data = {email, password};
         return DefaultApiInstance.post(url, data);
     },
-    // Вийти з системи
+    // Logout from the system
     logout() {
         const url = urls.auth.logout;
         return DefaultApiInstance.post(url);

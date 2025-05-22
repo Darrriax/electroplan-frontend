@@ -32,7 +32,8 @@ export const auth = {
     },
     actions: {
         setToken({commit}, token) {
-            commit('auth/setTokenData', token, {root: true});
+            commit('setTokenData', token);
+            setToken(token);
         },
         async onLogin({commit}, {email, password}) {
             await this.dispatch('loading/setLoading', true);
@@ -41,7 +42,6 @@ export const auth = {
                 .then(async (res) => {
                     await this.dispatch('auth/setToken', res.data.token);
                     await this.dispatch('user/setUser', res.data.user);
-                    setToken(res.data.token);
 
                     await this.dispatch('reports/showSuccess', res);
                 })
@@ -130,7 +130,7 @@ export const auth = {
         //         });
         // },
         setEmailStatus({commit}, emailStatus) {
-            commit('auth/setEmailStatusData', emailStatus, {root: true});
+            commit('setEmailStatusData', emailStatus);
         },
         async onSanctum({commit}) {
             AuthApi
