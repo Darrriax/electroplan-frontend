@@ -150,9 +150,9 @@ export default {
       resizeObserver: null,
       doorWidth: 800,
       doorHeight: 2100,
-      windowWidth: 1000,
+      windowWidth: 1200,
       windowHeight: 1200,
-      windowFloorHeight: 1000,
+      windowFloorHeight: 900,
       panelWidth: 300,
       panelHeight: 210,
       panelFloorHeight: 1200,
@@ -746,21 +746,48 @@ export default {
       }
     },
     updateWindowWidth(width) {
+      // Store the width in component state (in mm)
       this.windowWidth = width;
-      if (this.objectManager) {
-        this.objectManager.updateDimensions({ width });
+      // Update the Vuex store
+      this.$store.dispatch('windows/updateDefaultWidth', width);
+      
+      if (this.objectManager && this.isWindowToolActive) {
+        // Update the object manager with new width
+        this.objectManager.setTool('window'); // Reinitialize the preview
+        this.objectManager.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
+        this.objectManager.updateDimensions({ length: width }); // Use length instead of width for WallCenteredObject
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
       }
     },
     updateWindowHeight(height) {
+      // Store the height in component state (in mm)
       this.windowHeight = height;
-      if (this.objectManager) {
+      // Update the Vuex store
+      this.$store.dispatch('windows/updateDefaultHeight', height);
+      
+      if (this.objectManager && this.isWindowToolActive) {
+        // Update the object manager with new height
+        this.objectManager.setTool('window'); // Reinitialize the preview
+        this.objectManager.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
         this.objectManager.updateDimensions({ height });
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
       }
     },
     updateWindowFloorHeight(height) {
+      // Store the floor height in component state (in mm)
       this.windowFloorHeight = height;
-      if (this.objectManager) {
-        this.objectManager.updateWindowProperties({ floorHeight: height });
+      // Update the Vuex store
+      this.$store.dispatch('windows/updateDefaultFloorHeight', height);
+      
+      if (this.objectManager && this.isWindowToolActive) {
+        // Update the object manager with new floor height
+        this.objectManager.setTool('window'); // Reinitialize the preview
+        this.objectManager.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
+        this.objectManager.updateDimensions({ floorHeight: height });
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
       }
     },
     updatePanelWidth(width) {

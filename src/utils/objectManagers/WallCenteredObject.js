@@ -167,16 +167,6 @@ export default class WallCenteredObject {
             ...(this.store.state.windows.windows || [])
         ].filter(obj => obj.wallId === wall.id);
 
-        // Find connected walls
-        const connectedWalls = walls.filter(w => 
-            w.id !== wall.id && (
-                this.pointsAreEqual(w.start, wall.start) ||
-                this.pointsAreEqual(w.start, wall.end) ||
-                this.pointsAreEqual(w.end, wall.start) ||
-                this.pointsAreEqual(w.end, wall.end)
-            )
-        );
-
         // Calculate wall vector and length
         const wallVector = {
             x: wall.end.x - wall.start.x,
@@ -186,54 +176,18 @@ export default class WallCenteredObject {
         
         if (wallLength === 0) return null;
 
-        // Calculate internal wall length considering connected walls
-        const availableLength = this.calculateInternalWallLength(wall, connectedWalls);
-        
-        // Check if door fits in the wall
-        if (this.preview?.type === 'door') {
-            const doorLength = this.preview.dimensions.length; // Already in cm
-            if (doorLength > availableLength) {
-                return null; // Door doesn't fit
-            }
-        }
-
         // Calculate wall unit vector
         const wallUnitVector = {
             x: wallVector.x / wallLength,
             y: wallVector.y / wallLength
         };
 
-        // Find connected walls at start and end
-        const startWalls = connectedWalls.filter(w => 
-            this.pointsAreEqual(w.start, wall.start) ||
-            this.pointsAreEqual(w.end, wall.start)
-        );
-        const endWalls = connectedWalls.filter(w => 
-            this.pointsAreEqual(w.start, wall.end) ||
-            this.pointsAreEqual(w.end, wall.end)
-        );
+        // Calculate internal wall points
+        const internalStart = { x: wall.start.x, y: wall.start.y };
+        const internalEnd = { x: wall.end.x, y: wall.end.y };
+        const internalLength = wallLength;
 
-        // Calculate internal wall points considering HALF of adjacent wall thicknesses
-        const maxStartThickness = Math.max(...startWalls.map(w => w.thickness / 2), 0) / 10; // Convert mm to cm and take half
-        const maxEndThickness = Math.max(...endWalls.map(w => w.thickness / 2), 0) / 10;
-
-        // Calculate internal start and end points
-        const internalStart = {
-            x: wall.start.x + wallUnitVector.x * maxStartThickness,
-            y: wall.start.y + wallUnitVector.y * maxStartThickness
-        };
-        const internalEnd = {
-            x: wall.end.x - wallUnitVector.x * maxEndThickness,
-            y: wall.end.y - wallUnitVector.y * maxEndThickness
-        };
-
-        // Calculate internal wall length
-        const internalLength = Math.sqrt(
-            Math.pow(internalEnd.x - internalStart.x, 2) +
-            Math.pow(internalEnd.y - internalStart.y, 2)
-        );
-
-        // Calculate relative position along wall (0 to 1)
+        // Calculate mouse position relative to wall
         const mouseVector = {
             x: mousePoint.x - internalStart.x,
             y: mousePoint.y - internalStart.y
@@ -243,87 +197,123 @@ export default class WallCenteredObject {
             mouseVector.y * wallUnitVector.y
         ) / internalLength;
 
-        // Get object length (in cm)
+        // Get current object dimensions
         const objectLength = this.preview?.dimensions?.length || 100;
         const halfObjectLength = objectLength / 2;
 
-        // Calculate minimum spacing between objects (in cm)
-        const minSpacing = 10; // 10cm minimum spacing between objects
-
-        // Sort existing objects by their position along the wall
-        const sortedObjects = existingObjects
-            .map(obj => ({
-                ...obj,
-                position: obj.centerOffset / internalLength
-            }))
-            .sort((a, b) => a.position - b.position);
-
-        // Find available spaces between objects
-        let availableSpaces = [];
-        let lastEnd = 0;
-
-        // Add space before first object
-        if (sortedObjects.length === 0 || sortedObjects[0].position > minSpacing / internalLength + halfObjectLength / internalLength) {
-            availableSpaces.push({ start: 0, end: sortedObjects.length ? sortedObjects[0].position : 1 });
-        }
-
-        // Add spaces between objects
-        for (let i = 0; i < sortedObjects.length - 1; i++) {
-            const currentObj = sortedObjects[i];
-            const nextObj = sortedObjects[i + 1];
-            const currentObjLength = currentObj.dimensions.length / 10; // Convert mm to cm
-            const nextObjLength = nextObj.dimensions.length / 10;
-            
-            const spaceStart = currentObj.position + (currentObjLength/2 + minSpacing) / internalLength;
-            const spaceEnd = nextObj.position - (nextObjLength/2 + minSpacing) / internalLength;
-            
-            if (spaceEnd - spaceStart >= objectLength / internalLength) {
-                availableSpaces.push({ start: spaceStart, end: spaceEnd });
-            }
-        }
-
-        // Add space after last object
-        if (sortedObjects.length > 0) {
-            const lastObj = sortedObjects[sortedObjects.length - 1];
-            const lastObjLength = lastObj.dimensions.length / 10;
-            const spaceStart = lastObj.position + (lastObjLength/2 + minSpacing) / internalLength;
-            
-            if (1 - spaceStart >= objectLength / internalLength) {
-                availableSpaces.push({ start: spaceStart, end: 1 });
-            }
-        }
-
-        // Find the best available space for the new object
-        let bestSpace = null;
-        let minDistance = Infinity;
+        // Calculate current center position
+        const currentCenterPos = relativePos * internalLength;
         
-        for (const space of availableSpaces) {
-            const spaceCenter = (space.start + space.end) / 2;
-            const distance = Math.abs(relativePos - spaceCenter);
+        // Sort existing objects by position
+        const sortedObjects = existingObjects
+            .sort((a, b) => a.centerOffset - b.centerOffset);
+
+        // Check for overlaps and find magnetization points
+        let isOverlapping = false;
+        let nearestValidPosition = null;
+        let minDistance = Infinity;
+
+        // Calculate edges of new object at current position
+        const newLeftEdge = currentCenterPos - halfObjectLength;
+        const newRightEdge = currentCenterPos + halfObjectLength;
+
+        for (const obj of sortedObjects) {
+            const objLength = obj.dimensions.length / 10; // Convert mm to cm
+            const objCenter = obj.centerOffset;
+            const objHalfLength = objLength / 2;
             
-            if (distance < minDistance) {
-                minDistance = distance;
-                bestSpace = space;
+            // Calculate edges of existing object
+            const objLeftEdge = objCenter - objHalfLength;
+            const objRightEdge = objCenter + objHalfLength;
+
+            // Check for overlap
+            if (!(newRightEdge < objLeftEdge || newLeftEdge > objRightEdge)) {
+                isOverlapping = true;
+                break;
+            }
+
+            // Calculate magnetization points (30cm from edges)
+            const leftMagnetPoint = objLeftEdge - 30;  // 30cm to the left
+            const rightMagnetPoint = objRightEdge + 30; // 30cm to the right
+
+            // Only apply magnetization if we're very close (within 5cm) to the magnet points
+            const magnetRange = 5; // 5cm magnetization range
+            
+            // Check right edge of new object against left magnet point
+            if (Math.abs(newRightEdge - leftMagnetPoint) < magnetRange) {
+                const magnetizedCenter = leftMagnetPoint - halfObjectLength;
+                const distance = Math.abs(currentCenterPos - magnetizedCenter);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestValidPosition = magnetizedCenter;
+                }
+            }
+            
+            // Check left edge of new object against right magnet point
+            if (Math.abs(newLeftEdge - rightMagnetPoint) < magnetRange) {
+                const magnetizedCenter = rightMagnetPoint + halfObjectLength;
+                const distance = Math.abs(currentCenterPos - magnetizedCenter);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestValidPosition = magnetizedCenter;
+                }
             }
         }
 
-        // If no valid space is found, return null
-        if (!bestSpace) return null;
+        let finalPosition;
 
-        // Calculate constrained position within the best available space
-        const minPos = bestSpace.start + halfObjectLength / internalLength;
-        const maxPos = bestSpace.end - halfObjectLength / internalLength;
-        const constrainedPos = Math.max(minPos, Math.min(maxPos, relativePos));
+        if (isOverlapping) {
+            // If overlapping, find nearest valid position
+            let nearestNonOverlappingPos = currentCenterPos;
+            let minAdjustment = Infinity;
 
-        // Calculate actual position on internal wall
+            for (const obj of sortedObjects) {
+                const objLength = obj.dimensions.length / 10;
+                const objCenter = obj.centerOffset;
+                const objHalfLength = objLength / 2;
+                const objLeftEdge = objCenter - objHalfLength;
+                const objRightEdge = objCenter + objHalfLength;
+
+                // Calculate minimum adjustments needed to avoid overlap
+                if (currentCenterPos < objCenter) {
+                    // We're to the left of the object
+                    const adjustment = Math.abs(objLeftEdge - newRightEdge - 1); // 1cm minimum gap
+                    if (adjustment < minAdjustment) {
+                        minAdjustment = adjustment;
+                        nearestNonOverlappingPos = currentCenterPos - adjustment;
+                    }
+                } else {
+                    // We're to the right of the object
+                    const adjustment = Math.abs(newLeftEdge - objRightEdge - 1); // 1cm minimum gap
+                    if (adjustment < minAdjustment) {
+                        minAdjustment = adjustment;
+                        nearestNonOverlappingPos = currentCenterPos + adjustment;
+                    }
+                }
+            }
+
+            finalPosition = nearestNonOverlappingPos / internalLength;
+        } else if (nearestValidPosition !== null) {
+            // If we're very close to a magnetization point, use it
+            finalPosition = nearestValidPosition / internalLength;
+        } else {
+            // Otherwise, use the current position
+            finalPosition = relativePos;
+        }
+
+        // Constrain to wall bounds
+        finalPosition = Math.max(halfObjectLength / internalLength, 
+                               Math.min(1 - halfObjectLength / internalLength, finalPosition));
+
+        // Calculate final position
         const centerPoint = {
-            x: internalStart.x + wallUnitVector.x * (constrainedPos * internalLength),
-            y: internalStart.y + wallUnitVector.y * (constrainedPos * internalLength)
+            x: internalStart.x + wallUnitVector.x * (finalPosition * internalLength),
+            y: internalStart.y + wallUnitVector.y * (finalPosition * internalLength)
         };
 
         // Store the centerOffset for dimension calculations
         if (this.preview) {
-            this.preview.centerOffset = constrainedPos * internalLength;
+            this.preview.centerOffset = finalPosition * internalLength;
         }
 
         return {

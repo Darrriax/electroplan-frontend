@@ -2,8 +2,8 @@
 export const windows = {
     namespaced: true,
     state: {
-        defaultWidth: 1350, // 135cm in mm
-        defaultHeight: 1350, // 135cm in mm
+        defaultWidth: 1200, // 120cm in mm
+        defaultHeight: 1200, // 120cm in mm
         defaultFloorHeight: 900, // 90cm in mm
         windows: []
     },
@@ -30,9 +30,9 @@ export const windows = {
             }
         },
         resetState(state) {
-            state.defaultWidth = 1000;
-            state.defaultHeight = 1200;
-            state.defaultFloorHeight = 900;
+            state.defaultWidth = 1200; // Reset to 120cm
+            state.defaultHeight = 1200; // Reset to 120cm
+            state.defaultFloorHeight = 900; // Reset to 90cm
             state.windows = [];
         }
     },
