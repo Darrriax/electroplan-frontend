@@ -40,8 +40,12 @@
 
         <div class="divider"/>
 
-        <button-default icon="fa-solid fa-border-top-left" label="2D" @click="view2D"/>
-        <button-default icon="fa-solid fa-cube" label="3D" @click="view3D"/>
+        <button-default 
+          icon="fa-solid fa-route" 
+          label="Auto Cable Routing" 
+          @click="selectAutoRouting"
+          :class="{ 'mode-active': currentMode === 'auto-routing' }"
+        />
 
         <div class="divider"/>
 
@@ -50,9 +54,13 @@
           <option value="mm">мм</option>
           <option value="cm">см</option>
         </select>
-
-        <button-default icon="fa-solid fa-gear" @click="openSettings"/>
-        <button-default icon="fa-solid fa-info-circle" @click="openProjectInfo"/>
+        
+        <button-default 
+          icon="fa-solid fa-info-circle" 
+          @click="openProjectInfo"
+          :disabled="currentMode !== 'auto-routing'"
+          :class="{ 'info-active': currentMode === 'auto-routing' }"
+        />
       </div>
     </div>
     </div>
@@ -65,24 +73,33 @@
       @save="handleProjectDataSave"
       @close="showProjectDataModal = false"
     />
+
+    <!-- Project Info Modal -->
+    <project-info-modal
+      :show="showProjectInfoModal"
+      @close="showProjectInfoModal = false"
+    />
   </div>
 </template>
 
 <script>
 import ButtonDefault from "../buttons/ButtonDefault.vue"
 import ProjectDataModal from "../modals/ProjectDataModal.vue"
+import ProjectInfoModal from "../modals/ProjectInfoModal.vue"
 import { mapActions, mapState } from "vuex"
 
 export default {
   name: "ProjectNavbar",
   components: {
     ButtonDefault,
-    ProjectDataModal
+    ProjectDataModal,
+    ProjectInfoModal
   },
   data() {
     return {
       selectedUnit: 'cm',
-      showProjectDataModal: false
+      showProjectDataModal: false,
+      showProjectInfoModal: false
     }
   },
   computed: {
@@ -118,6 +135,16 @@ export default {
     }),
     toggleMenu() {
       this.$store.commit('project/toggleMenu')
+    },
+    startAutoCableRouting() {
+      this.isRoutingActive = !this.isRoutingActive;
+      if (this.isRoutingActive) {
+        // Start the automatic cable routing process
+        this.$store.dispatch('project/startCableRouting');
+      } else {
+        // Cancel the routing process if it's active
+        this.$store.dispatch('project/cancelCableRouting');
+      }
     },
     centerPlan() {},
     async handleSaveClick() {
@@ -185,10 +212,24 @@ export default {
     selectSwitches() {
       this.setMode('switches');
     },
+    selectAutoRouting() {
+      if (this.currentMode === 'auto-routing') {
+        // If already in auto-routing mode, switch back to original plan
+        this.setMode('original-plan');
+      } else {
+        // Switch to auto-routing mode
+        this.setMode('auto-routing');
+      }
+    },
     view2D() {},
     view3D() {},
     openSettings() {},
-    openProjectInfo() {},
+    openProjectInfo() {
+      // Only toggle the info panel if in auto-routing mode
+      if (this.currentMode === 'auto-routing') {
+        this.showProjectInfoModal = !this.showProjectInfoModal;
+      }
+    },
   }
 }
 </script>
@@ -226,13 +267,19 @@ export default {
 }
 
 .mode-active {
-  background-color: #FFA500 !important;
+  background-color: orange !important;
   color: white !important;
+  padding: 10px;
+  border-radius: 10px;
 }
 
-/* Set font size for all elements in the navbar */
-:deep(.button-default),
-:deep(.nav-box) {
-  font-size: 14px;
+.info-active {
+  cursor: pointer;
+  opacity: 1;
+}
+
+button-default[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

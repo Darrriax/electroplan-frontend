@@ -291,7 +291,7 @@ a:hover {
 
 /*__________________________________NAVIGATION____________________________________*/
 .project-content {
-    padding-top: 120px; /* Increased to account for both navbars */
+    padding-top: 105px; /* Increased to account for both navbars */
     flex: 1;
     overflow-y: auto;
 }
@@ -310,12 +310,11 @@ a:hover {
 /* Project navbar styles */
 .project-navbar .nav-container {
     position: fixed;
-    top: 60px; /* Position below main navigation */
+    top: 70px; /* Position below main navigation */
     left: 0;
     right: 0;
     z-index: 10000;
     background: white;
-    padding: 5px 0;
     font-size: var(--font-size-sm);
 }
 
@@ -324,6 +323,7 @@ a:hover {
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     padding: 10px 60px;
+    font-size: 12px;
     display: flex;
     justify-content: space-between;
     border: none;
@@ -560,13 +560,15 @@ canvas {
 }
 /*__________________________________SettingsCard________________________________*/
 .settings-card {
-    margin-top: 150px;
+    margin-top: 160px;
     left: 0;
     width: 160px;
     background: white;
     border-radius: 10px;
     padding: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+    font-size: 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    border-bottom-right-radius: 12px;
     z-index: 1000;
     position: fixed;
     max-height: 65vh;

@@ -20,14 +20,8 @@ export default class WallEdgeObjectRenderer {
         const walls = this.store.state.walls.walls || [];
         const hoveredLightIds = this.store.getters['lights/getHoveredLightIds'] || [];
         const hoveredSwitchIds = this.store.getters['switches/getHoveredSwitchIds'] || [];
-
-        // Group objects by position and height
-        const objectGroups = this.groupObjectsByPositionAndHeight([
-            ...sockets.map(obj => ({ ...obj, type: 'socket' })),
-            ...panels.map(obj => ({ ...obj, type: 'panel' })),
-            ...wallLights.map(obj => ({ ...obj, type: 'wall-light' })),
-            ...switches.map(obj => ({ ...obj, type: 'switch' }))
-        ]);
+        const currentMode = this.store.state.project.currentMode;
+        const labelVisibility = this.store.state.project.labelVisibility;
 
         // Draw each socket
         sockets.forEach(socket => {
@@ -37,19 +31,24 @@ export default class WallEdgeObjectRenderer {
             }
         });
 
+        // Draw each panel (always visible in power-sockets/switches mode, or when enabled in auto-routing)
+        const shouldShowPanels = currentMode === 'power-sockets' || 
+                               currentMode === 'switches' ||
+                               currentMode === 'auto-routing';
+        if (shouldShowPanels) {
+            panels.forEach(panel => {
+                const wall = walls.find(w => w.id === panel.wall);
+                if (wall) {
+                    this.drawPanel(ctx, panel, wall);
+                }
+            });
+        }
+
         // Draw each switch
         switches.forEach(switchObj => {
             const wall = walls.find(w => w.id === switchObj.wall);
             if (wall) {
                 this.drawSwitch(ctx, switchObj, wall, hoveredSwitchIds.includes(switchObj.id));
-            }
-        });
-
-        // Draw each panel
-        panels.forEach(panel => {
-            const wall = walls.find(w => w.id === panel.wall);
-            if (wall) {
-                this.drawPanel(ctx, panel, wall);
             }
         });
 
@@ -61,19 +60,51 @@ export default class WallEdgeObjectRenderer {
             }
         });
 
-        // Get current mode
-        const currentMode = this.store.state.project.currentMode;
+        // Group objects by position and height
+        const objectsToGroup = [];
 
-        // Draw height labels based on current mode
+        // Add sockets if they should be shown
+        if (currentMode === 'power-sockets' || 
+            currentMode === 'switches' || 
+            (currentMode === 'auto-routing' && labelVisibility.sockets)) {
+            objectsToGroup.push(...sockets.map(obj => ({ ...obj, type: 'socket' })));
+        }
+
+        // Add switches if they should be shown
+        if (currentMode === 'switches' || 
+            (currentMode === 'auto-routing' && labelVisibility.sockets)) {
+            objectsToGroup.push(...switches.map(obj => ({ ...obj, type: 'switch' })));
+        }
+
+        // Add wall lights if they should be shown
+        if (currentMode === 'light' || 
+            (currentMode === 'auto-routing' && labelVisibility.wallLights)) {
+            objectsToGroup.push(...wallLights.map(obj => ({ ...obj, type: 'wall-light' })));
+        }
+
+        // Add panels if they should be shown
+        if (shouldShowPanels) {
+            objectsToGroup.push(...panels.map(obj => ({ ...obj, type: 'panel' })));
+        }
+
+        const objectGroups = this.groupObjectsByPositionAndHeight(objectsToGroup);
+
+        // Draw height labels for groups
         objectGroups.forEach(group => {
             const objectType = group.objects[0].type;
+            
+            // Check if labels should be shown based on mode and visibility settings
             const shouldShowLabel = (
-                // Show socket heights in both power-sockets and switches modes
-                (objectType === 'socket' && (currentMode === 'power-sockets' || currentMode === 'switches')) ||
-                // Show panel heights in both power-sockets and switches modes
-                (objectType === 'panel' && (currentMode === 'power-sockets' || currentMode === 'switches')) ||
-                (objectType === 'wall-light' && currentMode === 'light') ||
-                (objectType === 'switch' && (currentMode === 'power-sockets' || currentMode === 'switches'))
+                // Always show labels in non-auto-routing modes based on mode type
+                (currentMode === 'power-sockets' && (objectType === 'socket' || objectType === 'panel')) ||
+                (currentMode === 'light' && objectType === 'wall-light') ||
+                (currentMode === 'switches' && (objectType === 'switch' || objectType === 'socket' || objectType === 'panel')) ||
+                // In auto-routing mode, respect visibility settings
+                (currentMode === 'auto-routing' && (
+                    ((objectType === 'socket' || objectType === 'switch') && labelVisibility.sockets) ||
+                    (objectType === 'wall-light' && labelVisibility.wallLights) ||
+                    objectType === 'panel'
+                ))
             );
 
             if (shouldShowLabel) {
@@ -350,8 +381,7 @@ export default class WallEdgeObjectRenderer {
         ctx.scale(this.zoom, this.zoom);
 
         // Find the wall this object is attached to
-        const firstObject = group.objects[0];
-        const wall = this.store.state.walls.walls.find(w => w.id === firstObject.wall);
+        const wall = this.store.state.walls.walls.find(w => w.id === group.objects[0].wall);
         
         if (!wall) {
             ctx.restore();
@@ -365,7 +395,7 @@ export default class WallEdgeObjectRenderer {
         const heightFromFloor = group.objects[0].dimensions.floorHeight;
         
         // Convert height to display units but only show the number
-        const { value: displayHeight } = this.convertToDisplayUnits(heightFromFloor, firstObject.type);
+        const { value: displayHeight } = this.convertToDisplayUnits(heightFromFloor, group.objects[0].type);
         const text = `H=${displayHeight}`;
 
         // Count sockets and switches separately

@@ -119,6 +119,8 @@ export default {
     getAllSwitches: state => state.switches,
     getHoveredSwitchIds: state => state.hoveredSwitchIds,
     getSwitchById: state => id => state.switches.find(s => s.id === id),
+    getSingleSwitches: state => state.switches.filter(s => s.type === 'single-switch'),
+    getDoubleSwitches: state => state.switches.filter(s => s.type === 'double-switch'),
     getConnectedGroups: state => switchId => {
       const switchObj = state.switches.find(s => s.id === switchId);
       if (!switchObj) return [];

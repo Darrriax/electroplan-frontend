@@ -137,6 +137,8 @@ export default {
         getAllWallLights: state => state.wallLights,
         getHoveredLightIds: state => state.hoveredLightIds,
         getLightGroups: state => state.lightGroups,
+        getCeilingLights: state => state.ceilingLights,
+        getWallLights: state => state.wallLights,
         getUngroupedCeilingLights: state => {
             const groupedLightIds = new Set(
                 state.lightGroups.flatMap(group => 

@@ -60,7 +60,15 @@ export const project = {
                     { id: 'double-switch', name: 'double-switch', label: 'Double-Key Switch', icon: 'mdi mdi-toggle-switch-variant' }
                 ]
             }
-        }
+        },
+        isRoutingActive: false,
+        distributionBoxes: [],
+        labelVisibility: {
+            sockets: true,
+            switches: true,
+            wallLights: true
+        },
+        showLabelSettings: false
     },
     mutations: {
         setProjectMetadata(state, { id, name, customer, createdAt, updatedAt }) {
@@ -136,10 +144,27 @@ export const project = {
             state.currentTool = tool;
         },
         setCurrentMode(state, mode) {
+            const previousMode = state.currentMode;
             state.currentMode = mode;
-            // Automatically select the first tool of the new mode
-            const currentModeTools = state.modes[mode]?.tools || [];
-            state.currentTool = currentModeTools.length > 0 ? currentModeTools[0].name : null;
+            
+            // Update routing active state based on mode
+            state.isRoutingActive = (mode === 'auto-routing');
+
+            // Handle label visibility based on mode
+            if (mode === 'auto-routing') {
+                // Set all labels to hidden by default in auto-routing mode
+                state.labelVisibility = {
+                    sockets: false,
+                    switches: false,
+                    wallLights: false
+                };
+            } else {
+                // For non-routing modes, select the first tool
+                const currentModeTools = state.modes[mode]?.tools || [];
+                if (currentModeTools.length > 0) {
+                    state.currentTool = currentModeTools[0].name;
+                }
+            }
         },
         setWallThickness(state, thickness) {
             state.wallThickness = thickness;
@@ -196,14 +221,41 @@ export const project = {
             state.unit = data.unit || 'cm';
             state.createdAt = new Date().toISOString();
             state.updatedAt = new Date().toISOString();
+        },
+        setRoutingActive(state, isActive) {
+            state.isRoutingActive = isActive;
+        },
+        setDistributionBoxes(state, boxes) {
+            state.distributionBoxes = boxes;
+        },
+        setLabelVisibility(state, { type, visible }) {
+            // Allow changing visibility in auto-routing mode or when switching modes
+            state.labelVisibility = {
+                ...state.labelVisibility,
+                [type]: Boolean(visible)
+            };
+        },
+        resetLabelVisibility(state) {
+            // Reset all labels to visible with explicit boolean values
+            state.labelVisibility = {
+                sockets: true,
+                switches: true,
+                wallLights: true
+            };
         }
     },
     actions: {
         setTool({ commit }, tool) {
             commit('setCurrentTool', tool);
         },
-        setMode({ commit }, mode) {
+        setMode({ commit, dispatch }, mode) {
             commit('setCurrentMode', mode);
+            
+            // If switching to auto-routing mode, show the label settings panel
+            if (mode === 'auto-routing') {
+                // Dispatch an action to show the ProjectInfoModal
+                dispatch('showLabelSettings');
+            }
         },
         updateWallThickness({ commit }, thickness) {
             commit('setWallThickness', thickness);
@@ -262,7 +314,6 @@ export const project = {
         },
         async saveProject({ state, commit }) {
             try {
-                // Ensure projectData exists
                 const projectData = {
                     id: state.projectId,
                     name: state.projectName,
@@ -309,7 +360,8 @@ export const project = {
                             type: socket.type,
                             wall: socket.wall,
                             position: socket.position,
-                            dimensions: socket.dimensions
+                            dimensions: socket.dimensions,
+                            deviceType: socket.deviceType || 'regular'
                         })),
                         switches: {
                             switches: (state.projectData?.switches?.switches || []).map(sw => ({
@@ -437,6 +489,30 @@ export const project = {
             
             // Reset project state
             commit('resetState');
+        },
+        updateDistributionBoxes({ commit }, boxes) {
+            commit('setDistributionBoxes', boxes);
+        },
+        updateLabelVisibility({ commit, state }, { type, visible }) {
+            // Allow visibility updates in auto-routing mode or when switching modes
+            commit('setLabelVisibility', { 
+                type, 
+                visible: Boolean(visible) 
+            });
+        },
+        resetLabelVisibility({ commit }) {
+            commit('resetLabelVisibility');
+        },
+        redrawCanvas({ state }) {
+            // This action will be used to trigger canvas redraw when needed
+            // The PlanEditor component should watch labelVisibility and redraw when it changes
+        },
+        showLabelSettings({ state }) {
+            // This will be used by the ProjectInfoModal component
+            state.showLabelSettings = true;
+        },
+        hideLabelSettings({ state }) {
+            state.showLabelSettings = false;
         }
     },
     getters: {
@@ -473,6 +549,10 @@ export const project = {
                 scale: state.scale,
                 unit: state.unit
             }
-        })
+        }),
+        getIsRoutingActive: state => state.isRoutingActive,
+        getDistributionBoxes: state => state.distributionBoxes,
+        getLabelVisibility: state => state.labelVisibility,
+        getShowLabelSettings: state => state.showLabelSettings
     }
 };

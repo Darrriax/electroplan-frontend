@@ -43,7 +43,12 @@ export default {
         setDefaultFloorHeight({ commit }, height) {
             commit('setDefaultFloorHeight', height);
         },
-        addPanel({ commit, dispatch }, panel) {
+        addPanel({ commit, state, dispatch }, panel) {
+            // Check if there's already a panel
+            if (state.panels.length > 0) {
+                dispatch('reports/setMessage', 'Error: Only one electrical panel is allowed per project.', { root: true });
+                return;
+            }
             commit('addPanel', panel);
             dispatch('notifyProjectModule');
         },
@@ -52,6 +57,11 @@ export default {
             dispatch('notifyProjectModule');
         },
         setPanels({ commit, dispatch }, panels) {
+            // Ensure only one panel is set
+            if (panels.length > 1) {
+                dispatch('reports/setMessage', 'Error: Only one electrical panel is allowed per project.', { root: true });
+                panels = [panels[0]]; // Keep only the first panel
+            }
             commit('setPanels', panels);
             dispatch('notifyProjectModule');
         },

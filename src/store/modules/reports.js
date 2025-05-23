@@ -21,6 +21,9 @@ export const reports = {
         clearFieldError(state) {
             state.errors = {};
         },
+        clearMessage(state) {
+            state.message = '';
+        }
     },
     actions: {
         async showFieldError({commit}, {field, error}) {
@@ -29,11 +32,15 @@ export const reports = {
         async hideFieldError({commit}) {
             commit('clearFieldError');
         },
-        async showMessage({commit}, message) {
+        setMessage({ commit }, message) {
             commit('setMessage', message);
+            // Clear message after 5 seconds
             setTimeout(() => {
-                commit('setMessage', '');
-            }, 4000);
+                commit('clearMessage');
+            }, 5000);
+        },
+        clearMessage({ commit }) {
+            commit('clearMessage');
         },
         async showSuccess({commit}, message) {
             await this.dispatch('reports/hideFieldError');

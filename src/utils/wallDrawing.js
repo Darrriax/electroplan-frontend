@@ -1196,6 +1196,9 @@ export default class WallDrawingManager {
     }
 
     drawWallDimension(wall) {
+        // Don't draw dimensions if routing is active
+        if (this.store.state.project.isRoutingActive) return;
+
         // Find connected walls at both ends
         const startConnections = this.findWallsConnectedToPoint(wall.start);
         const endConnections = this.findWallsConnectedToPoint(wall.end);
@@ -1416,8 +1419,8 @@ export default class WallDrawingManager {
             this.ctx.closePath();
             this.ctx.fill();
 
-            // Only show height and area labels in original-plan mode
-            if (this.store.state.project.currentMode === 'original-plan') {
+            // Only show height and area labels in original-plan mode and when routing is not active
+            if (this.store.state.project.currentMode === 'original-plan' && !this.store.state.project.isRoutingActive) {
                 // Calculate room center
                 const center = this.calculatePolygonCentroid(room.path);
 

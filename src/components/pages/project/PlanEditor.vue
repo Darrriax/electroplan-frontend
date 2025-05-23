@@ -12,7 +12,7 @@
       </div>
 
       <ToolSidebar
-          v-if="!loading"
+          v-if="showLeftSidebar"
           :tools="editorTools"
           :visible="isMenuOpen"
           :current-tool="currentTool"
@@ -20,14 +20,14 @@
       />
       <div class="editor-content">
         <WallSettingsCard
-            v-if="isWallToolActive"
+            v-if="showWallSettingsCard"
             :thickness="wallThickness"
             :unit="unit"
             @update:thickness="updateWallThickness"
             class="settings"
         />
         <DoorSettingsCard
-            v-if="isDoorToolActive"
+            v-if="showDoorSettingsCard"
             :width="doorWidth"
             :height="doorHeight"
             :unit="unit"
@@ -38,7 +38,7 @@
             class="settings"
         />
         <WindowSettingsCard
-            v-if="isWindowToolActive"
+            v-if="showWindowSettingsCard"
             :width="windowWidth"
             :height="windowHeight"
             :floor-height="windowFloorHeight"
@@ -49,7 +49,7 @@
             class="settings"
         />
         <PanelSettingsCard
-            v-if="isPanelToolActive"
+            v-if="showPanelSettingsCard"
             :width="panelWidth"
             :height="panelHeight"
             :floor-height="panelFloorHeight"
@@ -60,14 +60,16 @@
             class="settings"
         />
         <SocketSettingsCard
-            v-if="isSocketToolActive"
+            v-if="showSocketSettingsCard"
             :floor-height="socketFloorHeight"
+            :device-type="socketDeviceType"
             :unit="unit"
             @update:floor-height="updateSocketFloorHeight"
+            @update:device-type="updateSocketDeviceType"
             class="settings"
         />
         <LightPanelCard
-            v-if="isCeilingLightToolActive || isWallLightToolActive"
+            v-if="showLightSettingsCard"
             :floor-height="lightFloorHeight"
             :unit="unit"
             :is-wall-light="isWallLightToolActive"
@@ -76,7 +78,7 @@
             class="settings"
         />
         <SwitchSettingsCard
-            v-if="isSwitchToolActive"
+            v-if="showSwitchSettingsCard"
             :floor-height="switchFloorHeight"
             :unit="unit"
             @update:floor-height="updateSwitchFloorHeight"
@@ -98,6 +100,7 @@
 import ProjectLayout from '../../UI/layouts/ProjectLayout.vue';
 import WallDrawingManager from '../../../utils/wallDrawing.js';
 import ObjectManagerFactory from '../../../utils/ObjectManagerFactory';
+import DistributionBoxManager from '../../../utils/AutoElectricalRouter';
 import { mapState, mapGetters, mapActions } from 'vuex';
 import ToolSidebar from "../../UI/elements/ToolSidebar.vue";
 import WallSettingsCard from "../../UI/settings/WallSettingsCard.vue";
@@ -166,11 +169,14 @@ export default {
       ceilingObjectRenderer: null,
       projectData: null,
       loading: true,
-      isCanvasInitialized: false
+      isCanvasInitialized: false,
+      socketDeviceType: 'default',
+      distributionBoxManager: null,
+      currentSettingsPanel: null,
     };
   },
   computed: {
-    ...mapState('project', ['unit']),
+    ...mapState('project', ['unit', 'isRoutingActive']),
     ...mapState('canvas', ['transform']),
     ...mapGetters({
       isMenuOpen: 'project/isMenuOpen',
@@ -183,6 +189,12 @@ export default {
     ...mapGetters('reports', {
       message: 'getMessage',
     }),
+    showLeftSidebar() {
+      return this.currentMode !== 'auto-routing';
+    },
+    showRightSidebar() {
+      return this.currentMode === 'auto-routing';
+    },
     isWallToolActive() {
       return this.currentTool === 'wall';
     },
@@ -206,6 +218,31 @@ export default {
     },
     isSwitchToolActive() {
       return this.currentTool === 'single-switch' || this.currentTool === 'double-switch';
+    },
+    showWallSettingsCard() {
+      return this.isWallToolActive && this.currentSettingsPanel === 'wall' && !this.isRoutingActive;
+    },
+    showDoorSettingsCard() {
+      return this.isDoorToolActive && this.currentSettingsPanel === 'door' && !this.isRoutingActive;
+    },
+    showWindowSettingsCard() {
+      return this.isWindowToolActive && this.currentSettingsPanel === 'window' && !this.isRoutingActive;
+    },
+    showPanelSettingsCard() {
+      return this.isPanelToolActive && this.currentSettingsPanel === 'panel' && !this.isRoutingActive;
+    },
+    showSocketSettingsCard() {
+      return this.isSocketToolActive && this.currentSettingsPanel === 'socket' && !this.isRoutingActive;
+    },
+    showLightSettingsCard() {
+      return (this.isCeilingLightToolActive || this.isWallLightToolActive) && 
+             (this.currentSettingsPanel === 'ceiling-light' || this.currentSettingsPanel === 'wall-light') && 
+             !this.isRoutingActive;
+    },
+    showSwitchSettingsCard() {
+      return this.isSwitchToolActive && 
+             (this.currentSettingsPanel === 'single-switch' || this.currentSettingsPanel === 'double-switch') && 
+             !this.isRoutingActive;
     }
   },
   watch: {
@@ -335,6 +372,14 @@ export default {
       handler(newSwitches) {
         // Ensure switches are synced with project module
         this.$store.dispatch('switches/notifyProjectModule');
+        
+        // Update distribution boxes and connections if routing is active
+        if (this.distributionBoxManager && this.isRoutingActive) {
+          const boxes = this.distributionBoxManager.createDistributionBoxes();
+          // Update the store with the new boxes
+          this.$store.dispatch('project/updateDistributionBoxes', boxes);
+        }
+        
         if (this.objectRenderer) {
           this.objectRenderer.redrawAll(this.$store.state);
           this.redraw();
@@ -351,6 +396,106 @@ export default {
             this.objectRenderer.redrawAll(this.$store.state);
             this.redraw();
           });
+        }
+      }
+    },
+    isRoutingActive: {
+      handler(newValue) {
+        if (!this.distributionBoxManager) {
+          this.distributionBoxManager = new DistributionBoxManager(this.$store);
+        }
+        
+        if (this.ctx) {
+          this.distributionBoxManager.setContext(this.ctx);
+        }
+        
+        if (newValue) {
+          // Create and draw distribution boxes when routing is activated
+          const boxes = this.distributionBoxManager.createDistributionBoxes();
+          // Update the store with the new boxes
+          this.$store.dispatch('project/updateDistributionBoxes', boxes);
+          this.redraw();
+        } else {
+          // Clear distribution boxes when routing is deactivated
+          this.distributionBoxManager.distributionBoxes = [];
+          this.$store.dispatch('project/updateDistributionBoxes', []);
+          this.redraw();
+        }
+      },
+      immediate: true
+    },
+    '$store.state.project.labelVisibility': {
+      handler(newVal, oldVal) {
+        if (oldVal) {  // Skip the first run
+          // Always redraw when label visibility changes
+          if (this.wallEdgeObjectRenderer) {
+            this.redraw();
+          }
+        }
+      },
+      deep: true,
+      immediate: true
+    },
+    '$store.state.project.currentMode': {
+      handler() {
+        if (this.wallEdgeObjectRenderer) {
+          this.redraw();
+        }
+      },
+      immediate: true
+    },
+    '$store.state.project.canvasNeedsRedraw'() {
+      if (this.wallEdgeObjectRenderer) {
+        this.redraw();
+      }
+    },
+    currentMode: {
+      immediate: true,
+      handler(newMode, oldMode) {
+        // Clear any open settings panel when switching modes
+        this.clearSettingsPanel();
+
+        // Only change sidebar state when switching to/from auto-routing mode
+        if (newMode === 'auto-routing' || oldMode === 'auto-routing') {
+          this.$store.dispatch('project/toggleSidebar', newMode !== 'auto-routing');
+        }
+        
+        // Update label visibility based on mode
+        if (newMode !== 'auto-routing') {
+          // Set label visibility based on current mode
+          const labelVisibility = {
+            sockets: false,
+            switches: false,
+            wallLights: false
+          };
+
+          // Set visibility based on mode
+          switch (newMode) {
+            case 'power-sockets':
+              labelVisibility.sockets = true;
+              break;
+            case 'light':
+              labelVisibility.wallLights = true;
+              break;
+            case 'switches':
+              labelVisibility.switches = true;
+              labelVisibility.sockets = true; // Also show socket labels in switches mode
+              break;
+          }
+
+          // Update store with mode-specific visibility
+          Object.entries(labelVisibility).forEach(([type, visible]) => {
+            this.$store.dispatch('project/updateLabelVisibility', {
+              type,
+              visible
+            });
+          });
+
+          // Select the first tool for the current mode
+          const currentModeTools = this.editorTools;
+          if (currentModeTools && currentModeTools.length > 0) {
+            this.setCurrentTool(currentModeTools[0].name);
+          }
         }
       }
     }
@@ -467,6 +612,9 @@ export default {
           this.redraw();
         }
       });
+
+      // Initialize distribution box manager
+      this.distributionBoxManager = new DistributionBoxManager(this.$store);
     },
     resizeCanvas() {
       if (!this.canvas) return;
@@ -494,6 +642,8 @@ export default {
     },
     setCurrentTool(tool) {
       this.setToolAction(tool);
+      // Update current settings panel based on tool
+      this.currentSettingsPanel = tool;
     },
     updateWallThickness(thickness) {
       this.updateThickness(thickness);
@@ -651,6 +801,15 @@ export default {
       if (this.ceilingObjectManager?.preview) {
         this.ceilingObjectManager.updateTransform(this.wallManager.panOffset, this.wallManager.zoom);
         this.ceilingObjectManager.drawPreview(this.ctx, this.ceilingObjectManager.preview);
+      }
+
+      // Draw distribution boxes and connections
+      if (this.distributionBoxManager) {
+        const transform = {
+          panOffset: this.wallManager.panOffset,
+          zoom: this.wallManager.zoom
+        };
+        this.distributionBoxManager.draw(this.ctx, transform);
       }
     },
     handleKeyboard(event) {
@@ -822,6 +981,14 @@ export default {
         this.redraw();
       }
     },
+    updateSocketDeviceType(deviceType) {
+      this.socketDeviceType = deviceType;
+      if (this.objectManager && this.isSocketToolActive) {
+        this.objectManager.updateDimensions({ deviceType });
+        this.objectManager.updatePreview(this.mousePosition);
+        this.redraw();
+      }
+    },
     updateLightFloorHeight(height) {
       this.lightFloorHeight = height;
       if (this.objectManager && this.isWallLightToolActive) {
@@ -854,8 +1021,9 @@ export default {
             if (validationResult.valid) {
                 const socket = this.wallEdgeObjectManager.createObject(this.wallEdgeObjectManager.preview);
                 if (socket) {
-                    // Ensure floor height is included
+                    // Ensure floor height and device type are included
                     socket.dimensions.floorHeight = this.socketFloorHeight;
+                    socket.deviceType = this.socketDeviceType;
                     this.$store.dispatch('sockets/addSocket', socket);
                     this.wallEdgeObjectManager.preview = null;
                 }
@@ -1022,6 +1190,21 @@ export default {
         console.error('Failed to save project:', error);
         this.$store.dispatch('reports/setMessage', 'Failed to save project');
       }
+    },
+    clearSettingsPanel() {
+      this.currentSettingsPanel = null;
+      // Reset all settings-related data
+      this.doorWidth = 800;
+      this.doorHeight = 2100;
+      this.windowWidth = 1200;
+      this.windowHeight = 1200;
+      this.windowFloorHeight = 900;
+      this.panelWidth = 300;
+      this.panelHeight = 210;
+      this.panelFloorHeight = 1200;
+      this.socketFloorHeight = 300;
+      this.lightFloorHeight = 2200;
+      this.switchFloorHeight = 900;
     }
   }
 }
