@@ -3,6 +3,7 @@ export default class AutoElectricalRouter {
     this.store = store;
     this.distributionBoxes = [];
     this.ctx = null;
+    this.usedPanelPoints = new Map(); // Track which points are used by which connections
   }
 
   setContext(ctx) {
@@ -364,10 +365,10 @@ export default class AutoElectricalRouter {
     this.distributionBoxes.forEach(box => {
       ctx.beginPath();
       ctx.arc(box.position.x, box.position.y, box.radius, 0, Math.PI * 2);
-      ctx.strokeStyle = '#2196F3';
+      ctx.strokeStyle = '#2196F3';  // Changed to blue
       ctx.lineWidth = 3 / transform.zoom;
       ctx.stroke();
-      ctx.fillStyle = 'rgba(33, 150, 243, 0.2)';
+      ctx.fillStyle = 'rgba(33, 150, 243, 0.2)';  // Light blue fill
       ctx.fill();
 
       // Add a label
@@ -463,7 +464,11 @@ export default class AutoElectricalRouter {
   draw(ctx, transform) {
     if (!this.store.state.project.isRoutingActive) return;
     
+    // Reset used panel points tracking at the start of each draw
+    this.usedPanelPoints.clear();
+    
     this.drawActiveAreas(ctx, transform);
+    this.drawPanelPoints(ctx, transform);
     this.drawBoxes(ctx, transform);
     this.drawSocketPoints(ctx, transform);
     this.drawRoomToPanelConnections(ctx, transform);
@@ -787,6 +792,7 @@ export default class AutoElectricalRouter {
 
     const walls = this.store.state.walls.walls || [];
     const rooms = this.store.state.rooms.rooms || [];
+    const sockets = this.store.state.sockets.sockets || [];
 
     // Calculate panel connection points
     const panelPoints = this.calculatePanelConnectionPoints();
@@ -796,76 +802,135 @@ export default class AutoElectricalRouter {
     ctx.translate(transform.panOffset.x, transform.panOffset.y);
     ctx.scale(transform.zoom, transform.zoom);
 
-    // Draw panel connection points
-    ctx.beginPath();
-    panelPoints.forEach(point => {
-      ctx.moveTo(point.x, point.y);
-      ctx.arc(point.x, point.y, 3 / transform.zoom, 0, Math.PI * 2);
-    });
-    ctx.fillStyle = '#2196F3';
-    ctx.fill();
+    // Find panel room
+    const panelRoom = rooms.find(room => this.isPointInPolygon(panel, room.path));
+    if (!panelRoom) return;
 
-    // First, collect all connection points
-    const connectionPoints = [];
-
-    // Add junction boxes
-    this.distributionBoxes.forEach(box => {
-      connectionPoints.push({
-        point: box.position,
-        type: 'box'
-      });
-    });
-
-    // Add closest sockets from rooms without boxes
+    // Process each room except the panel room
     rooms.forEach(room => {
-      if (this.isPointInPolygon(panel, room.path)) return;
-      if (this.distributionBoxes.find(b => b.roomId === room.id)) return;
+      if (room.id === panelRoom.id) return;
 
-      const closestSocket = this.findClosestSocketInRoom(room, panel);
-      if (closestSocket) {
-        const point = this.calculatePointPosition(closestSocket, walls, 30);
-        if (point) {
-          connectionPoints.push({
-            point: point,
-            type: 'socket'
+      // Find or calculate the connection point for this room
+      let connectionPoint = null;
+      let connectionType = null;
+
+      // First check if room has a distribution box
+      const distributionBox = this.distributionBoxes.find(box => box.roomId === room.id);
+      if (distributionBox) {
+        connectionPoint = distributionBox.position;
+        connectionType = 'box';
+      } else {
+        // Find all sockets in this room
+        const roomSockets = sockets.filter(socket => {
+          const wall = walls.find(w => w.id === socket.wall);
+          return wall && this.isPointInPolygon(socket.position, room.path);
+        });
+
+        if (roomSockets.length > 0) {
+          // Group nearby sockets
+          const socketClusters = this.groupSocketsByProximity(roomSockets, walls);
+          
+          // Find the cluster or single socket closest to the panel
+          let nearestGroup = null;
+          let minDistance = Infinity;
+
+          socketClusters.forEach(cluster => {
+            // Calculate cluster center
+            const avgX = cluster.reduce((sum, s) => sum + s.position.x, 0) / cluster.length;
+            const avgY = cluster.reduce((sum, s) => sum + s.position.y, 0) / cluster.length;
+            const clusterCenter = { x: avgX, y: avgY };
+
+            // Use the first socket's properties for the reference
+            const referenceSocket = cluster[0];
+            const wall = walls.find(w => w.id === referenceSocket.wall);
+            if (!wall) return;
+
+            // Calculate the connection point for this cluster
+            const distance = referenceSocket.deviceType === 'high-power' ? 27 :
+                           referenceSocket.deviceType === 'powerful' ? 22 : 25;
+            
+            const point = this.calculatePointPosition(
+              { ...referenceSocket, position: { ...clusterCenter, side: referenceSocket.position.side } },
+              walls,
+              distance
+            );
+
+            if (!point) return;
+
+            // Calculate distance from cluster's connection point to panel
+            const distanceToPanel = this.calculateDistance(point, panel);
+            if (distanceToPanel < minDistance) {
+              minDistance = distanceToPanel;
+              nearestGroup = {
+                point: point,
+                cluster: cluster,
+                deviceType: referenceSocket.deviceType
+              };
+            }
           });
+
+          if (nearestGroup) {
+            connectionPoint = nearestGroup.point;
+            connectionType = 'socket';
+          }
         }
+      }
+
+      // Draw connection if we have a valid point
+      if (connectionPoint) {
+        const connectionId = `room-${room.id}`;
+        const panelPoint = this.findAvailablePanelPoint(panelPoints, connectionId);
+        if (!panelPoint) return;
+
+        // Calculate path avoiding walls
+        const path = this.calculateOrthogonalPath(connectionPoint, panelPoint, walls);
+        
+        // Draw the connection
+        ctx.beginPath();
+        ctx.moveTo(path[0].x, path[0].y);
+        path.forEach((point, i) => {
+          if (i === 0) return;
+          ctx.lineTo(point.x, point.y);
+        });
+        
+        ctx.strokeStyle = '#2196F3';
+        ctx.lineWidth = 2 / transform.zoom;
+        ctx.stroke();
+
+        // Draw connection point
+        ctx.beginPath();
+        ctx.arc(connectionPoint.x, connectionPoint.y, 3 / transform.zoom, 0, Math.PI * 2);
+        ctx.fillStyle = '#2196F3';
+        ctx.fill();
       }
     });
 
-    // Store calculated paths to check for parallel segments
-    const calculatedPaths = [];
-
-    // Draw separate lines from each connection point to panel points
-    connectionPoints.forEach((connection, index) => {
-      // Use modulo to cycle through panel points if we have more connections than points
-      const panelPoint = panelPoints[index % panelPoints.length];
-      
-      ctx.beginPath();
-      ctx.strokeStyle = '#0000FF';
-      ctx.lineWidth = 2 / transform.zoom;
-
-      // Calculate offset based on existing paths
-      const initialPath = this.calculateOrthogonalPath(connection.point, panelPoint, walls);
-      const offset = this.calculateParallelPathOffset(calculatedPaths, initialPath, panel);
-
-      // Calculate final path with offset
-      const path = this.calculateOffsetOrthogonalPath(connection.point, panelPoint, walls, offset);
-      
-      // Draw the path
-      ctx.moveTo(path[0].x, path[0].y);
-      path.forEach((point, index) => {
-        if (index === 0) return;
-        ctx.lineTo(point.x, point.y);
-      });
-
-      ctx.stroke();
-
-      // Store path for future offset calculations
-      calculatedPaths.push(path);
-    });
-
     ctx.restore();
+  }
+
+  /**
+   * Find an available panel point
+   * @param {Array} panelPoints - Array of panel points
+   * @param {string} connectionId - Unique identifier for the connection
+   * @returns {Object|null} Available panel point or null if none found
+   */
+  findAvailablePanelPoint(panelPoints, connectionId) {
+    // First try to find if this connection already has an assigned point
+    for (const [pointIndex, usedById] of this.usedPanelPoints.entries()) {
+      if (usedById === connectionId) {
+        return panelPoints[pointIndex];
+      }
+    }
+
+    // If not, find first unused point
+    for (let i = 0; i < panelPoints.length; i++) {
+      if (!this.usedPanelPoints.has(i)) {
+        this.usedPanelPoints.set(i, connectionId);
+        return panelPoints[i];
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -1703,48 +1768,33 @@ export default class AutoElectricalRouter {
       // Handle regular sockets - create a single continuous path
       if (group.regular.length > 0) {
         if (isInPanelRoom) {
-          // For regular sockets in panel room, connect directly to panel points
-          group.regular.forEach(socket => {
-            // Find first unused panel point
-            const panelPoint = panelPoints.find(p => !p.isUsed);
-            if (!panelPoint) return;
-            panelPoint.isUsed = true;
+          // Sort sockets by distance to panel to minimize cable crossing
+          const sortedSockets = group.regular.sort((a, b) => {
+            const distA = this.calculateDistance(a.position, panel);
+            const distB = this.calculateDistance(b.position, panel);
+            return distA - distB; // Sort by ascending distance
+          });
 
-            const point = this.calculatePointPosition(socket, walls, 25);
+          sortedSockets.forEach(socket => {
+            const connectionId = `socket-${socket.id}`;
+            const point = this.calculatePointPosition(socket, walls, 20);
             if (!point) return;
 
-            // Draw connection to panel point through active area
-            ctx.beginPath();
-            ctx.moveTo(socket.position.x, socket.position.y);
-            ctx.lineTo(point.x, point.y);
-            ctx.strokeStyle = '#0000FF';
-            ctx.lineWidth = 1 / transform.zoom;
-            ctx.stroke();
+            const panelPoint = this.findOptimalPanelPoint(point, panelPoints, connectionId);
+            if (!panelPoint) return;
 
-            // Draw connection point
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, 3 / transform.zoom, 0, Math.PI * 2);
-            ctx.fillStyle = '#0000FF';
-            ctx.fill();
-
-            // Find path through active area
-            const path = this.findValidPath(point, panelPoint, room.path);
-            if (path) {
-              ctx.beginPath();
-              ctx.moveTo(path[0].x, path[0].y);
-              path.forEach((pathPoint, i) => {
-                if (i === 0) return;
-                ctx.lineTo(pathPoint.x, pathPoint.y);
-              });
-              ctx.strokeStyle = '#0000FF';
-              ctx.lineWidth = 2 / transform.zoom;
-              ctx.stroke();
-            }
+            // Draw connection
+            this.drawSocketConnection(ctx, socket, point, panelPoint, transform, '#0000FF', walls);
           });
         } else {
-          // Original logic for regular sockets in other rooms
+          // For regular sockets in other rooms, create continuous path through active area
           const socketClusters = this.groupSocketsByProximity(group.regular, walls);
           
+          // Find junction box for this room
+          const junctionBox = this.distributionBoxes.find(box => box.roomId === roomId);
+          const powerSource = this.getPowerSourcePosition(roomId);
+          if (!powerSource) return;
+
           // Calculate cluster centers and their connection points
           const clusterPoints = socketClusters.map(cluster => {
             const avgX = cluster.reduce((sum, s) => sum + s.position.x, 0) / cluster.length;
@@ -1757,7 +1807,7 @@ export default class AutoElectricalRouter {
             const point = this.calculatePointPosition(
               { ...referenceSocket, position: { x: avgX, y: avgY, side: referenceSocket.position.side } },
               walls,
-              30
+              25
             );
 
             if (!point) return null;
@@ -1797,7 +1847,7 @@ export default class AutoElectricalRouter {
               );
 
               if (orderedPoints.length > 0) {
-                // Draw the continuous path
+                // Draw the continuous path through active area
                 ctx.beginPath();
                 ctx.moveTo(startPoint.x, startPoint.y);
 
@@ -1833,27 +1883,6 @@ export default class AutoElectricalRouter {
                   ctx.lineWidth = 1 / transform.zoom;
                   ctx.stroke();
                 });
-
-                // If this is not the panel room, connect to panel
-                if (!isInPanelRoom) {
-                  // Find first unused panel point
-                  const panelPoint = panelPoints.find(p => !p.isUsed);
-                  if (panelPoint) {
-                    panelPoint.isUsed = true;
-
-                    // Draw connection to panel
-                    const pathToPanel = this.calculateOrthogonalPath(startPoint, panelPoint, walls);
-                    ctx.beginPath();
-                    ctx.moveTo(pathToPanel[0].x, pathToPanel[0].y);
-                    pathToPanel.forEach((pathPoint, i) => {
-                      if (i === 0) return;
-                      ctx.lineTo(pathPoint.x, pathPoint.y);
-                    });
-                    ctx.strokeStyle = '#0000FF';
-                    ctx.lineWidth = 2 / transform.zoom;
-                    ctx.stroke();
-                  }
-                }
               }
             }
           }
@@ -1862,36 +1891,38 @@ export default class AutoElectricalRouter {
 
       // Handle powerful and high-power sockets
       if (group.highPower.length > 0) {
-        // Separate powerful and high-power sockets
-        const powerfulSockets = group.highPower.filter(s => s.deviceType === 'powerful');
-        const highPowerSockets = group.highPower.filter(s => s.deviceType === 'high-power');
+        // Sort high-power sockets by distance from panel
+        const sortedHighPowerSockets = group.highPower
+          .filter(s => s.deviceType === 'high-power')
+          .sort((a, b) => {
+            const distA = this.calculateDistance(a.position, powerSource);
+            const distB = this.calculateDistance(b.position, powerSource);
+            return distB - distA;
+          });
 
-        // Sort and draw powerful sockets
-        powerfulSockets.forEach(socket => {
-          // Find first unused panel point
-          const panelPoint = panelPoints.find(p => !p.isUsed);
-          if (!panelPoint) return;
-          panelPoint.isUsed = true;
-
-          const point = this.calculatePointPosition(socket, walls, 22);
+        sortedHighPowerSockets.forEach((socket, index) => {
+          const connectionId = `high-power-${socket.id}`;
+          const distance = 27 - (index * 3);
+          const point = this.calculatePointPosition(socket, walls, distance);
           if (!point) return;
 
-          // Draw connection
-          this.drawSocketConnection(ctx, socket, point, panelPoint, transform, '#0000FF', walls);
+          const panelPoint = this.findOptimalPanelPoint(point, panelPoints, connectionId);
+          if (!panelPoint) return;
+
+          this.drawSocketConnection(ctx, socket, point, panelPoint, transform, '#FF0000', walls);
         });
 
-        // Sort and draw high-power sockets
-        highPowerSockets.forEach(socket => {
-          // Find first unused panel point
-          const panelPoint = panelPoints.find(p => !p.isUsed);
-          if (!panelPoint) return;
-          panelPoint.isUsed = true;
-
-          const point = this.calculatePointPosition(socket, walls, 27);
+        // Handle powerful sockets
+        const powerfulSockets = group.highPower.filter(s => s.deviceType === 'powerful');
+        powerfulSockets.forEach(socket => {
+          const connectionId = `powerful-${socket.id}`;
+          const point = this.calculatePointPosition(socket, walls, 21);
           if (!point) return;
 
-          // Draw connection
-          this.drawSocketConnection(ctx, socket, point, panelPoint, transform, '#FF0000', walls);
+          const panelPoint = this.findOptimalPanelPoint(point, panelPoints, connectionId);
+          if (!panelPoint) return;
+
+          this.drawSocketConnection(ctx, socket, point, panelPoint, transform, '#0000FF', walls);
         });
       }
     });
@@ -2474,5 +2505,164 @@ export default class AutoElectricalRouter {
       x: p1.x + ua * (p2.x - p1.x),
       y: p1.y + ua * (p2.y - p1.y)
     };
+  }
+
+  /**
+   * Draw connection points for the electrical panel
+   * @param {CanvasRenderingContext2D} ctx - Canvas context
+   * @param {Object} transform - Canvas transform object
+   */
+  drawPanelPoints(ctx, transform) {
+    const panelPoints = this.calculatePanelConnectionPoints();
+    if (!panelPoints.length) return;
+
+    ctx.save();
+    ctx.translate(transform.panOffset.x, transform.panOffset.y);
+    ctx.scale(transform.zoom, transform.zoom);
+
+    // Draw all panel points in blue
+    panelPoints.forEach(point => {
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 3 / transform.zoom, 0, Math.PI * 2);
+      ctx.fillStyle = '#2196F3';
+      ctx.fill();
+    });
+
+    ctx.restore();
+  }
+
+  /**
+   * Check if two paths intersect
+   * @param {Array} path1 - First path as array of points
+   * @param {Array} path2 - Second path as array of points
+   * @returns {boolean} True if paths intersect
+   */
+  doPathsIntersect(path1, path2) {
+    // Check each segment of path1 against each segment of path2
+    for (let i = 0; i < path1.length - 1; i++) {
+      const line1Start = path1[i];
+      const line1End = path1[i + 1];
+
+      for (let j = 0; j < path2.length - 1; j++) {
+        const line2Start = path2[j];
+        const line2End = path2[j + 1];
+
+        // Check if these line segments intersect
+        const intersection = this.findLineIntersection(
+          line1Start, line1End,
+          line2Start, line2End
+        );
+
+        if (intersection &&
+            this.isPointOnLineSegment(intersection, line1Start, line1End) &&
+            this.isPointOnLineSegment(intersection, line2Start, line2End)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Check if a point lies on a line segment
+   * @param {Object} point - Point to check
+   * @param {Object} lineStart - Start of line segment
+   * @param {Object} lineEnd - End of line segment
+   * @returns {boolean} True if point lies on line segment
+   */
+  isPointOnLineSegment(point, lineStart, lineEnd) {
+    const d1 = this.calculateDistance(point, lineStart);
+    const d2 = this.calculateDistance(point, lineEnd);
+    const lineLen = this.calculateDistance(lineStart, lineEnd);
+    const buffer = 0.1; // Small buffer for floating point precision
+
+    return Math.abs(d1 + d2 - lineLen) < buffer;
+  }
+
+  /**
+   * Calculate optimal panel point assignment to minimize cable crossing
+   * @param {Object} source - Source point of the cable
+   * @param {Array} panelPoints - Available panel points
+   * @param {string} connectionId - Unique identifier for the connection
+   * @returns {Object|null} Best panel point to use
+   */
+  findOptimalPanelPoint(source, panelPoints, connectionId) {
+    // First check if this connection already has an assigned point
+    for (const [pointIndex, usedById] of this.usedPanelPoints.entries()) {
+      if (usedById === connectionId) {
+        return panelPoints[pointIndex];
+      }
+    }
+
+    let bestPoint = null;
+    let bestScore = Infinity;
+
+    // Try each available panel point
+    for (let i = 0; i < panelPoints.length; i++) {
+      if (this.usedPanelPoints.has(i)) continue;
+
+      const point = panelPoints[i];
+      let score = 0;
+
+      // Calculate base score based on distance and angle
+      score += this.calculateDistance(source, point);
+
+      // Check crossing with existing cables
+      for (const [usedIndex, _] of this.usedPanelPoints.entries()) {
+        const usedPoint = panelPoints[usedIndex];
+        if (this.wouldCableCross(source, point, usedPoint)) {
+          score += 1000; // Heavy penalty for crossing
+        }
+      }
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestPoint = point;
+      }
+    }
+
+    // If we found a point, mark it as used
+    if (bestPoint) {
+      const index = panelPoints.indexOf(bestPoint);
+      this.usedPanelPoints.set(index, connectionId);
+    }
+
+    return bestPoint;
+  }
+
+  /**
+   * Check if a new cable would cross with an existing one
+   * @param {Object} source - Source point of new cable
+   * @param {Object} target - Target panel point of new cable
+   * @param {Object} existingPoint - Existing panel point
+   * @returns {boolean} True if cables would cross
+   */
+  wouldCableCross(source, target, existingPoint) {
+    // Simple bounding box check first
+    const box1 = {
+      minX: Math.min(source.x, target.x),
+      maxX: Math.max(source.x, target.x),
+      minY: Math.min(source.y, target.y),
+      maxY: Math.max(source.y, target.y)
+    };
+
+    const box2 = {
+      minX: Math.min(existingPoint.x, target.x),
+      maxX: Math.max(existingPoint.x, target.x),
+      minY: Math.min(existingPoint.y, target.y),
+      maxY: Math.max(existingPoint.y, target.y)
+    };
+
+    // If bounding boxes don't intersect, cables can't cross
+    if (box1.maxX < box2.minX || box1.minX > box2.maxX ||
+        box1.maxY < box2.minY || box1.minY > box2.maxY) {
+      return false;
+    }
+
+    // Check actual line intersection
+    return this.doPathsIntersect(
+      [source, target],
+      [existingPoint, target]
+    );
   }
 } 
