@@ -525,6 +525,9 @@ export default class AutoElectricalRouter {
       if (room.id === panelRoom.id) {
         // For panel room, connect all switches directly to panel
         roomSwitches.forEach(switchObj => {
+          // Skip switches that don't control any lights
+          if (!this.doesSwitchControlAnything(switchObj)) return;
+
           const switchPoint = this.calculatePointPosition(switchObj, walls, 20);
           if (!switchPoint) return;
 
@@ -532,8 +535,17 @@ export default class AutoElectricalRouter {
           const panelPoint = this.findAvailablePanelPoint(panelPoints, connectionId);
           if (!panelPoint) return;
 
-          // Draw connection
-          this.drawSwitchPanelConnection(ctx, switchPoint, panelPoint, transform);
+          // Draw connection using orthogonal path
+          const path = this.calculateOrthogonalPath(switchPoint, panelPoint, walls);
+          ctx.beginPath();
+          ctx.moveTo(path[0].x, path[0].y);
+          path.forEach((point, i) => {
+            if (i === 0) return;
+            ctx.lineTo(point.x, point.y);
+          });
+          ctx.strokeStyle = '#D4AC0D';
+          ctx.lineWidth = 2 / transform.zoom;
+          ctx.stroke();
         });
       } else {
         // For other rooms
@@ -542,6 +554,9 @@ export default class AutoElectricalRouter {
         if (junctionBox) {
           // Connect switches to junction box
           roomSwitches.forEach((switchObj, index) => {
+            // Skip switches that don't control any lights
+            if (!this.doesSwitchControlAnything(switchObj)) return;
+
             const switchPoint = this.calculatePointPosition(switchObj, walls, 20);
             if (!switchPoint) return;
 
@@ -567,7 +582,7 @@ export default class AutoElectricalRouter {
               };
             }
 
-            // Draw connection to junction box
+            // Draw connection using orthogonal path
             const path = this.calculateOrthogonalPath(switchPoint, targetPoint, walls);
             ctx.beginPath();
             ctx.moveTo(path[0].x, path[0].y);
@@ -603,8 +618,10 @@ export default class AutoElectricalRouter {
             ctx.stroke();
           }
         } else if (roomSwitches.length === 1) {
-          // Single switch room - connect directly to panel
+          // Single switch room - connect directly to panel if it controls lights
           const switchObj = roomSwitches[0];
+          if (!this.doesSwitchControlAnything(switchObj)) return;
+
           const switchPoint = this.calculatePointPosition(switchObj, walls, 20);
           if (!switchPoint) return;
 
@@ -612,13 +629,56 @@ export default class AutoElectricalRouter {
           const panelPoint = this.findAvailablePanelPoint(panelPoints, connectionId);
           if (!panelPoint) return;
 
-          // Draw connection
-          this.drawSwitchPanelConnection(ctx, switchPoint, panelPoint, transform);
+          // Draw connection using orthogonal path
+          const path = this.calculateOrthogonalPath(switchPoint, panelPoint, walls);
+          ctx.beginPath();
+          ctx.moveTo(path[0].x, path[0].y);
+          path.forEach((point, i) => {
+            if (i === 0) return;
+            ctx.lineTo(point.x, point.y);
+          });
+          ctx.strokeStyle = '#D4AC0D';
+          ctx.lineWidth = 2 / transform.zoom;
+          ctx.stroke();
         }
       }
     });
 
     ctx.restore();
+  }
+
+  /**
+   * Check if a switch controls any lights or groups
+   * @param {Object} switchObj - The switch object to check
+   * @returns {boolean} True if switch controls any lights or groups
+   */
+  doesSwitchControlAnything(switchObj) {
+    const lights = this.store.state.lights.lights || [];
+
+    // Check for connected groups in single switch
+    if (switchObj.connectedGroup && switchObj.connectedGroup.lightRefs && switchObj.connectedGroup.lightRefs.length > 0) {
+      return true;
+    }
+
+    // Check for connected groups in double switch
+    if (switchObj.type === 'double-switch') {
+      if (switchObj.connectedGroup1 && switchObj.connectedGroup1.lightRefs && switchObj.connectedGroup1.lightRefs.length > 0) {
+        return true;
+      }
+      if (switchObj.connectedGroup2 && switchObj.connectedGroup2.lightRefs && switchObj.connectedGroup2.lightRefs.length > 0) {
+        return true;
+      }
+    }
+
+    // Check for directly connected lights
+    return lights.some(light => {
+      if (switchObj.type === 'single-switch') {
+        return light.switchId === switchObj.id;
+      } else if (switchObj.type === 'double-switch') {
+        return light.switchIds && (light.switchIds[0] === switchObj.id || light.switchIds[1] === switchObj.id);
+      }
+      return false;
+    });
   }
 
   /**
@@ -678,18 +738,18 @@ export default class AutoElectricalRouter {
       }
       ctx.closePath();
 
-      // Fill the frame between outer and inner paths
-      ctx.fillStyle = 'rgba(0, 0, 255, 0.1)';
+      // Fill the frame between outer and inner paths with fully transparent color
+      ctx.fillStyle = 'rgba(0, 0, 255, 0)';
       ctx.fill('evenodd');
 
-      // Draw outlines
+      // Draw outlines with very low opacity
       ctx.beginPath();
       ctx.moveTo(room.path[0].x, room.path[0].y);
       for (let i = 1; i < room.path.length; i++) {
         ctx.lineTo(room.path[i].x, room.path[i].y);
       }
       ctx.closePath();
-      ctx.strokeStyle = 'rgba(0, 0, 255, 0.3)';
+      ctx.strokeStyle = 'rgba(0, 0, 255, 0)';
       ctx.lineWidth = 1 / transform.zoom;
       ctx.stroke();
 
@@ -979,6 +1039,20 @@ export default class AutoElectricalRouter {
     rooms.forEach(room => {
       if (room.id === panelRoom.id) return;
 
+      // Find all sockets in this room
+      const roomSockets = sockets.filter(socket => {
+        const wall = walls.find(w => w.id === socket.wall);
+        return wall && this.isPointInPolygon(socket.position, room.path);
+      });
+
+      // Skip if room has no sockets
+      if (roomSockets.length === 0) return;
+
+      // Check if room has regular sockets
+      const hasRegularSockets = roomSockets.some(socket => 
+        socket.deviceType !== 'powerful' && socket.deviceType !== 'high-power'
+      );
+
       // Find or calculate the connection point for this room
       let connectionPoint = null;
       let connectionType = null;
@@ -989,59 +1063,51 @@ export default class AutoElectricalRouter {
         connectionPoint = distributionBox.position;
         connectionType = 'box';
       } else {
-        // Find all sockets in this room
-        const roomSockets = sockets.filter(socket => {
-          const wall = walls.find(w => w.id === socket.wall);
-          return wall && this.isPointInPolygon(socket.position, room.path);
+        // Group nearby sockets
+        const socketClusters = this.groupSocketsByProximity(roomSockets, walls);
+        
+        // Find the cluster or single socket closest to the panel
+        let nearestGroup = null;
+        let minDistance = Infinity;
+
+        socketClusters.forEach(cluster => {
+          // Calculate cluster center
+          const avgX = cluster.reduce((sum, s) => sum + s.position.x, 0) / cluster.length;
+          const avgY = cluster.reduce((sum, s) => sum + s.position.y, 0) / cluster.length;
+          const clusterCenter = { x: avgX, y: avgY };
+
+          // Use the first socket's properties for the reference
+          const referenceSocket = cluster[0];
+          const wall = walls.find(w => w.id === referenceSocket.wall);
+          if (!wall) return;
+
+          // Calculate the connection point for this cluster
+          const distance = referenceSocket.deviceType === 'high-power' ? 27 :
+                         referenceSocket.deviceType === 'powerful' ? 22 : 25;
+          
+          const point = this.calculatePointPosition(
+            { ...referenceSocket, position: { ...clusterCenter, side: referenceSocket.position.side } },
+            walls,
+            distance
+          );
+
+          if (!point) return;
+
+          // Calculate distance from cluster's connection point to panel
+          const distanceToPanel = this.calculateDistance(point, panel);
+          if (distanceToPanel < minDistance) {
+            minDistance = distanceToPanel;
+            nearestGroup = {
+              point: point,
+              cluster: cluster,
+              deviceType: referenceSocket.deviceType
+            };
+          }
         });
 
-        if (roomSockets.length > 0) {
-          // Group nearby sockets
-          const socketClusters = this.groupSocketsByProximity(roomSockets, walls);
-          
-          // Find the cluster or single socket closest to the panel
-          let nearestGroup = null;
-          let minDistance = Infinity;
-
-          socketClusters.forEach(cluster => {
-            // Calculate cluster center
-            const avgX = cluster.reduce((sum, s) => sum + s.position.x, 0) / cluster.length;
-            const avgY = cluster.reduce((sum, s) => sum + s.position.y, 0) / cluster.length;
-            const clusterCenter = { x: avgX, y: avgY };
-
-            // Use the first socket's properties for the reference
-            const referenceSocket = cluster[0];
-            const wall = walls.find(w => w.id === referenceSocket.wall);
-            if (!wall) return;
-
-            // Calculate the connection point for this cluster
-            const distance = referenceSocket.deviceType === 'high-power' ? 27 :
-                           referenceSocket.deviceType === 'powerful' ? 22 : 25;
-            
-            const point = this.calculatePointPosition(
-              { ...referenceSocket, position: { ...clusterCenter, side: referenceSocket.position.side } },
-              walls,
-              distance
-            );
-
-            if (!point) return;
-
-            // Calculate distance from cluster's connection point to panel
-            const distanceToPanel = this.calculateDistance(point, panel);
-            if (distanceToPanel < minDistance) {
-              minDistance = distanceToPanel;
-              nearestGroup = {
-                point: point,
-                cluster: cluster,
-                deviceType: referenceSocket.deviceType
-              };
-            }
-          });
-
-          if (nearestGroup) {
-            connectionPoint = nearestGroup.point;
-            connectionType = 'socket';
-          }
+        if (nearestGroup) {
+          connectionPoint = nearestGroup.point;
+          connectionType = 'socket';
         }
       }
 
@@ -1054,23 +1120,26 @@ export default class AutoElectricalRouter {
         // Calculate path avoiding walls
         const path = this.calculateOrthogonalPath(connectionPoint, panelPoint, walls);
         
-        // Draw the connection
-        ctx.beginPath();
-        ctx.moveTo(path[0].x, path[0].y);
-        path.forEach((point, i) => {
-          if (i === 0) return;
-          ctx.lineTo(point.x, point.y);
-        });
-        
-        ctx.strokeStyle = '#0000FF';
-        ctx.lineWidth = 2 / transform.zoom;
-        ctx.stroke();
+        // Only draw connection if room has regular sockets
+        if (hasRegularSockets) {
+          // Draw the connection
+          ctx.beginPath();
+          ctx.moveTo(path[0].x, path[0].y);
+          path.forEach((point, i) => {
+            if (i === 0) return;
+            ctx.lineTo(point.x, point.y);
+          });
+          
+          ctx.strokeStyle = '#0000FF';
+          ctx.lineWidth = 2 / transform.zoom;
+          ctx.stroke();
 
-        // Draw connection point
-        ctx.beginPath();
-        ctx.arc(connectionPoint.x, connectionPoint.y, 3 / transform.zoom, 0, Math.PI * 2);
-        ctx.fillStyle = '#0000FF';
-        ctx.fill();
+          // Draw connection point
+          ctx.beginPath();
+          ctx.arc(connectionPoint.x, connectionPoint.y, 3 / transform.zoom, 0, Math.PI * 2);
+          ctx.fillStyle = '#0000FF';
+          ctx.fill();
+        }
       }
     });
 
@@ -2548,6 +2617,7 @@ export default class AutoElectricalRouter {
     const walls = this.store.state.walls.walls || [];
     const sockets = this.store.state.sockets.sockets || [];
     const switches = this.store.state.switches.switches || [];
+    const lights = this.store.state.lights.lights || [];
 
     // Find the wall the panel is mounted on
     const panelWall = this.findPanelWall(panel);
@@ -2557,66 +2627,72 @@ export default class AutoElectricalRouter {
     const panelRoom = rooms.find(room => this.isPointInPolygon(panel, room.path));
     if (!panelRoom) return [];
 
-    // Count regular sockets in panel room
-    const regularSocketsInPanelRoom = sockets.filter(socket => {
-      const wall = walls.find(w => w.id === socket.wall);
-      if (!wall) return false;
-      return this.isPointInPolygon(socket.position, panelRoom.path) && 
-             socket.deviceType !== 'powerful' && 
-             socket.deviceType !== 'high-power';
-    }).length;
+    let totalPins = 0;
 
-    // Count powerful and high-power sockets in all rooms
-    const specialSockets = sockets.filter(socket => 
-      socket.deviceType === 'powerful' || socket.deviceType === 'high-power'
-    ).length;
-
-    // Count switches and junction boxes for each room
-    let totalPinsForSwitches = 0;
-    const switchesByRoom = new Map(); // Track switches per room
-
-    // First, group switches by room
-    switches.forEach(switchObj => {
-      const wall = walls.find(w => w.id === switchObj.wall);
-      if (!wall) return;
-
-      rooms.forEach(room => {
-        if (this.isPointInPolygon(switchObj.position, room.path)) {
-          if (!switchesByRoom.has(room.id)) {
-            switchesByRoom.set(room.id, []);
-          }
-          switchesByRoom.get(room.id).push(switchObj);
-        }
-      });
-    });
-
-    // Calculate pins needed for switches
+    // Process each room to count needed pins
     rooms.forEach(room => {
-      const roomSwitches = switchesByRoom.get(room.id) || [];
-      
       if (room.id === panelRoom.id) {
-        // For panel room, count all switches
-        totalPinsForSwitches += roomSwitches.length;
+        // For panel room, count all sockets and switches directly
+        const roomSockets = sockets.filter(socket => {
+          const wall = walls.find(w => w.id === socket.wall);
+          return wall && this.isPointInPolygon(socket.position, room.path);
+        });
+
+        const roomSwitches = switches.filter(sw => {
+          const wall = walls.find(w => w.id === sw.wall);
+          return wall && this.isPointInPolygon(sw.position, room.path);
+        });
+
+        // Only count switches that control lights
+        const activeSwitches = roomSwitches.filter(sw => this.doesSwitchControlAnything(sw));
+
+        // Add pins for regular sockets
+        if (roomSockets.some(s => s.deviceType !== 'powerful' && s.deviceType !== 'high-power')) {
+          totalPins++;
+        }
+
+        // Add pins for powerful/high-power sockets
+        totalPins += roomSockets.filter(s => s.deviceType === 'powerful' || s.deviceType === 'high-power').length;
+
+        // Add pins for active switches
+        totalPins += activeSwitches.length;
       } else {
         // For other rooms
-        if (roomSwitches.length === 1) {
-          // Single switch room
-          totalPinsForSwitches += 1;
+        const roomSockets = sockets.filter(socket => {
+          const wall = walls.find(w => w.id === socket.wall);
+          return wall && this.isPointInPolygon(socket.position, room.path);
+        });
+
+        const roomSwitches = switches.filter(sw => {
+          const wall = walls.find(w => w.id === sw.wall);
+          return wall && this.isPointInPolygon(sw.position, room.path);
+        });
+
+        const hasRegularSockets = roomSockets.some(s => s.deviceType !== 'powerful' && s.deviceType !== 'high-power');
+        const hasPowerfulSockets = roomSockets.some(s => s.deviceType === 'powerful' || s.deviceType === 'high-power');
+        const hasActiveSwitches = roomSwitches.some(sw => this.doesSwitchControlAnything(sw));
+
+        // Add pin for regular sockets if present
+        if (hasRegularSockets) {
+          totalPins++;
         }
-        // Add pin for junction box if room has one
-        const hasJunctionBox = this.distributionBoxes.some(box => box.roomId === room.id);
-        if (hasJunctionBox) {
-          totalPinsForSwitches += 1;
+
+        // Add pins for powerful/high-power sockets
+        totalPins += roomSockets.filter(s => s.deviceType === 'powerful' || s.deviceType === 'high-power').length;
+
+        // Add pin for junction box if room has active switches
+        if (hasActiveSwitches) {
+          const hasJunctionBox = this.distributionBoxes.some(box => box.roomId === room.id);
+          if (hasJunctionBox || roomSwitches.length === 1) {
+            totalPins++;
+          }
         }
       }
     });
 
-    // Calculate total number of points needed:
-    // (rooms - 1) + special sockets + regular sockets in panel room + switch pins
-    const numPoints = (rooms.length - 1) + specialSockets + regularSocketsInPanelRoom + totalPinsForSwitches;
-    if (numPoints === 0) return [];
+    if (totalPins === 0) return [];
 
-    // Calculate wall vector and normal
+    // Calculate points positions
     const wallVector = {
       x: panelWall.end.x - panelWall.start.x,
       y: panelWall.end.y - panelWall.start.y
@@ -2651,7 +2727,7 @@ export default class AutoElectricalRouter {
     const panelWidth = (this.store.state.panels?.defaultWidth || 300) / 10;
     
     // Calculate spacing between points
-    const spacing = panelWidth / (numPoints + 1);
+    const spacing = panelWidth / (totalPins + 1);
 
     // Calculate start position (left edge of panel)
     const startPos = {
@@ -2661,12 +2737,12 @@ export default class AutoElectricalRouter {
 
     // Generate evenly spaced points
     const points = [];
-    for (let i = 1; i <= numPoints; i++) {
+    for (let i = 1; i <= totalPins; i++) {
       // Calculate position along panel width
       const distance = spacing * i;
       const point = {
-        x: startPos.x + (normalizedWall.x * distance) + (normalVector.x * 10), // Changed from 20 to 10
-        y: startPos.y + (normalizedWall.y * distance) + (normalVector.y * 10), // Changed from 20 to 10
+        x: startPos.x + (normalizedWall.x * distance) + (normalVector.x * 10),
+        y: startPos.y + (normalizedWall.y * distance) + (normalVector.y * 10),
         isUsed: false
       };
       points.push(point);
@@ -3445,5 +3521,121 @@ export default class AutoElectricalRouter {
     const rooms = this.store.state.rooms.rooms || [];
     const room = rooms.find(r => this.isPointInPolygon(light.position, r.path));
     return room ? room.path : null;
+  }
+
+  /**
+   * Get the total number of panel pins needed
+   * @returns {number} Total number of panel pins
+   */
+  getPanelPinCount() {
+    const panel = this.getElectricalPanelPosition();
+    if (!panel) return 0;
+
+    const rooms = this.store.state.rooms.rooms || [];
+    const walls = this.store.state.walls.walls || [];
+    const sockets = this.store.state.sockets.sockets || [];
+    const switches = this.store.state.switches.switches || [];
+
+    let totalPins = 0;
+
+    // Process each room to count needed pins
+    rooms.forEach(room => {
+      // Find all sockets in this room
+      const roomSockets = sockets.filter(socket => {
+        const wall = walls.find(w => w.id === socket.wall);
+        return wall && this.isPointInPolygon(socket.position, room.path);
+      });
+
+      // Find all switches in this room
+      const roomSwitches = switches.filter(sw => {
+        const wall = walls.find(w => w.id === sw.wall);
+        return wall && this.isPointInPolygon(sw.position, room.path);
+      });
+
+      // Count pins for regular sockets
+      if (roomSockets.some(s => s.deviceType !== 'powerful' && s.deviceType !== 'high-power')) {
+        totalPins++;
+      }
+
+      // Count pins for powerful/high-power sockets
+      totalPins += roomSockets.filter(s => s.deviceType === 'powerful' || s.deviceType === 'high-power').length;
+
+      // Count pins for active switches
+      const activeSwitches = roomSwitches.filter(sw => this.doesSwitchControlAnything(sw));
+      
+      if (activeSwitches.length > 0) {
+        // If room has a junction box or single switch, add one pin
+        const hasJunctionBox = this.distributionBoxes.some(box => box.roomId === room.id);
+        if (hasJunctionBox || activeSwitches.length === 1) {
+          totalPins++;
+        } else {
+          // Otherwise, add pin for each active switch
+          totalPins += activeSwitches.length;
+        }
+      }
+    });
+
+    return totalPins;
+  }
+
+  /**
+   * Calculate total length of blue cables (regular and powerful sockets)
+   * @returns {number} Total length in centimeters
+   */
+  calculateBlueCableLength() {
+    const panel = this.getElectricalPanelPosition();
+    if (!panel) return 0;
+
+    const walls = this.store.state.walls.walls || [];
+    const rooms = this.store.state.rooms.rooms || [];
+    const sockets = this.store.state.sockets.sockets || [];
+    let totalLength = 0;
+
+    // Find panel room
+    const panelRoom = rooms.find(room => this.isPointInPolygon(panel, room.path));
+    if (!panelRoom) return 0;
+
+    // Process each room
+    rooms.forEach(room => {
+      // Find all sockets in this room
+      const roomSockets = sockets.filter(socket => {
+        const wall = walls.find(w => w.id === socket.wall);
+        return wall && this.isPointInPolygon(socket.position, room.path);
+      });
+
+      // Skip if room has no sockets
+      if (roomSockets.length === 0) return;
+
+      // Get regular and powerful sockets
+      const regularSockets = roomSockets.filter(s => s.deviceType !== 'high-power');
+      if (regularSockets.length === 0) return;
+
+      // Calculate connection point for each socket
+      regularSockets.forEach(socket => {
+        const wall = walls.find(w => w.id === socket.wall);
+        if (!wall) return;
+
+        // Calculate socket connection point
+        const socketPoint = this.calculatePointPosition(socket, walls, socket.deviceType === 'powerful' ? 22 : 25);
+        if (!socketPoint) return;
+
+        // Add length from socket to connection point
+        totalLength += this.calculateDistance(socket.position, socketPoint);
+
+        // Calculate panel connection point
+        const panelPoints = this.calculatePanelConnectionPoints();
+        const connectionId = `socket-${socket.id}`;
+        const panelPoint = this.findAvailablePanelPoint(panelPoints, connectionId);
+        if (!panelPoint) return;
+
+        // Calculate path to panel and add its length
+        const path = this.calculateOrthogonalPath(socketPoint, panelPoint, walls);
+        for (let i = 0; i < path.length - 1; i++) {
+          totalLength += this.calculateDistance(path[i], path[i + 1]);
+        }
+      });
+    });
+
+    return Math.round(totalLength); // Return length in centimeters
   }
 } 

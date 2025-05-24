@@ -55,8 +55,16 @@
 
         <h4 class="mt-4">Electrical Panel</h4>
         <div class="panel-recommendation">
-          <p>Recommended panel size based on total outlets ({{ totalOutlets }}):</p>
+          <p>Recommended panel size based on sectors ({{ totalPanelPins }}):</p>
           <strong>{{ recommendedPanelSize }}</strong>
+        </div>
+
+        <h4 class="mt-4">Cable Length</h4>
+        <div class="cable-info blue-cable-section">
+          <div class="cable-details">
+            <span class="cable-type">2.5 mm²</span>
+            <strong class="cable-length">{{ formattedBlueCableLength }}</strong>
+          </div>
         </div>
       </div>
 
@@ -92,6 +100,7 @@
 
 <script>
 import { mapState, mapGetters } from 'vuex'
+import AutoElectricalRouter from '../../../utils/AutoElectricalRouter'
 
 export default {
   name: 'ProjectInfoModal',
@@ -152,12 +161,31 @@ export default {
     wallLightCount() {
       return this.wallLights.length
     },
+    totalPanelPins() {
+      const router = new AutoElectricalRouter(this.$store);
+      return router.getPanelPinCount();
+    },
     recommendedPanelSize() {
-      const total = this.totalOutlets
-      if (total <= 12) return '12-module panel'
-      if (total <= 24) return '24-module panel'
-      if (total <= 36) return '36-module panel'
-      return '48-module panel'
+      const pins = this.totalPanelPins;
+      if (pins <= 6) return '6 sectors';
+      if (pins <= 8) return '8 sectors';
+      if (pins <= 12) return '12 sectors';
+      if (pins <= 16) return '16 sectors';
+      if (pins <= 18) return '18 sectors';
+      if (pins <= 24) return '24 sectors';
+      if (pins <= 36) return '36 sectors';
+      return '36+ sectors (multiple panels may be needed)';
+    },
+    blueCableLength() {
+      const router = new AutoElectricalRouter(this.$store);
+      return router.calculateBlueCableLength();
+    },
+    formattedBlueCableLength() {
+      const length = this.blueCableLength;
+      if (length >= 100) {
+        return `${(length / 100).toFixed(1)} m`;
+      }
+      return `${length} cm`;
     }
   },
   created() {
@@ -341,6 +369,36 @@ export default {
 .panel-recommendation strong {
   font-size: 16px;
   color: #0d47a1;
+}
+
+.cable-info {
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+}
+
+.cable-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.blue-cable-section {
+  background: #e6e6ff;
+}
+
+.blue-cable-section .cable-type,
+.blue-cable-section .cable-length {
+  color: #0000FF;
+  font-size: 16px;
+}
+
+.cable-type {
+  font-weight: 500;
+}
+
+.cable-length {
+  font-weight: bold;
 }
 
 h4 {
