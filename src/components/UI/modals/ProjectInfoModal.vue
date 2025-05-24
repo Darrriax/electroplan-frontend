@@ -60,10 +60,22 @@
         </div>
 
         <h4 class="mt-4">Cable Length</h4>
+        <div class="cable-info yellow-cable-section">
+          <div class="cable-details">
+            <span class="cable-type">1.5 mm²</span>
+            <strong class="cable-length">{{ formattedYellowCableLength }}</strong>
+          </div>
+        </div>
         <div class="cable-info blue-cable-section">
           <div class="cable-details">
             <span class="cable-type">2.5 mm²</span>
             <strong class="cable-length">{{ formattedBlueCableLength }}</strong>
+          </div>
+        </div>
+        <div class="cable-info red-cable-section">
+          <div class="cable-details">
+            <span class="cable-type">4.0 mm²</span>
+            <strong class="cable-length">{{ formattedRedCableLength }}</strong>
           </div>
         </div>
       </div>
@@ -101,6 +113,7 @@
 <script>
 import { mapState, mapGetters } from 'vuex'
 import AutoElectricalRouter from '../../../utils/AutoElectricalRouter'
+import CableLengthCalculator from '../../../utils/cableLengthCalculations'
 
 export default {
   name: 'ProjectInfoModal',
@@ -176,16 +189,41 @@ export default {
       if (pins <= 36) return '36 sectors';
       return '36+ sectors (multiple panels may be needed)';
     },
+    yellowCableLength() {
+      const calculator = new CableLengthCalculator(this.$store);
+      const lengths = calculator.getCableLengths();
+      return lengths.cable1_5mm;
+    },
     blueCableLength() {
-      const router = new AutoElectricalRouter(this.$store);
-      return router.calculateBlueCableLength();
+      const calculator = new CableLengthCalculator(this.$store);
+      const lengths = calculator.getCableLengths();
+      return lengths.cable2_5mm;
+    },
+    redCableLength() {
+      const calculator = new CableLengthCalculator(this.$store);
+      const lengths = calculator.getCableLengths();
+      return lengths.cable4_0mm;
+    },
+    formattedYellowCableLength() {
+      const length = this.yellowCableLength;
+      if (length >= 100) {
+        return `${Math.round(length / 100)} m`;
+      }
+      return `${Math.round(length)} cm`;
     },
     formattedBlueCableLength() {
       const length = this.blueCableLength;
       if (length >= 100) {
-        return `${(length / 100).toFixed(1)} m`;
+        return `${Math.round(length / 100)} m`;
       }
-      return `${length} cm`;
+      return `${Math.round(length)} cm`;
+    },
+    formattedRedCableLength() {
+      const length = this.redCableLength;
+      if (length >= 100) {
+        return `${Math.round(length / 100)} m`;
+      }
+      return `${Math.round(length)} cm`;
     }
   },
   created() {
@@ -383,6 +421,16 @@ export default {
   align-items: center;
 }
 
+.yellow-cable-section {
+  background: #fff9e6;
+}
+
+.yellow-cable-section .cable-type,
+.yellow-cable-section .cable-length {
+  color: #D4AC0D;
+  font-size: 16px;
+}
+
 .blue-cable-section {
   background: #e6e6ff;
 }
@@ -390,6 +438,16 @@ export default {
 .blue-cable-section .cable-type,
 .blue-cable-section .cable-length {
   color: #0000FF;
+  font-size: 16px;
+}
+
+.red-cable-section {
+  background: #ffe6e6;
+}
+
+.red-cable-section .cable-type,
+.red-cable-section .cable-length {
+  color: #FF0000;
   font-size: 16px;
 }
 
