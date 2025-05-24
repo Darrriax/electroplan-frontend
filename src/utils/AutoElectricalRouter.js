@@ -457,7 +457,7 @@ export default class AutoElectricalRouter {
   }
 
   /**
-   * Draw all elements (boxes and socket points)
+   * Draw all elements (boxes and connection points)
    * @param {CanvasRenderingContext2D} ctx - Canvas context
    * @param {Object} transform - Canvas transform object
    */
@@ -471,7 +471,176 @@ export default class AutoElectricalRouter {
     this.drawPanelPoints(ctx, transform);
     this.drawBoxes(ctx, transform);
     this.drawSocketPoints(ctx, transform);
+    this.drawSwitchPoints(ctx, transform);
+    this.drawLightPoints(ctx, transform);
+    this.drawLightSwitchConnections(ctx, transform);
+    this.drawSwitchToPanelConnections(ctx, transform);  // Add this line
     this.drawRoomToPanelConnections(ctx, transform);
+  }
+
+  /**
+   * Draw connections from switches to panel points
+   * @param {CanvasRenderingContext2D} ctx - Canvas context
+   * @param {Object} transform - Canvas transform object
+   */
+  drawSwitchToPanelConnections(ctx, transform) {
+    if (!this.store.state.project.isRoutingActive) return;
+
+    const panel = this.getElectricalPanelPosition();
+    if (!panel) return;
+
+    const rooms = this.store.state.rooms.rooms || [];
+    const walls = this.store.state.walls.walls || [];
+    const switches = this.store.state.switches.switches || [];
+    const panelPoints = this.calculatePanelConnectionPoints();
+
+    // Find panel room
+    const panelRoom = rooms.find(room => this.isPointInPolygon(panel, room.path));
+    if (!panelRoom) return;
+
+    ctx.save();
+    ctx.translate(transform.panOffset.x, transform.panOffset.y);
+    ctx.scale(transform.zoom, transform.zoom);
+
+    // Group switches by room
+    const switchesByRoom = new Map();
+    switches.forEach(switchObj => {
+      const wall = walls.find(w => w.id === switchObj.wall);
+      if (!wall) return;
+
+      rooms.forEach(room => {
+        if (this.isPointInPolygon(switchObj.position, room.path)) {
+          if (!switchesByRoom.has(room.id)) {
+            switchesByRoom.set(room.id, []);
+          }
+          switchesByRoom.get(room.id).push(switchObj);
+        }
+      });
+    });
+
+    // Process each room
+    rooms.forEach(room => {
+      const roomSwitches = switchesByRoom.get(room.id) || [];
+      
+      if (room.id === panelRoom.id) {
+        // For panel room, connect all switches directly to panel
+        roomSwitches.forEach(switchObj => {
+          const switchPoint = this.calculatePointPosition(switchObj, walls, 20);
+          if (!switchPoint) return;
+
+          const connectionId = `switch-${switchObj.id}`;
+          const panelPoint = this.findAvailablePanelPoint(panelPoints, connectionId);
+          if (!panelPoint) return;
+
+          // Draw connection
+          this.drawSwitchPanelConnection(ctx, switchPoint, panelPoint, transform);
+        });
+      } else {
+        // For other rooms
+        const junctionBox = this.distributionBoxes.find(box => box.roomId === room.id);
+        
+        if (junctionBox) {
+          // Connect switches to junction box
+          roomSwitches.forEach((switchObj, index) => {
+            const switchPoint = this.calculatePointPosition(switchObj, walls, 20);
+            if (!switchPoint) return;
+
+            // Calculate offset for multiple switches
+            let targetPoint = { ...junctionBox.position };
+            if (roomSwitches.length > 1) {
+              // Calculate offset vector perpendicular to the path
+              const pathVector = {
+                x: junctionBox.position.x - switchPoint.x,
+                y: junctionBox.position.y - switchPoint.y
+              };
+              const pathLength = Math.sqrt(pathVector.x * pathVector.x + pathVector.y * pathVector.y);
+              const offsetVector = {
+                x: -pathVector.y / pathLength,
+                y: pathVector.x / pathLength
+              };
+              
+              // Apply offset (3cm spacing between connections)
+              const offset = (index - (roomSwitches.length - 1) / 2) * 3;
+              targetPoint = {
+                x: junctionBox.position.x + offsetVector.x * offset,
+                y: junctionBox.position.y + offsetVector.y * offset
+              };
+            }
+
+            // Draw connection to junction box
+            const path = this.calculateOrthogonalPath(switchPoint, targetPoint, walls);
+            ctx.beginPath();
+            ctx.moveTo(path[0].x, path[0].y);
+            path.forEach((point, i) => {
+              if (i === 0) return;
+              ctx.lineTo(point.x, point.y);
+            });
+            ctx.strokeStyle = '#D4AC0D';
+            ctx.lineWidth = 2 / transform.zoom;
+            ctx.stroke();
+          });
+
+          // Connect junction box to panel with 3cm offset
+          const connectionId = `box-${room.id}`;
+          const panelPoint = this.findAvailablePanelPoint(panelPoints, connectionId);
+          if (panelPoint) {
+            // Calculate offset point (3cm down from junction box)
+            const offsetPoint = {
+              x: junctionBox.position.x,
+              y: junctionBox.position.y + 3 // 3cm offset
+            };
+
+            // Draw connection using orthogonal path
+            const path = this.calculateOrthogonalPath(offsetPoint, panelPoint, walls);
+            ctx.beginPath();
+            ctx.moveTo(path[0].x, path[0].y);
+            path.forEach((point, i) => {
+              if (i === 0) return;
+              ctx.lineTo(point.x, point.y);
+            });
+            ctx.strokeStyle = '#D4AC0D';
+            ctx.lineWidth = 2 / transform.zoom;
+            ctx.stroke();
+          }
+        } else if (roomSwitches.length === 1) {
+          // Single switch room - connect directly to panel
+          const switchObj = roomSwitches[0];
+          const switchPoint = this.calculatePointPosition(switchObj, walls, 20);
+          if (!switchPoint) return;
+
+          const connectionId = `switch-${switchObj.id}`;
+          const panelPoint = this.findAvailablePanelPoint(panelPoints, connectionId);
+          if (!panelPoint) return;
+
+          // Draw connection
+          this.drawSwitchPanelConnection(ctx, switchPoint, panelPoint, transform);
+        }
+      }
+    });
+
+    ctx.restore();
+  }
+
+  /**
+   * Draw a connection between a switch point and a panel point
+   * @param {CanvasRenderingContext2D} ctx - Canvas context
+   * @param {Object} switchPoint - Switch connection point
+   * @param {Object} panelPoint - Panel connection point
+   * @param {Object} transform - Transform object
+   */
+  drawSwitchPanelConnection(ctx, switchPoint, panelPoint, transform) {
+    const path = this.calculateOrthogonalPath(switchPoint, panelPoint, this.store.state.walls.walls || []);
+    
+    ctx.beginPath();
+    ctx.moveTo(path[0].x, path[0].y);
+    path.forEach((point, i) => {
+      if (i === 0) return;
+      ctx.lineTo(point.x, point.y);
+    });
+    
+    ctx.strokeStyle = '#D4AC0D';
+    ctx.lineWidth = 2 / transform.zoom;
+    ctx.stroke();
   }
 
   /**
@@ -893,14 +1062,14 @@ export default class AutoElectricalRouter {
           ctx.lineTo(point.x, point.y);
         });
         
-        ctx.strokeStyle = '#2196F3';
+        ctx.strokeStyle = '#0000FF';
         ctx.lineWidth = 2 / transform.zoom;
         ctx.stroke();
 
         // Draw connection point
         ctx.beginPath();
         ctx.arc(connectionPoint.x, connectionPoint.y, 3 / transform.zoom, 0, Math.PI * 2);
-        ctx.fillStyle = '#2196F3';
+        ctx.fillStyle = '#0000FF';
         ctx.fill();
       }
     });
@@ -1777,7 +1946,8 @@ export default class AutoElectricalRouter {
 
           sortedSockets.forEach(socket => {
             const connectionId = `socket-${socket.id}`;
-            const point = this.calculatePointPosition(socket, walls, 20);
+            // In panel room, socket points are 27cm from wall
+            const point = this.calculatePointPosition(socket, walls, 27);
             if (!point) return;
 
             const panelPoint = this.findOptimalPanelPoint(point, panelPoints, connectionId);
@@ -1902,7 +2072,7 @@ export default class AutoElectricalRouter {
 
         sortedHighPowerSockets.forEach((socket, index) => {
           const connectionId = `high-power-${socket.id}`;
-          const distance = 27 - (index * 3);
+          const distance = isInPanelRoom ? 27 : (27 - (index * 3));
           const point = this.calculatePointPosition(socket, walls, distance);
           if (!point) return;
 
@@ -1916,7 +2086,8 @@ export default class AutoElectricalRouter {
         const powerfulSockets = group.highPower.filter(s => s.deviceType === 'powerful');
         powerfulSockets.forEach(socket => {
           const connectionId = `powerful-${socket.id}`;
-          const point = this.calculatePointPosition(socket, walls, 21);
+          const distance = isInPanelRoom ? 27 : 21;
+          const point = this.calculatePointPosition(socket, walls, distance);
           if (!point) return;
 
           const panelPoint = this.findOptimalPanelPoint(point, panelPoints, connectionId);
@@ -2376,6 +2547,7 @@ export default class AutoElectricalRouter {
     const rooms = this.store.state.rooms.rooms || [];
     const walls = this.store.state.walls.walls || [];
     const sockets = this.store.state.sockets.sockets || [];
+    const switches = this.store.state.switches.switches || [];
 
     // Find the wall the panel is mounted on
     const panelWall = this.findPanelWall(panel);
@@ -2399,9 +2571,49 @@ export default class AutoElectricalRouter {
       socket.deviceType === 'powerful' || socket.deviceType === 'high-power'
     ).length;
 
+    // Count switches and junction boxes for each room
+    let totalPinsForSwitches = 0;
+    const switchesByRoom = new Map(); // Track switches per room
+
+    // First, group switches by room
+    switches.forEach(switchObj => {
+      const wall = walls.find(w => w.id === switchObj.wall);
+      if (!wall) return;
+
+      rooms.forEach(room => {
+        if (this.isPointInPolygon(switchObj.position, room.path)) {
+          if (!switchesByRoom.has(room.id)) {
+            switchesByRoom.set(room.id, []);
+          }
+          switchesByRoom.get(room.id).push(switchObj);
+        }
+      });
+    });
+
+    // Calculate pins needed for switches
+    rooms.forEach(room => {
+      const roomSwitches = switchesByRoom.get(room.id) || [];
+      
+      if (room.id === panelRoom.id) {
+        // For panel room, count all switches
+        totalPinsForSwitches += roomSwitches.length;
+      } else {
+        // For other rooms
+        if (roomSwitches.length === 1) {
+          // Single switch room
+          totalPinsForSwitches += 1;
+        }
+        // Add pin for junction box if room has one
+        const hasJunctionBox = this.distributionBoxes.some(box => box.roomId === room.id);
+        if (hasJunctionBox) {
+          totalPinsForSwitches += 1;
+        }
+      }
+    });
+
     // Calculate total number of points needed:
-    // (rooms - 1) + special sockets + regular sockets in panel room
-    const numPoints = (rooms.length - 1) + specialSockets + regularSocketsInPanelRoom;
+    // (rooms - 1) + special sockets + regular sockets in panel room + switch pins
+    const numPoints = (rooms.length - 1) + specialSockets + regularSocketsInPanelRoom + totalPinsForSwitches;
     if (numPoints === 0) return [];
 
     // Calculate wall vector and normal
@@ -2453,9 +2665,9 @@ export default class AutoElectricalRouter {
       // Calculate position along panel width
       const distance = spacing * i;
       const point = {
-        x: startPos.x + (normalizedWall.x * distance) + (normalVector.x * 20),
-        y: startPos.y + (normalizedWall.y * distance) + (normalVector.y * 20),
-        isUsed: false // Add flag to track if point is being used
+        x: startPos.x + (normalizedWall.x * distance) + (normalVector.x * 10), // Changed from 20 to 10
+        y: startPos.y + (normalizedWall.y * distance) + (normalVector.y * 10), // Changed from 20 to 10
+        isUsed: false
       };
       points.push(point);
     }
@@ -2664,5 +2876,574 @@ export default class AutoElectricalRouter {
       [source, target],
       [existingPoint, target]
     );
+  }
+
+  /**
+   * Draw connection points for switches
+   * @param {CanvasRenderingContext2D} ctx - Canvas context
+   * @param {Object} transform - Canvas transform object
+   */
+  drawSwitchPoints(ctx, transform) {
+    if (!this.store.state.project.isRoutingActive) return;
+
+    const switches = this.store.state.switches.switches || [];
+    const walls = this.store.state.walls.walls || [];
+
+    ctx.save();
+    ctx.translate(transform.panOffset.x, transform.panOffset.y);
+    ctx.scale(transform.zoom, transform.zoom);
+
+    // Process each switch
+    switches.forEach(switchObj => {
+      // Find the wall the switch is mounted on
+      const wall = walls.find(w => w.id === switchObj.wall);
+      if (!wall) return;
+
+      // Calculate connection point 20cm from wall
+      const point = this.calculatePointPosition(switchObj, walls, 20);
+      if (!point) return;
+
+      // Draw connection point
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 3 / transform.zoom, 0, Math.PI * 2);
+      ctx.fillStyle = '#FFD700'; // Changed from red to yellow
+      ctx.fill();
+
+      // Draw line from switch to connection point
+      ctx.beginPath();
+      ctx.moveTo(switchObj.position.x, switchObj.position.y);
+      ctx.lineTo(point.x, point.y);
+      ctx.strokeStyle = '#FFD700'; // Changed from red to yellow
+      ctx.lineWidth = 1 / transform.zoom;
+      ctx.stroke();
+    });
+
+    ctx.restore();
+  }
+
+  /**
+   * Draw connection points for lights (both wall and ceiling)
+   * @param {CanvasRenderingContext2D} ctx - Canvas context
+   * @param {Object} transform - Canvas transform object
+   */
+  drawLightPoints(ctx, transform) {
+    if (!this.store.state.project.isRoutingActive) return;
+
+    const wallLights = this.store.getters['lights/getAllWallLights'] || [];
+    const ceilingLights = this.store.getters['lights/getAllCeilingLights'] || [];
+    const walls = this.store.state.walls.walls || [];
+
+    ctx.save();
+    ctx.translate(transform.panOffset.x, transform.panOffset.y);
+    ctx.scale(transform.zoom, transform.zoom);
+
+    // Draw wall light points
+    wallLights.forEach(light => {
+      const wall = walls.find(w => w.id === light.wall);
+      if (!wall) return;
+
+      // Calculate connection point 20cm from wall
+      const point = this.calculatePointPosition(light, walls, 20);
+      if (!point) return;
+
+      // Draw connection point in yellow
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 3 / transform.zoom, 0, Math.PI * 2);
+      ctx.fillStyle = '#FFD700'; // Yellow color
+      ctx.fill();
+
+      // Draw line from light to connection point
+      ctx.beginPath();
+      ctx.moveTo(light.position.x, light.position.y);
+      ctx.lineTo(point.x, point.y);
+      ctx.strokeStyle = '#FFD700';
+      ctx.lineWidth = 1 / transform.zoom;
+      ctx.stroke();
+    });
+
+    // Draw ceiling light points
+    ceilingLights.forEach(light => {
+      // For ceiling lights, the connection point is at the light's position
+      ctx.beginPath();
+      ctx.arc(light.position.x, light.position.y, 3 / transform.zoom, 0, Math.PI * 2);
+      ctx.fillStyle = '#FFD700'; // Yellow color
+      ctx.fill();
+    });
+
+    ctx.restore();
+  }
+
+  /**
+   * Draw light-to-switch connections
+   * @param {CanvasRenderingContext2D} ctx - Canvas context
+   * @param {Object} transform - Canvas transform object
+   */
+  drawLightSwitchConnections(ctx, transform) {
+    if (!this.store.state.project.isRoutingActive) return;
+
+    const switches = this.store.state.switches.switches || [];
+    const wallLights = this.store.getters['lights/getAllWallLights'] || [];
+    const ceilingLights = this.store.getters['lights/getAllCeilingLights'] || [];
+    const lightGroups = this.store.getters['lights/getLightGroups'] || [];
+    const walls = this.store.state.walls.walls || [];
+
+    ctx.save();
+    ctx.translate(transform.panOffset.x, transform.panOffset.y);
+    ctx.scale(transform.zoom, transform.zoom);
+
+    // Process each switch
+    switches.forEach(switchObj => {
+      // Find the wall the switch is mounted on
+      const wall = walls.find(w => w.id === switchObj.wall);
+      if (!wall) return;
+
+      // Get switch connection point
+      const switchPoint = this.calculatePointPosition(switchObj, walls, 20);
+      if (!switchPoint) return;
+
+      if (switchObj.type === 'single-switch') {
+        // Handle single switch
+        if (switchObj.connectedGroup) {
+          // Switch is connected to a group
+          this.drawGroupLightConnection(ctx, switchObj.connectedGroup, switchPoint, transform);
+        } else {
+          // Check for direct light connection
+          const connectedLight = [...wallLights, ...ceilingLights].find(light => 
+            light.switchId === switchObj.id
+          );
+          if (connectedLight) {
+            this.drawSingleLightConnection(ctx, connectedLight, switchPoint, transform);
+          }
+        }
+      } else if (switchObj.type === 'double-switch') {
+        // Handle double switch - both connections with offset
+        if (switchObj.connectedGroup1) {
+          // First group - no offset
+          this.drawGroupLightConnection(ctx, switchObj.connectedGroup1, switchPoint, transform, false);
+        } else {
+          const connectedLight1 = [...wallLights, ...ceilingLights].find(light => 
+            light.switchIds && light.switchIds[0] === switchObj.id
+          );
+          if (connectedLight1) {
+            this.drawSingleLightConnection(ctx, connectedLight1, switchPoint, transform, false);
+          }
+        }
+
+        if (switchObj.connectedGroup2) {
+          // Second group - with 3cm offset
+          this.drawGroupLightConnection(ctx, switchObj.connectedGroup2, switchPoint, transform, true);
+        } else {
+          const connectedLight2 = [...wallLights, ...ceilingLights].find(light => 
+            light.switchIds && light.switchIds[1] === switchObj.id
+          );
+          if (connectedLight2) {
+            this.drawSingleLightConnection(ctx, connectedLight2, switchPoint, transform, true);
+          }
+        }
+      }
+    });
+
+    ctx.restore();
+  }
+
+  /**
+   * Draw connection for a single light to its switch
+   * @param {CanvasRenderingContext2D} ctx - Canvas context
+   * @param {Object} light - Light object
+   * @param {Object} switchPoint - Switch connection point
+   * @param {Object} transform - Transform object
+   * @param {boolean} [withOffset=false] - Whether to apply 3cm offset
+   */
+  drawSingleLightConnection(ctx, light, switchPoint, transform, withOffset = false) {
+    const walls = this.store.state.walls.walls || [];
+    const rooms = this.store.state.rooms.rooms || [];
+
+    if (light.type === 'wall-light' || light.wall) {
+      // Find the wall the light is mounted on
+      const wall = walls.find(w => w.id === light.wall);
+      if (!wall) return;
+
+      // Calculate wall vector and normal
+      const wallVector = {
+        x: wall.end.x - wall.start.x,
+        y: wall.end.y - wall.start.y
+      };
+      const wallLength = Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y);
+      const normalizedWall = {
+        x: wallVector.x / wallLength,
+        y: wallVector.y / wallLength
+      };
+      const normalVector = {
+        x: -normalizedWall.y,
+        y: normalizedWall.x
+      };
+
+      // Check if normal points into room
+      const testPoint = {
+        x: light.position.x + normalVector.x * 10,
+        y: light.position.y + normalVector.y * 10
+      };
+      const room = rooms.find(r => this.isPointInPolygon(light.position, r.path));
+      if (room && !this.isPointInPolygon(testPoint, room.path)) {
+        normalVector.x = -normalVector.x;
+        normalVector.y = -normalVector.y;
+      }
+
+      // Calculate connection point 20cm from wall
+      const connectionPoint = {
+        x: light.position.x + normalVector.x * 20,
+        y: light.position.y + normalVector.y * 20
+      };
+
+      // Draw connection from light to connection point
+      ctx.beginPath();
+      ctx.moveTo(light.position.x, light.position.y);
+      ctx.lineTo(connectionPoint.x, connectionPoint.y);
+      ctx.strokeStyle = '#D4AC0D';
+      ctx.lineWidth = 1 / transform.zoom;
+      ctx.stroke();
+
+      // If offset needed, calculate offset point
+      let targetPoint = switchPoint;
+      if (withOffset) {
+        // Calculate offset vector that's perpendicular to both the wall and the path to switch
+        const pathVector = {
+          x: switchPoint.x - connectionPoint.x,
+          y: switchPoint.y - connectionPoint.y
+        };
+        const pathLength = Math.sqrt(pathVector.x * pathVector.x + pathVector.y * pathVector.y);
+        const normalizedPath = {
+          x: pathVector.x / pathLength,
+          y: pathVector.y / pathLength
+        };
+        
+        // Calculate offset vector (perpendicular to path)
+        const offsetVector = {
+          x: -normalizedPath.y,
+          y: normalizedPath.x
+        };
+
+        targetPoint = {
+          x: switchPoint.x + offsetVector.x * 3, // 3cm offset
+          y: switchPoint.y + offsetVector.y * 3
+        };
+      }
+
+      // Calculate orthogonal path from connection point to switch
+      const path = this.calculateOrthogonalPath(connectionPoint, targetPoint, walls);
+      
+      // Draw the path to switch
+      ctx.beginPath();
+      ctx.moveTo(path[0].x, path[0].y);
+      path.forEach((point, i) => {
+        if (i === 0) return;
+        ctx.lineTo(point.x, point.y);
+      });
+      ctx.strokeStyle = '#D4AC0D';
+      ctx.lineWidth = 2 / transform.zoom;
+      ctx.stroke();
+    } else {
+      // Ceiling light - use direct orthogonal path
+      let targetPoint = switchPoint;
+      if (withOffset) {
+        // Calculate offset perpendicular to the path
+        const pathVector = {
+          x: switchPoint.x - light.position.x,
+          y: switchPoint.y - light.position.y
+        };
+        const pathLength = Math.sqrt(pathVector.x * pathVector.x + pathVector.y * pathVector.y);
+        const offsetVector = {
+          x: -pathVector.y / pathLength,
+          y: pathVector.x / pathLength
+        };
+        targetPoint = {
+          x: switchPoint.x + offsetVector.x * 3,
+          y: switchPoint.y + offsetVector.y * 3
+        };
+      }
+
+      const path = this.calculateOrthogonalPath(light.position, targetPoint, walls);
+      
+      // Draw the path
+      ctx.beginPath();
+      ctx.moveTo(path[0].x, path[0].y);
+      path.forEach((point, i) => {
+        if (i === 0) return;
+        ctx.lineTo(point.x, point.y);
+      });
+      ctx.strokeStyle = '#D4AC0D';
+      ctx.lineWidth = 2 / transform.zoom;
+      ctx.stroke();
+    }
+  }
+
+  /**
+   * Draw connection for a group of lights to their switch
+   * @param {CanvasRenderingContext2D} ctx - Canvas context
+   * @param {Object} group - Light group object
+   * @param {Object} switchPoint - Switch connection point
+   * @param {Object} transform - Transform object
+   * @param {boolean} [withOffset=false] - Whether to apply 3cm offset
+   */
+  drawGroupLightConnection(ctx, group, switchPoint, transform, withOffset = false) {
+    const walls = this.store.state.walls.walls || [];
+    const rooms = this.store.state.rooms.rooms || [];
+    const wallLights = this.store.getters['lights/getAllWallLights'] || [];
+    const ceilingLights = this.store.getters['lights/getAllCeilingLights'] || [];
+    
+    // Get all lights in the group
+    const groupLights = group.lightRefs.map(ref => {
+      if (ref.type === 'wall-light') {
+        return wallLights.find(l => l.id === ref.id);
+      } else {
+        return ceilingLights.find(l => l.id === ref.id);
+      }
+    }).filter(Boolean);
+
+    if (groupLights.length === 0) return;
+
+    // Group lights by wall
+    const lightsByWall = new Map();
+    groupLights.forEach(light => {
+      if (light.wall) {
+        if (!lightsByWall.has(light.wall)) {
+          lightsByWall.set(light.wall, []);
+        }
+        lightsByWall.get(light.wall).push(light);
+      }
+    });
+
+    // Calculate target switch point with offset if needed
+    let targetSwitchPoint = switchPoint;
+    if (withOffset) {
+      // Calculate path vector from first light to switch
+      const firstLight = groupLights[0];
+      const pathVector = {
+        x: switchPoint.x - firstLight.position.x,
+        y: switchPoint.y - firstLight.position.y
+      };
+      const pathLength = Math.sqrt(pathVector.x * pathVector.x + pathVector.y * pathVector.y);
+      
+      // Calculate offset vector perpendicular to path
+      const offsetVector = {
+        x: -pathVector.y / pathLength,
+        y: pathVector.x / pathLength
+      };
+
+      targetSwitchPoint = {
+        x: switchPoint.x + offsetVector.x * 3,
+        y: switchPoint.y + offsetVector.y * 3
+      };
+    }
+
+    // Process each wall's lights
+    lightsByWall.forEach((wallLights, wallId) => {
+      const wall = walls.find(w => w.id === wallId);
+      if (!wall || wallLights.length === 0) return;
+
+      // Calculate wall vector and normal
+      const wallVector = {
+        x: wall.end.x - wall.start.x,
+        y: wall.end.y - wall.start.y
+      };
+      const wallLength = Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y);
+      const normalizedWall = {
+        x: wallVector.x / wallLength,
+        y: wallVector.y / wallLength
+      };
+      const normalVector = {
+        x: -normalizedWall.y,
+        y: normalizedWall.x
+      };
+
+      // Check if normal points into room
+      const testPoint = {
+        x: wallLights[0].position.x + normalVector.x * 10,
+        y: wallLights[0].position.y + normalVector.y * 10
+      };
+      const room = rooms.find(r => this.isPointInPolygon(wallLights[0].position, r.path));
+      if (room && !this.isPointInPolygon(testPoint, room.path)) {
+        normalVector.x = -normalVector.x;
+        normalVector.y = -normalVector.y;
+      }
+
+      // Find the light furthest from the switch
+      const furthestLight = wallLights.reduce((furthest, current) => {
+        const distCurrent = this.calculateDistance(current.position, targetSwitchPoint);
+        const distFurthest = this.calculateDistance(furthest.position, targetSwitchPoint);
+        return distCurrent > distFurthest ? current : furthest;
+      }, wallLights[0]);
+
+      // Sort remaining lights by their position along the wall
+      const sortedLights = wallLights
+        .filter(light => light !== furthestLight)
+        .sort((a, b) => {
+          const distA = (a.position.x - wall.start.x) * normalizedWall.x + 
+                       (a.position.y - wall.start.y) * normalizedWall.y;
+          const distB = (b.position.x - wall.start.x) * normalizedWall.x + 
+                       (b.position.y - wall.start.y) * normalizedWall.y;
+          return distA - distB;
+        });
+
+      // Calculate connection points 20cm from wall
+      const furthestPoint = {
+        x: furthestLight.position.x + normalVector.x * 20,
+        y: furthestLight.position.y + normalVector.y * 20
+      };
+
+      // Draw connection from furthest light to its connection point
+      ctx.beginPath();
+      ctx.moveTo(furthestLight.position.x, furthestLight.position.y);
+      ctx.lineTo(furthestPoint.x, furthestPoint.y);
+      ctx.strokeStyle = '#D4AC0D';
+      ctx.lineWidth = 1 / transform.zoom;
+      ctx.stroke();
+
+      // Start path from furthest light
+      let currentPoint = furthestPoint;
+
+      // Connect through each light in order along the wall
+      sortedLights.forEach(light => {
+        const lightPoint = {
+          x: light.position.x + normalVector.x * 20,
+          y: light.position.y + normalVector.y * 20
+        };
+
+        // Draw connection from light to its connection point
+        ctx.beginPath();
+        ctx.moveTo(light.position.x, light.position.y);
+        ctx.lineTo(lightPoint.x, lightPoint.y);
+        ctx.strokeStyle = '#D4AC0D';
+        ctx.lineWidth = 1 / transform.zoom;
+        ctx.stroke();
+
+        // Draw straight connection parallel to wall
+        ctx.beginPath();
+        ctx.moveTo(currentPoint.x, currentPoint.y);
+        ctx.lineTo(lightPoint.x, lightPoint.y);
+        ctx.strokeStyle = '#D4AC0D';
+        ctx.lineWidth = 2 / transform.zoom;
+        ctx.stroke();
+
+        currentPoint = lightPoint;
+      });
+
+      // Finally, connect the last point to the switch using orthogonal path
+      const finalPath = this.calculateOrthogonalPath(currentPoint, targetSwitchPoint, walls);
+      ctx.beginPath();
+      ctx.moveTo(finalPath[0].x, finalPath[0].y);
+      finalPath.forEach((point, i) => {
+        if (i === 0) return;
+        ctx.lineTo(point.x, point.y);
+      });
+      ctx.strokeStyle = '#D4AC0D';
+      ctx.lineWidth = 2 / transform.zoom;
+      ctx.stroke();
+    });
+
+    // Handle ceiling lights separately
+    const ceilingLightsInGroup = groupLights.filter(light => !light.wall);
+    if (ceilingLightsInGroup.length > 0) {
+      // Find furthest ceiling light from switch
+      const furthestLight = ceilingLightsInGroup.reduce((furthest, current) => {
+        const distCurrent = this.calculateDistance(current.position, targetSwitchPoint);
+        const distFurthest = this.calculateDistance(furthest.position, targetSwitchPoint);
+        return distCurrent > distFurthest ? current : furthest;
+      }, ceilingLightsInGroup[0]);
+
+      // Sort remaining lights by distance from furthest light
+      const sortedLights = ceilingLightsInGroup
+        .filter(light => light !== furthestLight)
+        .sort((a, b) => {
+          const distA = this.calculateDistance(a.position, furthestLight.position);
+          const distB = this.calculateDistance(b.position, furthestLight.position);
+          return distA - distB;
+        });
+
+      // Start from furthest light
+      let currentPoint = furthestLight.position;
+
+      // Connect through each light in order
+      sortedLights.forEach(light => {
+        const path = this.calculateOrthogonalPath(currentPoint, light.position, walls);
+        ctx.beginPath();
+        ctx.moveTo(path[0].x, path[0].y);
+        path.forEach((point, i) => {
+          if (i === 0) return;
+          ctx.lineTo(point.x, point.y);
+        });
+        ctx.strokeStyle = '#D4AC0D';
+        ctx.lineWidth = 2 / transform.zoom;
+        ctx.stroke();
+        currentPoint = light.position;
+      });
+
+      // Connect last light to switch
+      const finalPath = this.calculateOrthogonalPath(currentPoint, targetSwitchPoint, walls);
+      ctx.beginPath();
+      ctx.moveTo(finalPath[0].x, finalPath[0].y);
+      finalPath.forEach((point, i) => {
+        if (i === 0) return;
+        ctx.lineTo(point.x, point.y);
+      });
+      ctx.strokeStyle = '#D4AC0D';
+      ctx.lineWidth = 2 / transform.zoom;
+      ctx.stroke();
+    }
+  }
+
+  /**
+   * Find the light that is furthest from any wall
+   * @param {Array} lights - Array of lights
+   * @param {Array} walls - Array of walls
+   * @returns {Object|null} Furthest light or null
+   */
+  findFurthestLightFromWalls(lights, walls) {
+    let furthestLight = null;
+    let maxDistance = -Infinity;
+
+    lights.forEach(light => {
+      let minWallDistance = Infinity;
+      walls.forEach(wall => {
+        const distance = this.distanceToLine(
+          light.position,
+          wall.start,
+          wall.end
+        );
+        minWallDistance = Math.min(minWallDistance, distance);
+      });
+
+      if (minWallDistance > maxDistance) {
+        maxDistance = minWallDistance;
+        furthestLight = light;
+      }
+    });
+
+    return furthestLight;
+  }
+
+  /**
+   * Order lights by distance from a reference point
+   * @param {Array} lights - Array of lights to order
+   * @param {Object} referencePoint - Point to measure distance from
+   * @returns {Array} Ordered array of lights
+   */
+  orderLightsByDistance(lights, referencePoint) {
+    return [...lights].sort((a, b) => {
+      const distA = this.calculateDistance(a.position, referencePoint);
+      const distB = this.calculateDistance(b.position, referencePoint);
+      return distA - distB;
+    });
+  }
+
+  /**
+   * Get the room path that contains a light
+   * @param {Object} light - Light object
+   * @returns {Array|null} Room path points or null
+   */
+  getRoomPath(light) {
+    const rooms = this.store.state.rooms.rooms || [];
+    const room = rooms.find(r => this.isPointInPolygon(light.position, r.path));
+    return room ? room.path : null;
   }
 } 
