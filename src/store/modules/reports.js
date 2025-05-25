@@ -92,6 +92,13 @@ export const reports = {
                 // Додаємо префікс "Помилка: " до повідомлення
                 await this.dispatch('reports/showMessage', "Помилка: " + (error.response?.data?.message || error.response?.message || "Помилка"));
             }
+        },
+        showMessage({commit}, message) {
+            commit('setMessage', message);
+            // Clear message after 3 seconds
+            setTimeout(() => {
+                commit('clearMessage');
+            }, 3000);
         }
     },
 };

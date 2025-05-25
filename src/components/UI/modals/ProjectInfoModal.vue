@@ -1,7 +1,7 @@
 <template>
-  <div 
-    class="side-panel"
-    :class="{ 
+  <div
+      class="side-panel"
+      :class="{
       'show': (show || showLabelSettings) && isRoutingActive,
       'hide': !isRoutingActive 
     }"
@@ -17,26 +17,26 @@
       <!-- Project Statistics -->
       <div class="statistics-section">
         <h4>Electrical Components</h4>
-        
+
         <div class="stat-group">
           <div class="stat-item">
-            <span class="stat-label">Total Outlets:</span>
+            <span class="stat-label">Total outlets:</span>
             <span class="stat-value">{{ totalOutlets }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Power Sockets:</span>
+            <span class="stat-label">Power sockets:</span>
             <span class="stat-value">{{ socketCount }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Single Switches:</span>
+            <span class="stat-label">Single switches:</span>
             <span class="stat-value">{{ singleSwitchCount }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Double Switches:</span>
+            <span class="stat-label">Double switches:</span>
             <span class="stat-value">{{ doubleSwitchCount }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Junction Boxes:</span>
+            <span class="stat-label">Junction boxes:</span>
             <span class="stat-value">{{ junctionBoxCount }}</span>
           </div>
         </div>
@@ -44,11 +44,11 @@
         <h4 class="mt-4">Lighting</h4>
         <div class="stat-group">
           <div class="stat-item">
-            <span class="stat-label">Ceiling Lights:</span>
+            <span class="stat-label">Ceiling lights:</span>
             <span class="stat-value">{{ ceilingLightCount }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Wall Lights:</span>
+            <span class="stat-label">Wall lights:</span>
             <span class="stat-value">{{ wallLightCount }}</span>
           </div>
         </div>
@@ -86,20 +86,20 @@
         <div class="visibility-controls">
           <div class="control-item">
             <label>
-              <input 
-                type="checkbox" 
-                v-model="showSocketLabels"
-                @change="updateLabelVisibility('sockets')"
+              <input
+                  type="checkbox"
+                  v-model="showSocketLabels"
+                  @change="updateLabelVisibility('sockets')"
               >
               <span>Electrical Outlets</span>
             </label>
           </div>
           <div class="control-item">
             <label>
-              <input 
-                type="checkbox" 
-                v-model="showWallLightLabels"
-                @change="updateLabelVisibility('wallLights')"
+              <input
+                  type="checkbox"
+                  v-model="showWallLightLabels"
+                  @change="updateLabelVisibility('wallLights')"
               >
               <span>Wall Lights</span>
             </label>
@@ -137,8 +137,8 @@ export default {
   },
   computed: {
     ...mapState('project', [
-      'isRoutingActive', 
-      'labelVisibility', 
+      'isRoutingActive',
+      'labelVisibility',
       'currentMode',
       'showLabelSettings',
       'distributionBoxes'
@@ -190,14 +190,20 @@ export default {
       return '36+ sectors (multiple panels may be needed)';
     },
     yellowCableLength() {
-      const calculator = new CableLengthCalculator(this.$store);
-      const lengths = calculator.getCableLengths();
-      return lengths.cable1_5mm;
+      if (!this.isRoutingActive) return 0;
+
+      const router = new AutoElectricalRouter(this.$store);
+      const lengths = router.calculateCableLengths();
+      // Add 10% safety margin and convert to centimeters
+      return Math.ceil(lengths.lighting * 110); // 110% of original length
     },
     blueCableLength() {
-      const calculator = new CableLengthCalculator(this.$store);
-      const lengths = calculator.getCableLengths();
-      return lengths.cable2_5mm;
+      if (!this.isRoutingActive) return 0;
+
+      const router = new AutoElectricalRouter(this.$store);
+      const lengths = router.calculateCableLengths();
+      // Add 10% safety margin and convert to centimeters
+      return Math.ceil(lengths.regularSockets * 110); // 110% of original length
     },
     redCableLength() {
       const calculator = new CableLengthCalculator(this.$store);
@@ -206,24 +212,26 @@ export default {
     },
     formattedYellowCableLength() {
       const length = this.yellowCableLength;
+      if (!Number.isFinite(length) || length < 0) return '0.00 m';
       if (length >= 100) {
-        return `${Math.round(length / 100)} m`;
+        return `${(length / 100).toFixed(2)} m`;
       }
-      return `${Math.round(length)} cm`;
+      return `${length.toFixed(2)} cm`;
     },
     formattedBlueCableLength() {
       const length = this.blueCableLength;
+      if (!Number.isFinite(length) || length < 0) return '0.00 m';
       if (length >= 100) {
-        return `${Math.round(length / 100)} m`;
+        return `${(length / 100).toFixed(2)} m`;
       }
-      return `${Math.round(length)} cm`;
+      return `${length.toFixed(2)} cm`;
     },
     formattedRedCableLength() {
       const length = this.redCableLength;
       if (length >= 100) {
-        return `${Math.round(length / 100)} m`;
+        return `${(length / 100).toFixed(2)} m`;
       }
-      return `${Math.round(length)} cm`;
+      return `${length.toFixed(2)} cm`;
     }
   },
   created() {
@@ -259,7 +267,7 @@ export default {
     syncWithStore() {
       this.showSocketLabels = this.labelVisibility.sockets
       this.showWallLightLabels = this.labelVisibility.wallLights
-      
+
       this.localLabelVisibility = {
         sockets: this.labelVisibility.sockets,
         wallLights: this.labelVisibility.wallLights
@@ -271,14 +279,14 @@ export default {
     },
     updateLabelVisibility(type) {
       if (this.currentMode !== 'auto-routing') return
-      
+
       const newValue = !this.localLabelVisibility[type]
-      
+
       // If toggling sockets, also toggle switches
       if (type === 'sockets') {
         this.showSocketLabels = newValue
         this.localLabelVisibility.sockets = newValue
-        
+
         // Update store for both sockets and switches
         this.$store.dispatch('project/updateLabelVisibility', {
           type: 'sockets',
@@ -294,7 +302,7 @@ export default {
         const showVar = `show${capitalizedType}Labels`
         this[showVar] = newValue
         this.localLabelVisibility[type] = newValue
-        
+
         this.$store.dispatch('project/updateLabelVisibility', {
           type,
           visible: newValue
@@ -428,7 +436,6 @@ export default {
 .yellow-cable-section .cable-type,
 .yellow-cable-section .cable-length {
   color: #D4AC0D;
-  font-size: 16px;
 }
 
 .blue-cable-section {
@@ -438,24 +445,24 @@ export default {
 .blue-cable-section .cable-type,
 .blue-cable-section .cable-length {
   color: #0000FF;
-  font-size: 16px;
 }
 
 .red-cable-section {
-  background: #ffe6e6;
+  background: #ffebeb;
 }
 
 .red-cable-section .cable-type,
 .red-cable-section .cable-length {
   color: #FF0000;
-  font-size: 16px;
 }
 
 .cable-type {
+  font-size: 14px;
   font-weight: 500;
 }
 
 .cable-length {
+  font-size: 16px;
   font-weight: bold;
 }
 

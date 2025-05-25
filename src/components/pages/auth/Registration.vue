@@ -8,7 +8,7 @@
       >
         <!-- Верхній рядок -->
         <div class="d-flex justify-content-between align-items-center ms-4 mt-5">
-          <h5 class="secondary-text">LOGO?</h5>
+          <h5 class="secondary-text">ElectroPlanner</h5>
           <a href="/login" class="text-black fw-semibold">Log in</a>
         </div>
         <!-- Реєстрація -->

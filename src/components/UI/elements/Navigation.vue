@@ -3,7 +3,7 @@
     <div class="nav-box add-radius border-radius-1 m-auto text-center">
       <!-- Лого зліва -->
       <div class="navbar-left">
-        <span class="logo">LOGO</span>
+        <span class="logo">ElectroPlanner</span>
       </div>
 
       <!-- Кнопки справа -->
