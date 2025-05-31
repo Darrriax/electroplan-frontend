@@ -26,18 +26,18 @@ export default class AutoElectricalRouter {
    */
   validateElectricalPanel() {
     const panels = this.store.state.panels.panels || [];
-
+    
     if (panels.length === 0) {
       return {
         isValid: false,
-        message: 'Error: Please add an electrical panel before using automatic cable routing.'
+        message: 'Помилка: Додайте електричну панель перед використанням автоматичної прокладки кабелів.'
       };
     }
-
+    
     if (panels.length > 1) {
       return {
         isValid: false,
-        message: 'Error: Project can only have one electrical panel. Please remove extra panels.'
+        message: 'Помилка: Проєкт може мати лише одну електричну панель. Видаліть зайві панелі.'
       };
     }
 
@@ -54,10 +54,10 @@ export default class AutoElectricalRouter {
    */
   calculateRoomCenter(points) {
     if (!points || points.length === 0) return { x: 0, y: 0 };
-
+    
     const sumX = points.reduce((sum, point) => sum + point.x, 0);
     const sumY = points.reduce((sum, point) => sum + point.y, 0);
-
+    
     return {
       x: sumX / points.length,
       y: sumY / points.length
@@ -78,27 +78,27 @@ export default class AutoElectricalRouter {
     // For each switch, check if all other switches are within the threshold
     for (let i = 0; i < switches.length; i++) {
       let allNearby = true;
-
+      
       for (let j = 0; j < switches.length; j++) {
         if (i === j) continue;
-
+        
         const distance = this.calculateDistance(
-            switches[i].position,
-            switches[j].position
+          switches[i].position,
+          switches[j].position
         );
-
+        
         if (distance > GROUPING_THRESHOLD) {
           allNearby = false;
           break;
         }
       }
-
+      
       // If we found a switch where all others are nearby, the switches are grouped
       if (allNearby) {
         return true;
       }
     }
-
+    
     return false;
   }
 
@@ -122,7 +122,7 @@ export default class AutoElectricalRouter {
     };
 
     // Quick check if point is outside bounding box
-    if (pointX < bounds.minX || pointX > bounds.maxX ||
+    if (pointX < bounds.minX || pointX > bounds.maxX || 
         pointY < bounds.minY || pointY > bounds.maxY) {
       return false;
     }
@@ -135,8 +135,8 @@ export default class AutoElectricalRouter {
       const yj = Number(polygon[j].y);
 
       const intersect = ((yi > pointY) !== (yj > pointY)) &&
-          (pointX < (xj - xi) * (pointY - yi) / (yj - yi) + xi);
-
+        (pointX < (xj - xi) * (pointY - yi) / (yj - yi) + xi);
+      
       if (intersect) {
         inside = !inside;
       }
@@ -164,7 +164,7 @@ export default class AutoElectricalRouter {
     rooms.forEach(room => {
       // Use room.path for the room boundary
       const roomPath = room.path;
-
+      
       // Find switches in this room
       const switchesInRoom = switches.filter(sw => {
         return this.isPointInPolygon(sw.position, roomPath);
@@ -201,13 +201,13 @@ export default class AutoElectricalRouter {
    * @returns {number} Distance between points
    */
   calculateDistance(point1, point2) {
-    if (!point1 || !point2 || typeof point1.x === 'undefined' || typeof point1.y === 'undefined' ||
+    if (!point1 || !point2 || typeof point1.x === 'undefined' || typeof point1.y === 'undefined' || 
         typeof point2.x === 'undefined' || typeof point2.y === 'undefined') {
       return Infinity;
     }
     return Math.sqrt(
-        Math.pow(point1.x - point2.x, 2) +
-        Math.pow(point1.y - point2.y, 2)
+      Math.pow(point1.x - point2.x, 2) + 
+      Math.pow(point1.y - point2.y, 2)
     );
   }
 
@@ -235,7 +235,7 @@ export default class AutoElectricalRouter {
     for (let x = bounds.minX; x <= bounds.maxX; x += gridSize) {
       for (let y = bounds.minY; y <= bounds.maxY; y += gridSize) {
         const testPoint = { x, y };
-
+        
         // Check if point is inside room with margin
         if (this.isPointInPolygon(testPoint, roomPath)) {
           // Check if point is at least margin units away from all walls
@@ -243,9 +243,9 @@ export default class AutoElectricalRouter {
           for (let i = 0; i < roomPath.length; i++) {
             const j = (i + 1) % roomPath.length;
             const distToWall = this.distanceToLine(
-                testPoint,
-                roomPath[i],
-                roomPath[j]
+              testPoint,
+              roomPath[i],
+              roomPath[j]
             );
             if (distToWall < margin) {
               isSafeFromWalls = false;
@@ -328,18 +328,18 @@ export default class AutoElectricalRouter {
     const panelRoom = rooms.find(room => this.isPointInPolygon(panelPosition, room.path));
 
     this.distributionBoxes = roomsNeedingBoxes
-        .filter(({ room }) => room.id !== panelRoom?.id) // Skip the room with the electrical panel
-        .map(({ room }) => {
-          // Find optimal position closest to panel while respecting room boundaries
-          const position = this.findClosestValidPosition(room.path, panelPosition);
-
-          return {
-            id: `box-${room.id}`,
-            position: position,
-            roomId: room.id,
-            radius: 8  // 80mm diameter = 40mm radius
-          };
-        });
+      .filter(({ room }) => room.id !== panelRoom?.id) // Skip the room with the electrical panel
+      .map(({ room }) => {
+        // Find optimal position closest to panel while respecting room boundaries
+        const position = this.findClosestValidPosition(room.path, panelPosition);
+        
+        return {
+          id: `box-${room.id}`,
+          position: position,
+          roomId: room.id,
+          radius: 8  // 80mm diameter = 40mm radius
+        };
+      });
 
     return this.distributionBoxes;
   }
@@ -356,7 +356,7 @@ export default class AutoElectricalRouter {
     }
 
     ctx.save();
-
+    
     // Apply transform
     ctx.translate(transform.panOffset.x, transform.panOffset.y);
     ctx.scale(transform.zoom, transform.zoom);
@@ -375,7 +375,7 @@ export default class AutoElectricalRouter {
       ctx.fillStyle = '#000';
       ctx.font = `${12 / transform.zoom}px Arial`;
       ctx.textAlign = 'center';
-      ctx.fillText('Junction Box', box.position.x, box.position.y - box.radius - 5 / transform.zoom);
+      ctx.fillText('Розподільча коробка', box.position.x, box.position.y - box.radius - 5 / transform.zoom);
     });
 
     ctx.restore();
@@ -430,7 +430,7 @@ export default class AutoElectricalRouter {
 
     // Calculate wall length
     const wallLength = Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y);
-
+    
     // Normalize wall vector
     const normalizedWall = {
       x: wallVector.x / wallLength,
@@ -470,10 +470,10 @@ export default class AutoElectricalRouter {
    */
   draw(ctx, transform) {
     if (!this.store.state.project.isRoutingActive) return;
-
+    
     // Reset used panel points tracking at the start of each draw
     this.usedPanelPoints.clear();
-
+    
     this.drawActiveAreas(ctx, transform);
     this.drawPanelPoints(ctx, transform);
     this.drawBoxes(ctx, transform);
@@ -528,7 +528,7 @@ export default class AutoElectricalRouter {
     // Process each room
     rooms.forEach(room => {
       const roomSwitches = switchesByRoom.get(room.id) || [];
-
+      
       if (room.id === panelRoom.id) {
         // For panel room, connect all active switches directly to panel
         roomSwitches.forEach(switchObj => {
@@ -557,7 +557,7 @@ export default class AutoElectricalRouter {
       } else {
         // For other rooms
         const junctionBox = this.distributionBoxes.find(box => box.roomId === room.id);
-
+        
         if (junctionBox) {
           // Check if any switches in the room control lights
           const hasActiveSwitches = roomSwitches.some(sw => this.doesSwitchControlAnything(sw));
@@ -582,7 +582,7 @@ export default class AutoElectricalRouter {
                 x: -pathVector.y / pathLength,
                 y: pathVector.x / pathLength
               };
-
+              
               const offset = (index - (roomSwitches.length - 1) / 2) * 3;
               targetPoint = {
                 x: junctionBox.position.x + offsetVector.x * offset,
@@ -700,14 +700,14 @@ export default class AutoElectricalRouter {
    */
   drawSwitchPanelConnection(ctx, switchPoint, panelPoint, transform) {
     const path = this.calculateOrthogonalPath(switchPoint, panelPoint, this.store.state.walls.walls || []);
-
+    
     ctx.beginPath();
     ctx.moveTo(path[0].x, path[0].y);
     path.forEach((point, i) => {
       if (i === 0) return;
       ctx.lineTo(point.x, point.y);
     });
-
+    
     ctx.strokeStyle = '#D4AC0D';
     ctx.lineWidth = 2 / transform.zoom;
     ctx.stroke();
@@ -733,7 +733,7 @@ export default class AutoElectricalRouter {
 
       // Draw active area (between room walls and inactive area)
       ctx.beginPath();
-
+      
       // Start with outer path (room walls)
       ctx.moveTo(room.path[0].x, room.path[0].y);
       for (let i = 1; i < room.path.length; i++) {
@@ -789,7 +789,7 @@ export default class AutoElectricalRouter {
     const orderedPath = isClockwise ? [...roomPath] : [...roomPath].reverse();
 
     const insetPoints = [];
-
+    
     // Process each wall segment
     for (let i = 0; i < orderedPath.length - 1; i++) {
       const start = orderedPath[i];
@@ -804,7 +804,7 @@ export default class AutoElectricalRouter {
 
       // Calculate wall length
       const wallLength = Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y);
-
+      
       if (wallLength === 0) continue;
 
       // Normalize wall vector
@@ -834,7 +834,7 @@ export default class AutoElectricalRouter {
         y: next.y - end.y
       };
       const nextWallLength = Math.sqrt(nextWallVector.x * nextWallVector.x + nextWallVector.y * nextWallVector.y);
-
+      
       if (nextWallLength === 0) continue;
 
       const nextNormalizedWall = {
@@ -854,10 +854,10 @@ export default class AutoElectricalRouter {
 
       // Calculate intersection point
       const intersection = this.findLineIntersection(
-          offsetPoint,
-          { x: offsetPoint.x + normalizedWall.x, y: offsetPoint.y + normalizedWall.y },
-          nextOffsetPoint,
-          { x: nextOffsetPoint.x - nextNormalizedWall.x, y: nextOffsetPoint.y - nextNormalizedWall.y }
+        offsetPoint,
+        { x: offsetPoint.x + normalizedWall.x, y: offsetPoint.y + normalizedWall.y },
+        nextOffsetPoint,
+        { x: nextOffsetPoint.x - nextNormalizedWall.x, y: nextOffsetPoint.y - nextNormalizedWall.y }
       );
 
       if (intersection) {
@@ -887,7 +887,7 @@ export default class AutoElectricalRouter {
       const next = path[i + 1];
       sum += (next.x - current.x) * (next.y + current.y);
     }
-
+    
     // Close the path
     const last = path[path.length - 1];
     const first = path[0];
@@ -1059,8 +1059,8 @@ export default class AutoElectricalRouter {
       if (roomSockets.length === 0) return;
 
       // Check if room has regular sockets
-      const hasRegularSockets = roomSockets.some(socket =>
-          socket.deviceType !== 'powerful' && socket.deviceType !== 'high-power'
+      const hasRegularSockets = roomSockets.some(socket => 
+        socket.deviceType !== 'powerful' && socket.deviceType !== 'high-power'
       );
 
       // Find or calculate the connection point for this room
@@ -1075,7 +1075,7 @@ export default class AutoElectricalRouter {
       } else {
         // Group nearby sockets
         const socketClusters = this.groupSocketsByProximity(roomSockets, walls);
-
+        
         // Find the cluster or single socket closest to the panel
         let nearestGroup = null;
         let minDistance = Infinity;
@@ -1093,12 +1093,12 @@ export default class AutoElectricalRouter {
 
           // Calculate the connection point for this cluster
           const distance = referenceSocket.deviceType === 'high-power' ? 27 :
-              referenceSocket.deviceType === 'powerful' ? 22 : 25;
-
+                         referenceSocket.deviceType === 'powerful' ? 22 : 25;
+          
           const point = this.calculatePointPosition(
-              { ...referenceSocket, position: { ...clusterCenter, side: referenceSocket.position.side } },
-              walls,
-              distance
+            { ...referenceSocket, position: { ...clusterCenter, side: referenceSocket.position.side } },
+            walls,
+            distance
           );
 
           if (!point) return;
@@ -1129,7 +1129,7 @@ export default class AutoElectricalRouter {
 
         // Calculate path avoiding walls
         const path = this.calculateOrthogonalPath(connectionPoint, panelPoint, walls);
-
+        
         // Only draw connection if room has regular sockets
         if (hasRegularSockets) {
           // Draw the connection
@@ -1139,7 +1139,7 @@ export default class AutoElectricalRouter {
             if (i === 0) return;
             ctx.lineTo(point.x, point.y);
           });
-
+          
           ctx.strokeStyle = '#0000FF';
           ctx.lineWidth = 2 / transform.zoom;
           ctx.stroke();
@@ -1203,10 +1203,10 @@ export default class AutoElectricalRouter {
       const isInRoom = room.path.some((point, index) => {
         const nextIndex = (index + 1) % room.path.length;
         return (
-            (point.x === wall.start.x && point.y === wall.start.y &&
-                room.path[nextIndex].x === wall.end.x && room.path[nextIndex].y === wall.end.y) ||
-            (point.x === wall.end.x && point.y === wall.end.y &&
-                room.path[nextIndex].x === wall.start.x && room.path[nextIndex].y === wall.start.y)
+          (point.x === wall.start.x && point.y === wall.start.y &&
+           room.path[nextIndex].x === wall.end.x && room.path[nextIndex].y === wall.end.y) ||
+          (point.x === wall.end.x && point.y === wall.end.y &&
+           room.path[nextIndex].x === wall.start.x && room.path[nextIndex].y === wall.start.y)
         );
       });
 
@@ -1243,10 +1243,10 @@ export default class AutoElectricalRouter {
         for (let i = 0; i < points.length; i++) {
           const j = (i + 1) % points.length;
           if (
-              (points[i].x === wall.start.x && points[i].y === wall.start.y &&
-                  points[j].x === wall.end.x && points[j].y === wall.end.y) ||
-              (points[i].x === wall.end.x && points[i].y === wall.end.y &&
-                  points[j].x === wall.start.x && points[j].y === wall.start.y)
+            (points[i].x === wall.start.x && points[i].y === wall.start.y &&
+             points[j].x === wall.end.x && points[j].y === wall.end.y) ||
+            (points[i].x === wall.end.x && points[i].y === wall.end.y &&
+             points[j].x === wall.start.x && points[j].y === wall.start.y)
           ) {
             return true;
           }
@@ -1299,8 +1299,8 @@ export default class AutoElectricalRouter {
         // Check if sockets are on the same wall
         if (socket.wall === otherSocket.wall) {
           const distance = Math.sqrt(
-              Math.pow(socket.position.x - otherSocket.position.x, 2) +
-              Math.pow(socket.position.y - otherSocket.position.y, 2)
+            Math.pow(socket.position.x - otherSocket.position.x, 2) +
+            Math.pow(socket.position.y - otherSocket.position.y, 2)
           );
 
           // If socket is within range, recursively find its connections
@@ -1380,9 +1380,9 @@ export default class AutoElectricalRouter {
 
     walls.forEach(wall => {
       const point = this.findNearestPointOnLine(
-          position,
-          wall.start,
-          wall.end
+        position,
+        wall.start,
+        wall.end
       );
 
       const distance = this.calculateDistance(position, point);
@@ -1466,8 +1466,8 @@ export default class AutoElectricalRouter {
           y: (start.y + end.y) / 2
         };
         path.push({
-          x: midPoint.x + normalVector.x * WALL_OFFSET,
-          y: midPoint.y + normalVector.y * WALL_OFFSET
+          x: midPoint.x + normalVector.x * 30, // 30cm from wall
+          y: midPoint.y + normalVector.y * 30
         });
       } else {
         // Different walls - create corner path
@@ -1616,20 +1616,20 @@ export default class AutoElectricalRouter {
     const walls = this.store.state.walls.walls || [];
     const alpha = 1.0; // Pheromone importance
     const beta = 2.0;  // Distance importance
-
+    
     const probabilities = [];
     let sum = 0;
 
     unvisited.forEach(nextIndex => {
       if (!points[nextIndex]) return;
-
+      
       const current = points[currentIndex];
       const target = points[nextIndex];
-
+      
       // Calculate path following walls
       const path = this.calculateOrthogonalPath(current, target, walls);
       const pathLength = this.calculatePathLength(path.map((p, i) => ({ id: i, position: p })), path);
-
+      
       if (pathLength === Infinity) return;
 
       const pheromone = pheromones[currentIndex][nextIndex] || 1.0;
@@ -1652,14 +1652,14 @@ export default class AutoElectricalRouter {
   selectNextPoint(probabilities) {
     const random = Math.random();
     let sum = 0;
-
+    
     for (const p of probabilities) {
       sum += p.probability;
       if (random <= sum) {
         return p.index;
       }
     }
-
+    
     return probabilities[probabilities.length - 1].index;
   }
 
@@ -1714,12 +1714,12 @@ export default class AutoElectricalRouter {
    */
   findOptimalPath(points, powerSource) {
     if (!points || points.length === 0 || !powerSource) return [];
-
+    
     // Validate all points have valid coordinates
-    const validPoints = points.filter(point =>
-        point && typeof point.x !== 'undefined' && typeof point.y !== 'undefined'
+    const validPoints = points.filter(point => 
+      point && typeof point.x !== 'undefined' && typeof point.y !== 'undefined'
     );
-
+    
     if (validPoints.length === 0) return [];
     if (validPoints.length === 1) return [0];
 
@@ -1803,17 +1803,17 @@ export default class AutoElectricalRouter {
    */
   findOptimalCircuitPath(points, powerSource, walls, roomPath) {
     if (!points || points.length === 0 || !powerSource || !roomPath) return [];
-
+    
     // Calculate inactive area
     const inactiveArea = this.calculateInsetPath(roomPath, 50);
     if (!inactiveArea) return [];
 
     // Validate all points have valid coordinates
-    const validPoints = points.filter(point =>
-        point && typeof point.x !== 'undefined' && typeof point.y !== 'undefined' &&
-        this.isPointInActiveArea(point, roomPath, inactiveArea)
+    const validPoints = points.filter(point => 
+      point && typeof point.x !== 'undefined' && typeof point.y !== 'undefined' &&
+      this.isPointInActiveArea(point, roomPath, inactiveArea)
     );
-
+    
     if (validPoints.length === 0) return [];
     if (validPoints.length === 1) return [0];
 
@@ -1843,7 +1843,7 @@ export default class AutoElectricalRouter {
         // Start from the farthest point
         const path = [startPointIndex];
         const unvisited = validPoints.map((_, index) => index)
-            .filter(i => i !== startPointIndex);
+          .filter(i => i !== startPointIndex);
 
         // Build path visiting all points
         while (unvisited.length > 0) {
@@ -1895,10 +1895,10 @@ export default class AutoElectricalRouter {
     for (let i = 0; i < path.length - 1; i++) {
       const start = points[path[i]];
       const end = points[path[i + 1]];
-
+      
       // Calculate orthogonal path for this segment
       const segmentPath = this.calculateOrthogonalPath(start, end, walls);
-
+      
       // Check if segment path is valid
       if (!this.isPathValid(segmentPath, roomPath, inactiveArea)) {
         return false;
@@ -1917,19 +1917,19 @@ export default class AutoElectricalRouter {
    */
   calculateTotalCircuitLength(path, points, walls) {
     let totalLength = 0;
-
+    
     for (let i = 0; i < path.length - 1; i++) {
       const start = points[path[i]];
       const end = points[path[i + 1]];
-
+      
       if (!start || !end) continue;
-
+      
       const orthogonalPath = this.calculateOrthogonalPath(start, end, walls);
       for (let j = 0; j < orthogonalPath.length - 1; j++) {
         totalLength += this.calculateDistance(orthogonalPath[j], orthogonalPath[j + 1]);
       }
     }
-
+    
     return totalLength;
   }
 
@@ -2038,7 +2038,7 @@ export default class AutoElectricalRouter {
         } else {
           // For regular sockets in other rooms, create continuous path through active area
           const socketClusters = this.groupSocketsByProximity(group.regular, walls);
-
+          
           // Find junction box for this room
           const junctionBox = this.distributionBoxes.find(box => box.roomId === roomId);
           const powerSource = this.getPowerSourcePosition(roomId);
@@ -2048,15 +2048,15 @@ export default class AutoElectricalRouter {
           const clusterPoints = socketClusters.map(cluster => {
             const avgX = cluster.reduce((sum, s) => sum + s.position.x, 0) / cluster.length;
             const avgY = cluster.reduce((sum, s) => sum + s.position.y, 0) / cluster.length;
-
+            
             const referenceSocket = cluster[0];
             const wall = walls.find(w => w.id === referenceSocket.wall);
             if (!wall) return null;
 
             const point = this.calculatePointPosition(
-                { ...referenceSocket, position: { x: avgX, y: avgY, side: referenceSocket.position.side } },
-                walls,
-                25
+              { ...referenceSocket, position: { x: avgX, y: avgY, side: referenceSocket.position.side } },
+              walls,
+              25
             );
 
             if (!point) return null;
@@ -2089,10 +2089,10 @@ export default class AutoElectricalRouter {
             if (startPoint) {
               // Find path through all cluster points
               const orderedPoints = this.findRoomSocketPath(
-                  clusterPoints.map(cp => cp.point).filter(p => p !== startPoint),
-                  startPoint,
-                  walls,
-                  room.path
+                clusterPoints.map(cp => cp.point).filter(p => p !== startPoint),
+                startPoint,
+                walls,
+                room.path
               );
 
               if (orderedPoints.length > 0) {
@@ -2104,7 +2104,7 @@ export default class AutoElectricalRouter {
                 for (let i = 0; i < orderedPoints.length; i++) {
                   const nextPoint = orderedPoints[i];
                   const pathSegment = this.findValidPath(currentPoint, nextPoint, room.path);
-
+                  
                   if (pathSegment && pathSegment.length > 0) {
                     pathSegment.forEach((point, index) => {
                       if (index === 0) return;
@@ -2142,12 +2142,12 @@ export default class AutoElectricalRouter {
       if (group.highPower.length > 0) {
         // Sort high-power sockets by distance from panel
         const sortedHighPowerSockets = group.highPower
-            .filter(s => s.deviceType === 'high-power')
-            .sort((a, b) => {
-              const distA = this.calculateDistance(a.position, powerSource);
-              const distB = this.calculateDistance(b.position, powerSource);
-              return distB - distA;
-            });
+          .filter(s => s.deviceType === 'high-power')
+          .sort((a, b) => {
+            const distA = this.calculateDistance(a.position, powerSource);
+            const distB = this.calculateDistance(b.position, powerSource);
+            return distB - distA;
+          });
 
         sortedHighPowerSockets.forEach((socket, index) => {
           const connectionId = `high-power-${socket.id}`;
@@ -2238,7 +2238,7 @@ export default class AutoElectricalRouter {
 
     // If direct path is invalid, try finding a path through valid intermediate points
     const midPoints = [];
-
+    
     // Try points parallel to walls in active area
     const tryPoints = [
       { x: start.x, y: end.y },
@@ -2269,7 +2269,7 @@ export default class AutoElectricalRouter {
       const path1 = this.calculateOrthogonalPath(start, mid, []);
       const path2 = this.calculateOrthogonalPath(mid, end, []);
 
-      if (this.isPathValid(path1, roomPath, inactiveArea) &&
+      if (this.isPathValid(path1, roomPath, inactiveArea) && 
           this.isPathValid(path2, roomPath, inactiveArea)) {
         // Combine paths
         return [...path1.slice(0, -1), ...path2];
@@ -2288,7 +2288,7 @@ export default class AutoElectricalRouter {
    */
   findClosestPointToPanel(points, panelPos) {
     if (!points || points.length === 0) return null;
-
+    
     let closestPoint = points[0];
     let minDistance = this.calculateDistance(points[0], panelPos);
 
@@ -2364,9 +2364,9 @@ export default class AutoElectricalRouter {
       } else {
         // Follow room perimeter from start wall to end wall
         const perimeterPoints = this.findPerimeterPoints(
-            startWallPoint.point,
-            endWallPoint.point,
-            roomPath
+          startWallPoint.point,
+          endWallPoint.point,
+          roomPath
         );
         path.push(...perimeterPoints);
       }
@@ -2457,9 +2457,9 @@ export default class AutoElectricalRouter {
     // Use the first socket's wall and side for the center point calculation
     const firstSocket = cluster[0];
     return this.calculatePointPosition(
-        { ...firstSocket, position: { ...firstSocket.position, x: avgX, y: avgY } },
-        walls,
-        30 // Standard 30cm distance for regular sockets
+      { ...firstSocket, position: { ...firstSocket.position, x: avgX, y: avgY } },
+      walls,
+      30 // Standard 30cm distance for regular sockets
     );
   }
 
@@ -2548,7 +2548,7 @@ export default class AutoElectricalRouter {
       // Separate sockets by type
       const regularSockets = roomSockets.filter(s => s.deviceType === 'regular');
       const powerfulSockets = roomSockets.filter(s => s.deviceType === 'powerful' || s.deviceType === 'high-power')
-          .sort((a, b) => this.calculateWallDistance(a.position, targetPoint) - this.calculateWallDistance(b.position, targetPoint));
+        .sort((a, b) => this.calculateWallDistance(a.position, targetPoint) - this.calculateWallDistance(b.position, targetPoint));
 
       // Draw points for regular sockets
       regularSockets.forEach(socket => {
@@ -2593,10 +2593,10 @@ export default class AutoElectricalRouter {
       for (let i = 0; i < points.length; i++) {
         const j = (i + 1) % points.length;
         if (
-            (points[i].x === wall.start.x && points[i].y === wall.start.y &&
-                points[j].x === wall.end.x && points[j].y === wall.end.y) ||
-            (points[i].x === wall.end.x && points[i].y === wall.end.y &&
-                points[j].x === wall.start.x && points[j].y === wall.start.y)
+          (points[i].x === wall.start.x && points[i].y === wall.start.y &&
+           points[j].x === wall.end.x && points[j].y === wall.end.y) ||
+          (points[i].x === wall.end.x && points[i].y === wall.end.y &&
+           points[j].x === wall.start.x && points[j].y === wall.start.y)
         ) {
           return true;
         }
@@ -2708,7 +2708,7 @@ export default class AutoElectricalRouter {
       y: panelWall.end.y - panelWall.start.y
     };
     const wallLength = Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y);
-
+    
     // Normalize wall vector
     const normalizedWall = {
       x: wallVector.x / wallLength,
@@ -2735,7 +2735,7 @@ export default class AutoElectricalRouter {
 
     // Get panel width from store (in mm, convert to cm)
     const panelWidth = (this.store.state.panels?.defaultWidth || 300) / 10;
-
+    
     // Calculate spacing between points
     const spacing = panelWidth / (totalPins + 1);
 
@@ -2792,13 +2792,13 @@ export default class AutoElectricalRouter {
    */
   findLineIntersection(p1, p2, p3, p4) {
     const denominator = (p4.y - p3.y) * (p2.x - p1.x) - (p4.x - p3.x) * (p2.y - p1.y);
-
+    
     if (denominator === 0) {
       return null;
     }
 
     const ua = ((p4.x - p3.x) * (p1.y - p3.y) - (p4.y - p3.y) * (p1.x - p3.x)) / denominator;
-
+    
     return {
       x: p1.x + ua * (p2.x - p1.x),
       y: p1.y + ua * (p2.y - p1.y)
@@ -2847,8 +2847,8 @@ export default class AutoElectricalRouter {
 
         // Check if these line segments intersect
         const intersection = this.findLineIntersection(
-            line1Start, line1End,
-            line2Start, line2End
+          line1Start, line1End,
+          line2Start, line2End
         );
 
         if (intersection &&
@@ -2959,8 +2959,8 @@ export default class AutoElectricalRouter {
 
     // Check actual line intersection
     return this.doPathsIntersect(
-        [source, target],
-        [existingPoint, target]
+      [source, target],
+      [existingPoint, target]
     );
   }
 
@@ -3094,8 +3094,8 @@ export default class AutoElectricalRouter {
           this.drawGroupLightConnection(ctx, switchObj.connectedGroup, switchPoint, transform);
         } else {
           // Check for direct light connection
-          const connectedLight = [...wallLights, ...ceilingLights].find(light =>
-              light.switchId === switchObj.id
+          const connectedLight = [...wallLights, ...ceilingLights].find(light => 
+            light.switchId === switchObj.id
           );
           if (connectedLight) {
             this.drawSingleLightConnection(ctx, connectedLight, switchPoint, transform);
@@ -3107,8 +3107,8 @@ export default class AutoElectricalRouter {
           // First group - no offset
           this.drawGroupLightConnection(ctx, switchObj.connectedGroup1, switchPoint, transform, false);
         } else {
-          const connectedLight1 = [...wallLights, ...ceilingLights].find(light =>
-              light.switchIds && light.switchIds[0] === switchObj.id
+          const connectedLight1 = [...wallLights, ...ceilingLights].find(light => 
+            light.switchIds && light.switchIds[0] === switchObj.id
           );
           if (connectedLight1) {
             this.drawSingleLightConnection(ctx, connectedLight1, switchPoint, transform, false);
@@ -3119,8 +3119,8 @@ export default class AutoElectricalRouter {
           // Second group - with 3cm offset
           this.drawGroupLightConnection(ctx, switchObj.connectedGroup2, switchPoint, transform, true);
         } else {
-          const connectedLight2 = [...wallLights, ...ceilingLights].find(light =>
-              light.switchIds && light.switchIds[1] === switchObj.id
+          const connectedLight2 = [...wallLights, ...ceilingLights].find(light => 
+            light.switchIds && light.switchIds[1] === switchObj.id
           );
           if (connectedLight2) {
             this.drawSingleLightConnection(ctx, connectedLight2, switchPoint, transform, true);
@@ -3202,7 +3202,7 @@ export default class AutoElectricalRouter {
           x: pathVector.x / pathLength,
           y: pathVector.y / pathLength
         };
-
+        
         // Calculate offset vector (perpendicular to path)
         const offsetVector = {
           x: -normalizedPath.y,
@@ -3217,7 +3217,7 @@ export default class AutoElectricalRouter {
 
       // Calculate orthogonal path from connection point to switch
       const path = this.calculateOrthogonalPath(connectionPoint, targetPoint, walls);
-
+      
       // Draw the path to switch
       ctx.beginPath();
       ctx.moveTo(path[0].x, path[0].y);
@@ -3249,7 +3249,7 @@ export default class AutoElectricalRouter {
       }
 
       const path = this.calculateOrthogonalPath(light.position, targetPoint, walls);
-
+      
       // Draw the path
       ctx.beginPath();
       ctx.moveTo(path[0].x, path[0].y);
@@ -3276,7 +3276,7 @@ export default class AutoElectricalRouter {
     const rooms = this.store.state.rooms.rooms || [];
     const wallLights = this.store.getters['lights/getAllWallLights'] || [];
     const ceilingLights = this.store.getters['lights/getAllCeilingLights'] || [];
-
+    
     // Get all lights in the group
     const groupLights = group.lightRefs.map(ref => {
       if (ref.type === 'wall-light') {
@@ -3309,7 +3309,7 @@ export default class AutoElectricalRouter {
         y: switchPoint.y - firstLight.position.y
       };
       const pathLength = Math.sqrt(pathVector.x * pathVector.x + pathVector.y * pathVector.y);
-
+      
       // Calculate offset vector perpendicular to path
       const offsetVector = {
         x: -pathVector.y / pathLength,
@@ -3362,14 +3362,14 @@ export default class AutoElectricalRouter {
 
       // Sort remaining lights by their position along the wall
       const sortedLights = wallLights
-          .filter(light => light !== furthestLight)
-          .sort((a, b) => {
-            const distA = (a.position.x - wall.start.x) * normalizedWall.x +
-                (a.position.y - wall.start.y) * normalizedWall.y;
-            const distB = (b.position.x - wall.start.x) * normalizedWall.x +
-                (b.position.y - wall.start.y) * normalizedWall.y;
-            return distA - distB;
-          });
+        .filter(light => light !== furthestLight)
+        .sort((a, b) => {
+          const distA = (a.position.x - wall.start.x) * normalizedWall.x + 
+                       (a.position.y - wall.start.y) * normalizedWall.y;
+          const distB = (b.position.x - wall.start.x) * normalizedWall.x + 
+                       (b.position.y - wall.start.y) * normalizedWall.y;
+          return distA - distB;
+        });
 
       // Calculate connection points 20cm from wall
       const furthestPoint = {
@@ -3439,12 +3439,12 @@ export default class AutoElectricalRouter {
 
       // Sort remaining lights by distance from furthest light
       const sortedLights = ceilingLightsInGroup
-          .filter(light => light !== furthestLight)
-          .sort((a, b) => {
-            const distA = this.calculateDistance(a.position, furthestLight.position);
-            const distB = this.calculateDistance(b.position, furthestLight.position);
-            return distA - distB;
-          });
+        .filter(light => light !== furthestLight)
+        .sort((a, b) => {
+          const distA = this.calculateDistance(a.position, furthestLight.position);
+          const distB = this.calculateDistance(b.position, furthestLight.position);
+          return distA - distB;
+        });
 
       // Start from furthest light
       let currentPoint = furthestLight.position;
@@ -3492,9 +3492,9 @@ export default class AutoElectricalRouter {
       let minWallDistance = Infinity;
       walls.forEach(wall => {
         const distance = this.distanceToLine(
-            light.position,
-            wall.start,
-            wall.end
+          light.position,
+          wall.start,
+          wall.end
         );
         minWallDistance = Math.min(minWallDistance, distance);
       });
@@ -3572,7 +3572,7 @@ export default class AutoElectricalRouter {
 
       // Count pins for active switches
       const activeSwitches = roomSwitches.filter(sw => this.doesSwitchControlAnything(sw));
-
+      
       if (activeSwitches.length > 0) {
         // If room has a junction box or single switch, add one pin
         const hasJunctionBox = this.distributionBoxes.some(box => box.roomId === room.id);
@@ -3615,8 +3615,8 @@ export default class AutoElectricalRouter {
       const PANEL_HEIGHT = 140;    // 1.4m from floor
 
       // Process regular sockets
-      const regularSocketGroups = this.groupSocketsByProximity(sockets.filter(s =>
-          s.deviceType !== 'powerful' && s.deviceType !== 'high-power'
+      const regularSocketGroups = this.groupSocketsByProximity(sockets.filter(s => 
+        s.deviceType !== 'powerful' && s.deviceType !== 'high-power'
       ), walls);
 
       regularSocketGroups.forEach(group => {
@@ -3624,10 +3624,10 @@ export default class AutoElectricalRouter {
 
         // Sort sockets by their x position to maintain logical order
         const sortedSockets = [...group].sort((a, b) => a.position.x - b.position.x);
-
+        
         // Start from the panel
         let currentPoint = panel;
-
+        
         // Initial descent from ceiling to first socket height
         regularSocketLength += CEILING_HEIGHT - SOCKET_HEIGHT;
 
@@ -3635,12 +3635,12 @@ export default class AutoElectricalRouter {
         sortedSockets.forEach((socket, index) => {
           // Add horizontal distance to this socket
           regularSocketLength += this.calculateDistance(currentPoint, socket.position);
-
+          
           // If this is not the last socket, add distance to next socket
           if (index < sortedSockets.length - 1) {
             regularSocketLength += this.calculateDistance(socket.position, sortedSockets[index + 1].position);
           }
-
+          
           currentPoint = socket.position;
         });
 
@@ -3660,13 +3660,13 @@ export default class AutoElectricalRouter {
         lightingLength += this.calculateDistance(panel, switchPoint);
 
         if (switchObj.type === 'single-switch') {
-          const connectedLight = [...wallLights, ...ceilingLights].find(light =>
-              light.switchId === switchObj.id
+          const connectedLight = [...wallLights, ...ceilingLights].find(light => 
+            light.switchId === switchObj.id
           );
           if (connectedLight) {
             // Add horizontal distance from switch to light
             lightingLength += this.calculateDistance(switchPoint, connectedLight.position);
-
+            
             // Add vertical distance based on light type
             if (connectedLight.type === 'wall-light') {
               lightingLength += Math.abs(WALL_LIGHT_HEIGHT - SWITCH_HEIGHT);
@@ -3685,10 +3685,10 @@ export default class AutoElectricalRouter {
       unconnectedWallLights.forEach(light => {
         // Descent from ceiling to wall light height
         lightingLength += CEILING_HEIGHT - WALL_LIGHT_HEIGHT;
-
+        
         // Add horizontal distance from panel to light
         lightingLength += this.calculateDistance(panel, light.position);
-
+        
         // Ascent back to ceiling
         lightingLength += CEILING_HEIGHT - WALL_LIGHT_HEIGHT;
       });
@@ -3698,7 +3698,7 @@ export default class AutoElectricalRouter {
       unconnectedCeilingLights.forEach(light => {
         // Only need vertical run to ceiling
         lightingLength += CEILING_HEIGHT;
-
+        
         // Add horizontal distance from panel to light
         lightingLength += this.calculateDistance(panel, light.position);
       });
@@ -3921,12 +3921,12 @@ export default class AutoElectricalRouter {
 
       // Sort remaining lights by position along wall
       const sortedLights = wallLights
-          .filter(light => light !== furthestLight)
-          .sort((a, b) => {
-            const distA = this.calculateDistance(a.position, furthestLight.position);
-            const distB = this.calculateDistance(b.position, furthestLight.position);
-            return distA - distB;
-          });
+        .filter(light => light !== furthestLight)
+        .sort((a, b) => {
+          const distA = this.calculateDistance(a.position, furthestLight.position);
+          const distB = this.calculateDistance(b.position, furthestLight.position);
+          return distA - distB;
+        });
 
       // Connect through remaining lights
       let currentPoint = furthestPoint;
@@ -3959,12 +3959,12 @@ export default class AutoElectricalRouter {
 
       // Sort remaining lights by distance from furthest light
       const sortedLights = ceilingLightsInGroup
-          .filter(light => light !== furthestLight)
-          .sort((a, b) => {
-            const distA = this.calculateDistance(a.position, furthestLight.position);
-            const distB = this.calculateDistance(b.position, furthestLight.position);
-            return distA - distB;
-          });
+        .filter(light => light !== furthestLight)
+        .sort((a, b) => {
+          const distA = this.calculateDistance(a.position, furthestLight.position);
+          const distB = this.calculateDistance(b.position, furthestLight.position);
+          return distA - distB;
+        });
 
       // Connect through lights
       let currentPoint = furthestLight.position;

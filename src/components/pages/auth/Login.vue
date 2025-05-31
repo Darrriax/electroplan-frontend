@@ -9,26 +9,26 @@
         <!-- Верхній рядок -->
         <div class="d-flex justify-content-between align-items-center ms-4 mt-5">
           <h5 class="secondary-text">ElectroPlanner</h5>
-          <a href="/registration" class="text-black fw-semibold">Sign up</a>
+          <a href="/registration" class="text-black fw-semibold">Реєстрація</a>
         </div>
         <!-- Логін -->
-        <h3 class="my-4 ms-3 text-start">Log in</h3>
+        <h3 class="my-4 ms-3 text-start">Вхід</h3>
 
         <!-- Форма -->
         <div class="row mt-2 gap-2">
           <div class="col-md">
             <text-field
-                placeholder="E-mail address"
+                placeholder="Електронна пошта"
                 icon="fa-solid fa-at"
                 v-model="email"
                 :error="error['email']"/>
           </div>
           <password-field
-              placeholder="Enter password..."
+              placeholder="Введіть пароль..."
               v-model="password"
               :error="error['password']"/>
         </div>
-        <button-simple label="Continue" class="set-min-width mt-4"/>
+        <button-simple label="Продовжити" class="set-min-width mt-4"/>
       </form>
     </div>
     <message :label="message"/>

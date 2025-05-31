@@ -34,30 +34,30 @@ export const project = {
             'original-plan': {
                 name: 'Original Plan',
                 tools: [
-                    { id: 'wall', name: 'wall', label: 'Walls', icon: 'mdi mdi-wall' },
-                    { id: 'door', name: 'door', label: 'Doors', icon: 'mdi mdi-door' },
-                    { id: 'window', name: 'window', label: 'Windows', icon: 'mdi mdi-window-closed-variant' }
+                    { id: 'wall', name: 'wall', label: 'Стіни', icon: 'mdi mdi-wall' },
+                    { id: 'door', name: 'door', label: 'Двері', icon: 'mdi mdi-door' },
+                    { id: 'window', name: 'window', label: 'Вікна', icon: 'mdi mdi-window-closed-variant' }
                 ]
             },
             'power-sockets': {
                 name: 'Power Sockets',
                 tools: [
-                    { id: 'socket', name: 'socket', label: 'Sockets', icon: 'mdi mdi-power-socket' },
-                    { id: 'panel', name: 'panel', label: 'Electrical Panel', icon: 'mdi mdi-electric-switch' }
+                    { id: 'socket', name: 'socket', label: 'Розетки', icon: 'mdi mdi-power-socket' },
+                    { id: 'panel', name: 'panel', label: 'Ел. панель', icon: 'mdi mdi-electric-switch' }
                 ]
             },
             'light': {
                 name: 'Light',
                 tools: [
-                    { id: 'ceiling-light', name: 'ceiling-light', label: 'Ceiling Light', icon: 'mdi mdi-ceiling-light' },
-                    { id: 'wall-light', name: 'wall-light', label: 'Wall Light', icon: 'mdi mdi-wall-sconce' }
+                    { id: 'ceiling-light', name: 'ceiling-light', label: 'Стельовий', icon: 'mdi mdi-ceiling-light' },
+                    { id: 'wall-light', name: 'wall-light', label: 'Настінний', icon: 'mdi mdi-wall-sconce' }
                 ]
             },
             'switches': {
                 name: 'Switches',
                 tools: [
-                    { id: 'single-switch', name: 'single-switch', label: 'Single-Key Switch', icon: 'mdi mdi-toggle-switch' },
-                    { id: 'double-switch', name: 'double-switch', label: 'Double-Key Switch', icon: 'mdi mdi-toggle-switch-variant' }
+                    { id: 'single-switch', name: 'single-switch', label: 'Одинарний', icon: 'mdi mdi-toggle-switch' },
+                    { id: 'double-switch', name: 'double-switch', label: 'Подвійний', icon: 'mdi mdi-toggle-switch-variant' }
                 ]
             }
         },

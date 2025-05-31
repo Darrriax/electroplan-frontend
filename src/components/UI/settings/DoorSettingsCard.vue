@@ -1,11 +1,11 @@
 <template>
   <transition name="fade">
     <div class="settings-card">
-      <div class="header">Door Settings</div>
+      <div class="header">Налаштування дверей</div>
 
       <!-- Width Section -->
       <div class="settings-section">
-        <label>Width:</label>
+        <label>Ширина:</label>
         <div class="step-control">
           <button @click="decreaseWidth" :disabled="width <= 500">-</button>
           <span
@@ -32,7 +32,7 @@
 
       <!-- Height Section -->
       <div class="settings-section">
-        <label>Height:</label>
+        <label>Висота:</label>
         <div class="step-control">
           <button @click="decreaseHeight" :disabled="height <= 1800">-</button>
           <span
@@ -59,38 +59,38 @@
 
       <!-- Opening Direction -->
       <div class="settings-section">
-        <label>Opening Direction:</label>
+        <label>Відкривання:</label>
         <div class="direction-controls">
           <button
               :class="['direction-button', { active: openingDirection === 'left' }]"
               @click="setOpeningDirection('left')"
           >
-            Left
+            Ліворуч
           </button>
           <button
               :class="['direction-button', { active: openingDirection === 'right' }]"
               @click="setOpeningDirection('right')"
           >
-            Right
+            Праворуч
           </button>
         </div>
       </div>
 
       <!-- Opening Side -->
       <div class="settings-section">
-        <label>Opening Side:</label>
+        <label>Сторона:</label>
         <div class="direction-controls">
           <button
               :class="['direction-button', { active: openingSide === 'inside' }]"
               @click="setOpeningSide('inside')"
           >
-            Inside
+            Всередину
           </button>
           <button
               :class="['direction-button', { active: openingSide === 'outside' }]"
               @click="setOpeningSide('outside')"
           >
-            Outside
+            Назовні
           </button>
         </div>
       </div>

@@ -1,14 +1,14 @@
 <template>
   <div class="image-card" @click="$emit('click')">
-    <img :src="src" alt="image" class="image"/>
+    <img :src="src" alt="зображення" class="image"/>
     <div class="description-box d-flex row">
       <div class="col-10">
         <div class="d-flex justify-content-center flex-column align-items-start ms-2">
           <div class="card-title-text primary-text">{{ title }}</div>
-          <div class="card-title-text small-text fw-bold">Customer: {{ customer }}</div>
+          <div class="card-title-text small-text fw-bold">Замовник: {{ customer }}</div>
         </div>
         <div class="d-flex justify-content-center flex-column align-items-start mt-2 ms-2">
-          <div class="secondary-text small-text">Last changes:</div>
+          <div class="secondary-text small-text">Останні зміни:</div>
           <div class="secondary-text small-text">{{ lastChanges }}</div>
         </div>
       </div>

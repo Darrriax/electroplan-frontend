@@ -28,7 +28,7 @@ export default class CableLengthCalculator {
   getCableLengths() {
     this.resetCounters();
     this.calculateAllCableLengths();
-
+    
     return {
       cable1_5mm,
       cable2_5mm,
@@ -64,11 +64,11 @@ export default class CableLengthCalculator {
   calculateVerticalRun(device) {
     // Default to 100cm if no height specified
     const defaultHeight = 100;
-
+    
     if (!device || !device.dimensions) {
       return this.CEILING_HEIGHT - defaultHeight;
     }
-
+    
     const floorHeight = device.dimensions.floorHeight || defaultHeight;
     return this.CEILING_HEIGHT - floorHeight;
   }
@@ -77,7 +77,7 @@ export default class CableLengthCalculator {
    * Calculate total length of 1.5mm² cables (lighting circuits)
    */
   calculate1_5mmCables(walls, rooms, switches, wallLights, ceilingLights, panel, junctionBoxes) {
-
+  
   }
 
   /**
@@ -91,16 +91,16 @@ export default class CableLengthCalculator {
     console.log('Wall height (cm):', WALL_HEIGHT);
 
     // Calculate panel's vertical run once (converting from mm to cm)
-    const panelHeight = (panel.dimensions && panel.dimensions.floorHeight) ?
-        panel.dimensions.floorHeight / 10 : // Convert from mm to cm
-        120; // Default panel height 120cm
+    const panelHeight = (panel.dimensions && panel.dimensions.floorHeight) ? 
+      panel.dimensions.floorHeight / 10 : // Convert from mm to cm
+      120; // Default panel height 120cm
 
     const panelVerticalRun = WALL_HEIGHT - panelHeight;
     console.log('Panel vertical run (cm):', panelVerticalRun);
 
     // First calculate cables for powerful sockets
     const powerfulSockets = sockets.filter(s => s.deviceType === 'powerful');
-
+    
     console.log('Found powerful sockets:', powerfulSockets.map(s => ({
       id: s.id,
       type: s.deviceType,
@@ -122,12 +122,12 @@ export default class CableLengthCalculator {
       if (!socketPoint) return;
 
       // Calculate socket's vertical run (converting from mm to cm)
-      const socketHeight = socket.dimensions && socket.dimensions.floorHeight ?
-          socket.dimensions.floorHeight / 10 : // Convert from mm to cm
-          30; // Default height for powerful sockets (30cm)
-
+      const socketHeight = socket.dimensions && socket.dimensions.floorHeight ? 
+        socket.dimensions.floorHeight / 10 : // Convert from mm to cm
+        30; // Default height for powerful sockets (30cm)
+      
       console.log('Socket height from floor (cm):', socketHeight);
-
+      
       // Add vertical run from ceiling to socket
       const verticalRun = WALL_HEIGHT - socketHeight;
       cable2_5mm += verticalRun;
@@ -166,10 +166,10 @@ export default class CableLengthCalculator {
       // Find all regular sockets in this room
       const roomSockets = sockets.filter(socket => {
         const wall = walls.find(w => w.id === socket.wall);
-        return wall &&
-            this.router.isPointInPolygon(socket.position, room.path) &&
-            socket.deviceType !== 'powerful' &&
-            socket.deviceType !== 'high-power';
+        return wall && 
+               this.router.isPointInPolygon(socket.position, room.path) && 
+               socket.deviceType !== 'powerful' && 
+               socket.deviceType !== 'high-power';
       });
 
       if (roomSockets.length === 0) return; // Skip if no regular sockets in room
@@ -189,9 +189,9 @@ export default class CableLengthCalculator {
         // Use the first socket's wall and side for the reference
         const referenceSocket = group.sockets[0];
         const point = this.router.calculatePointPosition(
-            { ...referenceSocket, position: { x: avgX, y: avgY, side: referenceSocket.position.side } },
-            walls,
-            22
+          { ...referenceSocket, position: { x: avgX, y: avgY, side: referenceSocket.position.side } },
+          walls,
+          22
         );
 
         return {
@@ -238,7 +238,7 @@ export default class CableLengthCalculator {
 
           groupPoints.forEach(gp => {
             if (gp.used) return;
-
+            
             const path = this.router.calculateOrthogonalPath(currentPoint, gp.point, walls);
             let distance = 0;
             for (let i = 0; i < path.length - 1; i++) {
@@ -348,7 +348,7 @@ export default class CableLengthCalculator {
 
             groupPoints.forEach(gp => {
               if (gp.used) return;
-
+              
               const path = this.router.calculateOrthogonalPath(currentPoint, gp.point, walls);
               let distance = 0;
               for (let i = 0; i < path.length - 1; i++) {
@@ -421,8 +421,8 @@ export default class CableLengthCalculator {
         if (otherSocket.wall !== socket.wall) return;
 
         const distance = Math.sqrt(
-            Math.pow(socket.position.x - otherSocket.position.x, 2) +
-            Math.pow(socket.position.y - otherSocket.position.y, 2)
+          Math.pow(socket.position.x - otherSocket.position.x, 2) +
+          Math.pow(socket.position.y - otherSocket.position.y, 2)
         );
 
         if (distance <= PROXIMITY_THRESHOLD) {
@@ -445,7 +445,7 @@ export default class CableLengthCalculator {
 
     // Get only high-power sockets
     const highPowerSockets = sockets.filter(s => s.deviceType === 'high-power');
-
+    
     console.log('Found high-power sockets:', highPowerSockets.map(s => ({
       id: s.id,
       type: s.deviceType,
@@ -462,9 +462,9 @@ export default class CableLengthCalculator {
     console.log('Wall height (cm):', WALL_HEIGHT);
 
     // Calculate panel's vertical run once (converting from mm to cm)
-    const panelHeight = (panel.dimensions && panel.dimensions.floorHeight) ?
-        panel.dimensions.floorHeight / 10 : // Convert from mm to cm
-        120; // Default panel height 120cm
+    const panelHeight = (panel.dimensions && panel.dimensions.floorHeight) ? 
+      panel.dimensions.floorHeight / 10 : // Convert from mm to cm
+      120; // Default panel height 120cm
 
     const panelVerticalRun = WALL_HEIGHT - panelHeight;
     console.log('Panel vertical run (cm):', panelVerticalRun);
@@ -484,12 +484,12 @@ export default class CableLengthCalculator {
       if (!socketPoint) return;
 
       // Calculate socket's vertical run (converting from mm to cm)
-      const socketHeight = socket.dimensions && socket.dimensions.floorHeight ?
-          socket.dimensions.floorHeight / 10 : // Convert from mm to cm
-          70; // Default height for high-power sockets (70cm)
-
+      const socketHeight = socket.dimensions && socket.dimensions.floorHeight ? 
+        socket.dimensions.floorHeight / 10 : // Convert from mm to cm
+        70; // Default height for high-power sockets (70cm)
+      
       console.log('Socket height from floor (cm):', socketHeight);
-
+      
       // Add vertical run from ceiling to socket
       const verticalRun = WALL_HEIGHT - socketHeight;
       cable4_0mm += verticalRun;
@@ -522,8 +522,8 @@ export default class CableLengthCalculator {
       if (switchObj.connectedGroup) {
         this.addGroupLightLength(switchObj.connectedGroup, wallLights, ceilingLights, switchPoint, walls);
       } else {
-        const connectedLight = [...wallLights, ...ceilingLights].find(light =>
-            light.switchId === switchObj.id
+        const connectedLight = [...wallLights, ...ceilingLights].find(light => 
+          light.switchId === switchObj.id
         );
         if (connectedLight) {
           this.addSingleLightLength(connectedLight, switchPoint, walls);

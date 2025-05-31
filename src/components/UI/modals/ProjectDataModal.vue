@@ -4,7 +4,7 @@
     <div class="modal-overlay" @click.self="handleClose">
       <div class="card-box col-sm-8 col-md-6 col-lg-4 col-xxl-4 m-auto">
         <div class="d-flex justify-content-between align-items-center p-4">
-          <h3 class="mb-0">{{ isEditing ? 'Edit project data' : 'Add project data' }}</h3>
+          <h3 class="mb-0">{{ isEditing ? 'Редагувати дані проекту' : 'Додати дані проекту' }}</h3>
           <button-default 
               @click="handleClose" 
               icon="fa-solid fa-xmark" 
@@ -15,14 +15,14 @@
         <form @submit.prevent="handleSubmit">
           <div class="mt-2">
             <text-field
-              placeholder="Project name"
+              placeholder="Назва проекту"
               icon="fa-solid fa-file-signature"
               v-model="projectName"
               :error="errors.projectName"
               class="mb-3"
             />
             <text-field
-              placeholder="Customer name"
+              placeholder="Ім'я замовника"
               icon="fa-solid fa-user-tie"
               v-model="customerName"
               :error="errors.customerName"
@@ -30,7 +30,7 @@
             />
             
             <div class="text-center">
-              <button-simple :label="isEditing ? 'Save changes' : 'Save project'" class="set-min-width mt-4"/>
+              <button-simple :label="isEditing ? 'Зберегти зміни' : 'Зберегти проект'" class="set-min-width mt-4"/>
             </div>
           </div>
         </form>
@@ -115,11 +115,11 @@ export default {
       // Validate
       let isValid = true
       if (!this.projectName.trim()) {
-        this.errors.projectName = 'Project name is required'
+        this.errors.projectName = 'Назва проекту обов\'язкова'
         isValid = false
       }
       if (!this.customerName.trim()) {
-        this.errors.customerName = 'Customer name is required'
+        this.errors.customerName = 'Ім\'я замовника обов\'язкове'
         isValid = false
       }
 

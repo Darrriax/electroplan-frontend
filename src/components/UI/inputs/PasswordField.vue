@@ -26,7 +26,7 @@ export default {
     id: {type: String, required: false},
     classes: {required: false},
     modelValue: {type: String, required: false},
-    placeholder: {type: String, default: 'Input text...', required: true},
+    placeholder: {type: String, default: 'Введіть пароль...', required: true},
     icon: {type: [Array, String], default: 'fa-solid fa-key'},
     disabled: {type: Boolean, default: false},
     error: {type: String, default: ''},

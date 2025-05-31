@@ -3,12 +3,12 @@
     <div class="plan-editor">
       <div v-if="loading" class="loading-overlay">
         <div class="loading-spinner"></div>
-        <div class="loading-text">Loading project...</div>
+        <div class="loading-text">Завантаження проекту...</div>
       </div>
 
       <div class="save-button" @click="saveProject">
         <i class="fas fa-save"></i>
-        <span>Save Project</span>
+        <span>Зберегти проект</span>
       </div>
 
       <ToolSidebar
@@ -530,7 +530,7 @@ export default {
       // For existing projects, data is already loaded by the router
     } catch (error) {
       console.error('Failed to initialize project:', error);
-      this.$store.dispatch('reports/setMessage', 'Failed to initialize project');
+      this.$store.dispatch('reports/setMessage', 'Не вдалося ініціалізувати проект');
     }
   },
   mounted() {
@@ -1029,7 +1029,7 @@ export default {
                 }
             } else {
                 // Show error message
-                this.$store.dispatch('reports/showMessage', 'Error: ' + validationResult.error);
+                this.$store.dispatch('reports/showMessage', 'Помилка: ' + validationResult.error);
             }
         }
     },
@@ -1056,7 +1056,7 @@ export default {
                 }
             } else {
                 // Show error message
-                this.$store.dispatch('reports/showMessage', 'Error: ' + validationResult.error);
+                this.$store.dispatch('reports/showMessage', 'Помилка: ' + validationResult.error);
             }
         }
     },
@@ -1120,7 +1120,7 @@ export default {
                 }
             } else {
                 // Show error message
-                this.$store.dispatch('reports/showMessage', 'Error: ' + validationResult.error);
+                this.$store.dispatch('reports/showMessage', 'Помилка: ' + validationResult.error);
             }
         }
     },
@@ -1187,8 +1187,7 @@ export default {
           this.$router.replace(`/plan-editor/${savedProject.id}`);
         }
       } catch (error) {
-        console.error('Failed to save project:', error);
-        this.$store.dispatch('reports/setMessage', 'Failed to save project');
+        this.$store.dispatch('reports/setMessage', 'Неможливо зберегти проєкт');
       }
     },
     clearSettingsPanel() {

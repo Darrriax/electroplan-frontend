@@ -1,20 +1,20 @@
 <template>
   <transition name="fade">
     <div class="settings-card">
-      <div class="header">Settings</div>
+      <div class="header">Налаштування стін</div>
 
       <!-- Thickness Section -->
       <div class="settings-section">
-        <label>Thickness:</label>
+        <label>Товщина:</label>
         <div class="step-control">
-          <button @click="decreaseThickness">-</button>
+          <button @click="decreaseThickness" :disabled="thickness <= 50">-</button>
           <span
               class="editable-value"
               contenteditable
               @blur="handleThicknessBlur"
               @keydown.enter.prevent="handleEnter"
           >{{ displayThickness }}</span>
-          <button @click="increaseThickness">+</button>
+          <button @click="increaseThickness" :disabled="thickness >= 500">+</button>
         </div>
       </div>
 
@@ -24,6 +24,7 @@
             :key="preset.value"
             :class="['preset-button', { active: isThicknessPresetActive(preset.value) }]"
             @click="setThickness(preset.value)"
+            :disabled="preset.value < 50 || preset.value > 500"
         >
           {{ preset.display }}
         </button>
@@ -31,7 +32,7 @@
 
       <!-- Height Section -->
       <div class="settings-section">
-        <label>Height:</label>
+        <label>Висота:</label>
         <div class="step-control">
           <button @click="decreaseHeight">-</button>
           <span

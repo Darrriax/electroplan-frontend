@@ -1,18 +1,18 @@
 <template>
   <transition name="fade">
     <div class="settings-card">
-      <div class="header">Switch Settings</div>
+      <div class="header">Налаштування вимикача</div>
       <div class="settings-section">
-        <label>Height from Floor:</label>
+        <label>Висота від підлоги:</label>
         <div class="step-control">
-          <button @click="decreaseFloorHeight">-</button>
+          <button @click="decreaseFloorHeight" :disabled="floorHeight <= 500">-</button>
           <span
               class="editable-value"
               contenteditable
               @blur="handleFloorHeightBlur"
               @keydown.enter.prevent="handleEnter"
           >{{ displayFloorHeight }}</span>
-          <button @click="increaseFloorHeight">+</button>
+          <button @click="increaseFloorHeight" :disabled="isFloorHeightExceedingLimit">+</button>
         </div>
       </div>
       <div class="preset-grid">
@@ -21,13 +21,14 @@
             :key="preset.value"
             :class="['preset-button', { active: isFloorHeightPresetActive(preset.value) }]"
             @click="setFloorHeight(preset.value)"
+            :disabled="preset.value > wallHeight"
         >
           {{ preset.display }}
         </button>
       </div>
       <hr>
       <div class="switch-list">
-        <div class="group-header">Single Switches</div>
+        <div class="group-header">Одинарний вмикач</div>
         <div 
           v-for="switchObj in singleSwitches" 
           :key="switchObj.id"
@@ -65,7 +66,7 @@
             </div>
           </div>
         </div>
-        <div class="group-header">Double Switches</div>
+        <div class="group-header">Подвійний вмикач</div>
         <div 
           v-for="switchObj in doubleSwitches" 
           :key="switchObj.id"
@@ -124,7 +125,7 @@
       </div>
       <hr>
       <div class="light-groups">
-        <div class="group-header">Available Light Groups</div>
+        <div class="group-header">Групи світильників:</div>
         <div 
           v-for="group in lightGroups" 
           :key="group.id"
@@ -143,7 +144,7 @@
           </div>
         </div>
         <div v-if="lightGroups.length === 0" class="empty-groups">
-          No light groups available. Create groups in the Light Panel.
+          Групи світильників не знайдено. Створіть групи в панелі світильників.
         </div>
       </div>
     </div>
@@ -420,6 +421,13 @@ export default {
         }
       }
       this.$emit('hover-change');
+    },
+    getLightLabel(light) {
+      if (light.type === 'ceiling') {
+        return `Стельовий світильник ${light.id}`;
+      } else {
+        return `Настінний світильник ${light.id}`;
+      }
     }
   }
 }

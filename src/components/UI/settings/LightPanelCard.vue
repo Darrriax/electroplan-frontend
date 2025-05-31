@@ -1,35 +1,34 @@
 <template>
   <transition name="fade">
     <div class="settings-card">
-      <div class="header">Light Panel</div>
-      <div class="settings-section">
-        <label>Height from Floor:</label>
+      <div class="header">Налаштування світильника</div>
+      <div class="settings-section" v-if="isWallLight">
+        <label>Висота від підлоги:</label>
         <div class="step-control">
-          <button @click="decreaseFloorHeight" :disabled="!isWallLight">-</button>
+          <button @click="decreaseFloorHeight" :disabled="floorHeight <= 500">-</button>
           <span
               class="editable-value"
-              :contenteditable="isWallLight"
-              :class="{ disabled: !isWallLight }"
-              @blur="isWallLight ? handleFloorHeightBlur : null"
-              @keydown.enter.prevent="isWallLight ? handleEnter : null"
+              contenteditable
+              @blur="handleFloorHeightBlur"
+              @keydown.enter.prevent="handleEnter"
           >{{ displayFloorHeight }}</span>
-          <button @click="increaseFloorHeight" :disabled="!isWallLight">+</button>
+          <button @click="increaseFloorHeight" :disabled="isFloorHeightExceedingLimit">+</button>
         </div>
       </div>
-      <div class="preset-grid">
+      <div class="preset-grid" v-if="isWallLight">
         <button
             v-for="preset in convertedFloorHeightPresets"
             :key="preset.value"
             :class="['preset-button', { active: isFloorHeightPresetActive(preset.value) }]"
-            @click="isWallLight ? setFloorHeight(preset.value) : null"
-            :disabled="!isWallLight"
+            @click="setFloorHeight(preset.value)"
+            :disabled="preset.value > wallHeight"
         >
           {{ preset.display }}
         </button>
       </div>
       <hr>
       <div class="light-lists" v-if="!selectedGroup">
-        <div class="group-header">Ceiling Lights</div>
+        <div class="group-header">Стельовий</div>
         <div 
           v-for="light in ceilingLights" 
           :key="light.id"
@@ -41,9 +40,9 @@
           @dragstart="handleDragStart($event, { ...light, type: 'ceiling' })"
         >
           <div class="lamp-icon">○</div>
-          <div class="lamp-info">Ceiling Light</div>
+          <div class="lamp-info">Стельовий</div>
         </div>
-        <div class="group-header">Wall Lights</div>
+        <div class="group-header">Настінний</div>
         <div 
           v-for="light in wallLights" 
           :key="light.id"
@@ -56,7 +55,7 @@
         >
           <div class="lamp-icon">◐</div>
           <div class="lamp-info">
-            Wall Light
+            Настінний
             <div class="height-info">H={{ formatHeight(light.dimensions.floorHeight) }}</div>
           </div>
         </div>

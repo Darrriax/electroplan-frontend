@@ -2,22 +2,22 @@
   <layout>
     <div class="home d-flex justify-content-center align-items-start flex-column p-5">
       <div class="mt-5 ms-5">
-        <div class="title-text primary-white-text">Hi there, {{ getUserFullName }}</div>
-        <button-action label="Create new project" @click="goToProject" icon="fa-solid fa-plus" class="set-min-width mt-3"/>
+        <div class="title-text primary-white-text">Вітаємо, {{ getUserFullName }}</div>
+        <button-action label="Створити новий проєкт" @click="goToProject" icon="fa-solid fa-plus" class="set-min-width mt-3"/>
       </div>
     </div>
-    <h3 class="text-center my-3">My projects</h3>
+    <h3 class="text-center my-3">Мої проєкти</h3>
     <hr>
     <div v-if="error" class="alert alert-danger text-center" role="alert">
       {{ error }}
     </div>
     <div v-else-if="loading" class="text-center">
       <div class="spinner-border" role="status">
-        <span class="visually-hidden">Loading...</span>
+        <span class="visually-hidden">Завантаження...</span>
       </div>
     </div>
     <div v-else-if="projects.length === 0" class="text-center">
-      <p>You don't have any projects yet. Create your first project!</p>
+      <p>У вас ще немає проєктів. Створіть свій перший проєкт!</p>
     </div>
     <div v-else class="projects d-flex row row-cols-4 align-items-center justify-content-center gap-4 mx-5 px-5">
       <item-card
@@ -79,8 +79,8 @@ export default {
     formattedProjects() {
       return this.projects.map(project => ({
         id: project.id,
-        name: project.name || 'Untitled Project',
-        customer: project.customer || 'No Customer',
+        name: project.name || 'Проект без назви',
+        customer: project.customer || 'Без замовника',
         updatedAt: project.updatedAt,
         data: project.data || {}
       }));
@@ -117,14 +117,14 @@ export default {
         this.showProjectDataModal = false;
       } catch (error) {
         console.error('Failed to update project:', error);
-        this.error = 'Failed to update project. Please try again later.';
+        this.error = 'Не вдалося оновити проект. Спробуйте пізніше.';
       } finally {
         this.loading = false;
       }
     },
     async deleteProject(id) {
       try {
-        if (!confirm('Are you sure you want to delete this project?')) {
+        if (!confirm('Ви впевнені, що хочете видалити цей проект?')) {
           return;
         }
         
@@ -133,15 +133,15 @@ export default {
         await this.loadProjects(); // Reload the projects list
       } catch (error) {
         console.error('Failed to delete project:', error);
-        this.error = 'Failed to delete project. Please try again later.';
+        this.error = 'Не вдалося видалити проект. Спробуйте пізніше.';
       } finally {
         this.loading = false;
       }
     },
     formatDate(dateString) {
-      if (!dateString) return 'Never';
+      if (!dateString) return 'Ніколи';
       const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', {
+      return date.toLocaleDateString('uk-UA', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
@@ -160,7 +160,7 @@ export default {
         }
       } catch (error) {
         console.error('Failed to load projects:', error);
-        this.error = 'Failed to load projects. Please try again later.';
+        this.error = 'Не вдалося завантажити проекти. Спробуйте пізніше.';
       } finally {
         this.loading = false;
       }

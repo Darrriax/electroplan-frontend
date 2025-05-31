@@ -1,18 +1,18 @@
 <template>
   <transition name="fade">
     <div class="settings-card">
-      <div class="header">Socket Settings</div>
+      <div class="header">Налаштування розетки</div>
       <div class="settings-section">
-        <label>Height from Floor:</label>
+        <label>Висота від підлоги:</label>
         <div class="step-control">
-          <button @click="decreaseFloorHeight">-</button>
+          <button @click="decreaseFloorHeight" :disabled="floorHeight <= 0">-</button>
           <span
               class="editable-value"
               contenteditable
               @blur="handleFloorHeightBlur"
               @keydown.enter.prevent="handleEnter"
           >{{ displayFloorHeight }}</span>
-          <button @click="increaseFloorHeight">+</button>
+          <button @click="increaseFloorHeight" :disabled="isFloorHeightExceedingLimit">+</button>
         </div>
       </div>
       <div class="preset-grid">
@@ -21,20 +21,21 @@
             :key="preset.value"
             :class="['preset-button', { active: isFloorHeightPresetActive(preset.value) }]"
             @click="setFloorHeight(preset.value)"
+            :disabled="preset.value > wallHeight"
         >
           {{ preset.display }}
         </button>
       </div>
       <div class="settings-section">
         <div class="label-with-info">
-          <label>Device Type:</label>
+          <label>Тип пристрою:</label>
           <div class="info-icon" @mouseover="showTooltip = true" @mouseleave="showTooltip = false">
             <i class="fas fa-info-circle"></i>
             <div class="tooltip" v-show="showTooltip">
               <strong>Device Categories:</strong><br>
-              <strong>High-power:</strong> Electric cooking surface<br>
-              <strong>Powerful:</strong> Refrigerator, boiler, oven<br>
-              <strong>Regular:</strong> All other devices
+              <strong>Високопотужна:</strong> Електрична плита, духова шафа<br>
+              <strong>Потужна:</strong> Холодильник<br>
+              <strong>Звичайна:</strong> Всі інші пристрої
             </div>
           </div>
         </div>
@@ -43,19 +44,20 @@
             :class="['direction-button', { active: deviceType === 'regular' }]"
             @click="setDeviceType('regular')"
           >
-            Regular
+            Звичайна
           </button>
           <button
             :class="['direction-button', { active: deviceType === 'powerful' }]"
             @click="setDeviceType('powerful')"
           >
-            Powerful
+            Потужна
           </button>
           <button
             :class="['direction-button', { active: deviceType === 'high-power' }]"
             @click="setDeviceType('high-power')"
           >
-            High-power
+            Високо-
+            потужна
           </button>
         </div>
       </div>

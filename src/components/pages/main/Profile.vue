@@ -4,19 +4,19 @@
       <div class="row gap-3 justify-content-center pt-5 pt-md-0">
         <!-- Personal Information Column -->
         <div class="card-box px-3 px-md-4 col-sm-12 col-md-5 col-lg-4 col-xxl-4 text-center">
-          <h3 class="my-4 ms-3 text-center">Personal information</h3>
+          <h3 class="my-4 ms-3 text-center">Особиста інформація</h3>
           <form @submit.prevent="updateUser($event)" class="d-flex flex-column justify-content-between h-100">
             <div class="row row-cols-md-1 row-cols-1 gap-2">
               <div class="col-md">
                 <text-field
-                    placeholder="Your name..."
+                    placeholder="Ваше ім'я..."
                     icon="fa-solid fa-user"
                     v-model="user.name"
                     :error="error['name']"/>
               </div>
               <div class="col-md">
                 <text-field
-                    placeholder="Your surname..."
+                    placeholder="Ваше прізвище..."
                     icon="fa-solid fa-user"
                     v-model="user.surname"
                     :error="error['surname']"/>
@@ -27,14 +27,14 @@
                   :error="error['phoneNumber']"
               />
               <text-field
-                  placeholder="E-mail address"
+                  placeholder="Електронна пошта"
                   icon="fa-solid fa-at"
                   v-model="user.email"
                   :error="error['email']"/>
             </div>
             <div class="mt-auto pt-3">
               <button-simple
-                  label="Change"
+                  label="Змінити"
                   class="set-min-width"
                   type="submit"/>
             </div>
@@ -43,25 +43,25 @@
 
         <!-- Change Password Column -->
         <div class="card-box px-3 px-md-4 col-sm-12 col-md-5 col-lg-4 col-xxl-4 text-center">
-          <h3 class="my-4 ms-3 text-center">Change password</h3>
+          <h3 class="my-4 ms-3 text-center">Зміна паролю</h3>
           <form @submit.prevent="changePassword($event)" class="d-flex flex-column justify-content-between h-100">
             <div class="row row-cols-md-1 row-cols-1 gap-2">
               <password-field
-                  placeholder="Enter current password..."
+                  placeholder="Введіть поточний пароль..."
                   v-model="oldPassword"
                   :error="error['oldPassword']"/>
               <password-field
-                  placeholder="Enter new password..."
+                  placeholder="Введіть новий пароль..."
                   v-model="password"
                   :error="error['password']"/>
               <password-field
-                  placeholder="Repeat new password..."
+                  placeholder="Повторіть новий пароль..."
                   v-model="passwordConfirmation"
                   :error="error['passwordConfirmation']"/>
             </div>
             <div class="mt-auto pt-3">
               <button-simple
-                  label="Change"
+                  label="Змінити"
                   class="set-min-width"
                   type="submit"/>
             </div>

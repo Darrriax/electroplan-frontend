@@ -8,11 +8,11 @@
 
       <!-- Кнопки справа -->
       <div class="navbar-right">
-        <button class="btn btn-outline-secondary">Theme</button>
-        <button class="btn btn-outline-secondary">Lang</button>
-        <button class="btn btn-outline-dark" @click="goToHome">Projects</button>
-        <button class="btn btn-outline-dark" @click="goToProfile">Profile</button>
-        <button class="btn btn-dark" @click="logoutBtn">Logout</button>
+        <button class="btn btn-outline-secondary">Тема</button>
+        <button class="btn btn-outline-secondary">Мова</button>
+        <button class="btn btn-outline-dark" @click="goToHome">Проєкти</button>
+        <button class="btn btn-outline-dark" @click="goToProfile">Профіль</button>
+        <button class="btn btn-dark" @click="logoutBtn">Вийти</button>
       </div>
     </div>
   </div>

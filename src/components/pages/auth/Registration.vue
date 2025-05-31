@@ -9,23 +9,23 @@
         <!-- Верхній рядок -->
         <div class="d-flex justify-content-between align-items-center ms-4 mt-5">
           <h5 class="secondary-text">ElectroPlanner</h5>
-          <a href="/login" class="text-black fw-semibold">Log in</a>
+          <a href="/login" class="text-black fw-semibold">Вхід</a>
         </div>
         <!-- Реєстрація -->
-        <h3 class="my-4 ms-3 text-start">Sign up</h3>
+        <h3 class="my-4 ms-3 text-start">Реєстрація</h3>
 
         <!-- Форма -->
         <div class="row row-cols-md-2 row-cols-1 gap-md-0 gap-2">
           <div class="col-md">
             <text-field
-                placeholder="Your name..."
+                placeholder="Ваше імʼя..."
                 icon="fa-solid fa-user"
                 v-model="name"
                 :error="error['name']"/>
           </div>
           <div class="col-md">
             <text-field
-                placeholder="Your surname..."
+                placeholder="Ваше прізвище..."
                 icon="fa-solid fa-user"
                 v-model="surname"
                 :error="error['surname']"/>
@@ -41,7 +41,7 @@
           </div>
           <div class="col-md">
             <text-field
-                placeholder="E-mail address"
+                placeholder="E-mail..."
                 icon="fa-solid fa-at"
                 v-model="email"
                 :error="error['email']"/>
@@ -49,16 +49,16 @@
         </div>
         <div class="row mt-2 gap-2">
           <password-field
-              placeholder="Enter password..."
+              placeholder="Введіть пароль..."
               v-model="password"
               :error="error['password']"/>
 
           <password-field
-              placeholder="Repeat password..."
+              placeholder="Повторіть пароль..."
               v-model="passwordConfirmation"
               :error="error['passwordConfirmation']"/>
         </div>
-        <button-simple label="Continue" class="set-min-width mt-4"/>
+        <button-simple label="Продовжити" class="set-min-width mt-4"/>
       </form>
     </div>
     <message :label="message"/>

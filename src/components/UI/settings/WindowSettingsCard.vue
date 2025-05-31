@@ -1,20 +1,20 @@
 <template>
   <transition name="fade">
     <div class="settings-card">
-      <div class="header">Window Settings</div>
+      <div class="header">Налаштування вікна</div>
 
       <!-- Width Section -->
       <div class="settings-section">
-        <label>Width:</label>
+        <label>Ширина:</label>
         <div class="step-control">
-          <button @click="decreaseWidth" :disabled="width <= 300">-</button>
+          <button @click="decreaseWidth" :disabled="width <= 500">-</button>
           <span
               class="editable-value"
               contenteditable
               @blur="handleWidthBlur"
               @keydown.enter.prevent="handleEnter"
           >{{ displayWidth }}</span>
-          <button @click="increaseWidth" :disabled="width >= 2100">+</button>
+          <button @click="increaseWidth" :disabled="width >= 2500">+</button>
         </div>
       </div>
 
@@ -24,14 +24,42 @@
             :key="preset.value"
             :class="['preset-button', { active: isWidthPresetActive(preset.value) }]"
             @click="setWidth(preset.value)"
+            :disabled="preset.value < 500 || preset.value > 2500"
         >
           {{ preset.display }}
         </button>
       </div>
 
-      <!-- Height from Floor Section -->
+      <!-- Height Section -->
       <div class="settings-section">
-        <label>Height from Floor:</label>
+        <label>Висота:</label>
+        <div class="step-control">
+          <button @click="decreaseHeight" :disabled="height <= 500">-</button>
+          <span
+              class="editable-value"
+              contenteditable
+              @blur="handleHeightBlur"
+              @keydown.enter.prevent="handleEnter"
+          >{{ displayHeight }}</span>
+          <button @click="increaseHeight" :disabled="isHeightExceedingWall">+</button>
+        </div>
+      </div>
+
+      <div class="preset-grid">
+        <button
+            v-for="preset in convertedHeightPresets"
+            :key="preset.value"
+            :class="['preset-button', { active: isHeightPresetActive(preset.value) }]"
+            @click="setHeight(preset.value)"
+            :disabled="preset.value > wallHeight"
+        >
+          {{ preset.display }}
+        </button>
+      </div>
+
+      <!-- Floor Height Section -->
+      <div class="settings-section">
+        <label>Висота від підлоги:</label>
         <div class="step-control">
           <button @click="decreaseFloorHeight" :disabled="floorHeight <= 0">-</button>
           <span
@@ -40,7 +68,7 @@
               @blur="handleFloorHeightBlur"
               @keydown.enter.prevent="handleEnter"
           >{{ displayFloorHeight }}</span>
-          <button @click="increaseFloorHeight" :disabled="isTotalHeightExceedingWall">+</button>
+          <button @click="increaseFloorHeight" :disabled="isFloorHeightExceedingLimit">+</button>
         </div>
       </div>
 
@@ -51,33 +79,6 @@
             :class="['preset-button', { active: isFloorHeightPresetActive(preset.value) }]"
             @click="setFloorHeight(preset.value)"
             :disabled="preset.value + height > wallHeight"
-        >
-          {{ preset.display }}
-        </button>
-      </div>
-
-      <!-- Window Height Section -->
-      <div class="settings-section">
-        <label>Window Height:</label>
-        <div class="step-control">
-          <button @click="decreaseHeight" :disabled="height <= 300">-</button>
-          <span
-              class="editable-value"
-              contenteditable
-              @blur="handleHeightBlur"
-              @keydown.enter.prevent="handleEnter"
-          >{{ displayHeight }}</span>
-          <button @click="increaseHeight" :disabled="isTotalHeightExceedingWall">+</button>
-        </div>
-      </div>
-
-      <div class="preset-grid">
-        <button
-            v-for="preset in convertedHeightPresets"
-            :key="preset.value"
-            :class="['preset-button', { active: isHeightPresetActive(preset.value) }]"
-            @click="setHeight(preset.value)"
-            :disabled="preset.value + floorHeight > wallHeight"
         >
           {{ preset.display }}
         </button>

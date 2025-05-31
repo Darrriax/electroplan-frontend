@@ -1,20 +1,20 @@
 <template>
   <transition name="fade">
     <div class="settings-card">
-      <div class="header">Panel Settings</div>
+      <div class="header">Налаштування електричного щита</div>
 
       <!-- Width Section -->
       <div class="settings-section">
-        <label>Width:</label>
+        <label>Ширина:</label>
         <div class="step-control">
-          <button @click="decreaseWidth">-</button>
+          <button @click="decreaseWidth" :disabled="width <= 200">-</button>
           <span
               class="editable-value"
               contenteditable
               @blur="handleWidthBlur"
               @keydown.enter.prevent="handleEnter"
           >{{ displayWidth }}</span>
-          <button @click="increaseWidth">+</button>
+          <button @click="increaseWidth" :disabled="width >= 500">+</button>
         </div>
       </div>
 
@@ -24,6 +24,7 @@
             :key="preset.value"
             :class="['preset-button', { active: isWidthPresetActive(preset.value) }]"
             @click="setWidth(preset.value)"
+            :disabled="preset.value < 200 || preset.value > 500"
         >
           {{ preset.display }}
         </button>
@@ -31,16 +32,16 @@
 
       <!-- Height Section -->
       <div class="settings-section">
-        <label>Height:</label>
+        <label>Висота:</label>
         <div class="step-control">
-          <button @click="decreaseHeight">-</button>
+          <button @click="decreaseHeight" :disabled="height <= 200">-</button>
           <span
               class="editable-value"
               contenteditable
               @blur="handleHeightBlur"
               @keydown.enter.prevent="handleEnter"
           >{{ displayHeight }}</span>
-          <button @click="increaseHeight">+</button>
+          <button @click="increaseHeight" :disabled="height >= 500">+</button>
         </div>
       </div>
 
@@ -50,23 +51,24 @@
             :key="preset.value"
             :class="['preset-button', { active: isHeightPresetActive(preset.value) }]"
             @click="setHeight(preset.value)"
+            :disabled="preset.value < 200 || preset.value > 500"
         >
           {{ preset.display }}
         </button>
       </div>
 
-      <!-- Height from Floor Section -->
+      <!-- Floor Height Section -->
       <div class="settings-section">
-        <label>Height from Floor:</label>
+        <label>Висота від підлоги:</label>
         <div class="step-control">
-          <button @click="decreaseFloorHeight">-</button>
+          <button @click="decreaseFloorHeight" :disabled="floorHeight <= 500">-</button>
           <span
               class="editable-value"
               contenteditable
               @blur="handleFloorHeightBlur"
               @keydown.enter.prevent="handleEnter"
           >{{ displayFloorHeight }}</span>
-          <button @click="increaseFloorHeight">+</button>
+          <button @click="increaseFloorHeight" :disabled="isFloorHeightExceedingLimit">+</button>
         </div>
       </div>
 
@@ -76,6 +78,7 @@
             :key="preset.value"
             :class="['preset-button', { active: isFloorHeightPresetActive(preset.value) }]"
             @click="setFloorHeight(preset.value)"
+            :disabled="preset.value > wallHeight"
         >
           {{ preset.display }}
         </button>

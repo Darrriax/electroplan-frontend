@@ -574,19 +574,19 @@ canvas {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-}
+  }
 
 .header {
     font-weight: bold;
     font-size: 16px;
     margin-bottom: 10px;
-}
-
-.settings-section {
+  }
+  
+  .settings-section {
     margin-bottom: 12px;
-}
-
-.step-control {
+  }
+  
+  .step-control {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -594,82 +594,82 @@ canvas {
     border-radius: 6px;
     padding: 2px 8px;
     margin-bottom: 12px;
-}
-
-.step-control button {
+  }
+  
+  .step-control button {
     background: none;
     border: none;
     font-size: 18px;
     cursor: pointer;
     padding: 4px;
-}
-
-.editable-value {
+  }
+  
+  .editable-value {
     min-width: 70px;
     text-align: center;
     font-weight: 500;
     outline: none;
     border-radius: 4px;
-}
-
-.preset-grid {
+  }
+  
+  .preset-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 6px;
     margin-bottom: 12px;
-}
-
-.preset-button {
+  }
+  
+  .preset-button {
     padding: 6px 0;
     border: 1px solid #ccc;
     background: #f9f9f9;
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s;
-}
-
-.preset-button.active {
+  }
+  
+  .preset-button.active {
     background: #d0f0ff;
     border-color: #0096FF;
     color: #0096FF;
-}
+  }
 
-
+  
 .direction-controls {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 6px;
-}
-
-.direction-button {
+  }
+  
+  .direction-button {
     padding: 6px 0;
     border: 1px solid #ccc;
     background: #f9f9f9;
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s;
-}
-
-.direction-button:hover {
+  }
+  
+  .direction-button:hover {
     background: #eee;
-}
-
-.direction-button.active {
+  }
+  
+  .direction-button.active {
     background: #d0f0ff;
     border-color: #0096FF;
     color: #0096FF;
-}
+  }
 
-.editable-value {
+  .editable-value {
     min-width: 70px;
     text-align: center;
     font-weight: 500;
     outline: none;
     border-radius: 4px;
-}
-
-.editable-value.disabled {
+  }
+  
+  .editable-value.disabled {
     background: #eee;
     color: #aaa;
     pointer-events: none;
-}
+  }

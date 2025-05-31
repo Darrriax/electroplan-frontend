@@ -5,35 +5,35 @@
       <!-- Ліва панель -->
       <div class="navbar-left d-flex align-items-center gap-2">
         <button-default icon="fa-solid fa-bars" @click="toggleMenu"/>
-          <button-default icon="fa-solid fa-floppy-disk" label="Save" @click="handleSaveClick"/>
-        <button-default icon="fa-solid fa-rotate-left" label="Undo" @click="undoAction"/>
-        <button-default icon="fa-solid fa-rotate-right" label="Redo" @click="redoAction"/>
-        <button-default icon="fa-solid fa-rotate" label="Center" @click="centerPlan"/>
+          <button-default icon="fa-solid fa-floppy-disk" label="Зберегти" @click="handleSaveClick"/>
+        <button-default icon="fa-solid fa-rotate-left" label="Відмінити" @click="undoAction"/>
+        <button-default icon="fa-solid fa-rotate-right" label="Повторити" @click="redoAction"/>
+        <button-default icon="fa-solid fa-rotate" label="Центрувати" @click="centerPlan"/>
       </div>
 
       <!-- Права панель -->
       <div class="navbar-right d-flex align-items-center gap-2">
         <button-default 
           icon="fa-solid fa-layer-group" 
-          label="Original Plan" 
+          label="План квартири" 
           @click="selectOriginalPlan"
           :class="{ 'mode-active': currentMode === 'original-plan' }"
         />
         <button-default 
           icon="fa-solid fa-plug" 
-          label="Power Sockets" 
+          label="Розетки" 
           @click="selectPowerSockets"
           :class="{ 'mode-active': currentMode === 'power-sockets' }"
         />
         <button-default 
           icon="fa-solid fa-lightbulb" 
-          label="Light" 
+          label="Освітлення" 
           @click="selectLight"
           :class="{ 'mode-active': currentMode === 'light' }"
         />
         <button-default 
           icon="fa-solid fa-toggle-on" 
-          label="Switches" 
+          label="Вимикачі" 
           @click="selectSwitches"
           :class="{ 'mode-active': currentMode === 'switches' }"
         />
@@ -42,7 +42,7 @@
 
         <button-default 
           icon="fa-solid fa-route" 
-          label="Auto Cable Routing" 
+          label="Автоматичне планування" 
           @click="selectAutoRouting"
           :class="{ 'mode-active': currentMode === 'auto-routing' }"
         />
@@ -187,9 +187,9 @@ export default {
     async saveProjectToBackend() {
       try {
         await this.saveProject();
-        this.$store.dispatch('reports/showMessage', 'Project saved successfully');
+        this.$store.dispatch('reports/showMessage', 'Проект успішно збережено');
       } catch (error) {
-        this.$store.dispatch('reports/showMessage', 'Error: Failed to save project: ' + (error.message || 'Unknown error'));
+        this.$store.dispatch('reports/showMessage', 'Помилка: Не вдалося зберегти проект: ' + (error.message || 'Невідома помилка'));
       }
     },
     undoAction() {
